@@ -1,0 +1,756 @@
+package com.haven.guiqi
+
+import android.animation.ObjectAnimator
+import android.animation.ValueAnimator
+import android.app.AlertDialog
+import android.content.Intent
+import android.content.IntentFilter
+import android.content.SharedPreferences
+import android.graphics.*
+import android.graphics.drawable.Drawable
+import android.net.Uri
+import android.os.BatteryManager
+import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.util.TypedValue
+import android.view.Gravity
+import android.view.View
+import android.view.WindowManager
+import android.view.animation.DecelerateInterpolator
+import android.widget.*
+import androidx.appcompat.app.AppCompatActivity
+import java.text.SimpleDateFormat
+import java.util.*
+
+class DesktopActivity : AppCompatActivity() {
+
+    // ===== 普通模式元素 =====
+    private lateinit var normalDesktop: LinearLayout
+    private lateinit var statusTime: TextView
+    private lateinit var statusBattery: TextView
+    private lateinit var desktopTime: TextView
+    private lateinit var desktopDate: TextView
+    private lateinit var gridTop: GridLayout
+    private lateinit var gridBottom: GridLayout
+    private lateinit var pageDots: LinearLayout
+
+    // ===== 立绘模式元素 =====
+    private lateinit var liveDesktop: LinearLayout
+    private lateinit var liveBgImage: ImageView
+    private lateinit var liveStatusTime: TextView
+    private lateinit var liveStatusBattery: TextView
+    private lateinit var liveTime: TextView
+    private lateinit var liveDate: TextView
+    private lateinit var drawerBtn: FrameLayout
+    private lateinit var drawerBtnIcon: ImageView
+    private lateinit var drawerPanel: LinearLayout
+    private lateinit var drawerOverlay: View
+    private lateinit var drawerGrid: GridLayout
+
+    // ===== 状态 =====
+    private var isLiveMode = false
+    private var isDrawerOpen = false
+    private var isEditMode = false
+    private var selectedIndex = -1  // 编辑模式下选中的图标索引
+    private lateinit var prefs: SharedPreferences
+
+    // ===== 编辑模式动画列表（方便统一停止） =====
+    private val wobbleAnimators = mutableListOf<ObjectAnimator>()
+
+    // ===== 定时器 =====
+    private val handler = Handler(Looper.getMainLooper())
+    private val updateRunnable = object : Runnable {
+        override fun run() {
+            updateTimeAndDate()
+            updateBattery()
+            handler.postDelayed(this, 1000)
+        }
+    }
+
+    // ===== 图标数据 =====
+    data class AppIcon(
+        val type: String,
+        val label: String,
+        val action: String
+    )
+
+    // 默认顺序
+    private val defaultIcons = listOf(
+        AppIcon("chat", "聊天", "chat"),
+        AppIcon("sms", "短信", "sms"),
+        AppIcon("archive", "馆藏", "archive"),
+        AppIcon("world", "世界", "world"),
+        AppIcon("workshop", "工坊", "workshop"),
+        AppIcon("clock", "时钟", "clock"),
+        AppIcon("weather", "天气", "weather"),
+        AppIcon("calendar", "日历", "calendar"),
+        AppIcon("music", "音乐", "music"),
+        AppIcon("browser", "浏览", "browser"),
+        AppIcon("settings", "设置", "settings"),
+        AppIcon("beautify", "美化", "beautify")
+    )
+
+    // 当前实际使用的图标列表（可能被用户重新排序）
+    private var currentIcons = mutableListOf<AppIcon>()
+
+    companion object {
+        private const val PICK_IMAGE_REQUEST = 1001
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+
+        @Suppress("DEPRECATION")
+        window.setFlags(
+            WindowManager.LayoutParams.FLAG_FULLSCREEN,
+            WindowManager.LayoutParams.FLAG_FULLSCREEN
+        )
+        supportActionBar?.hide()
+
+        setContentView(R.layout.activity_desktop)
+
+        prefs = getSharedPreferences("haven_prefs", MODE_PRIVATE)
+
+        // ===== 绑定普通模式元素 =====
+        normalDesktop = findViewById(R.id.normalDesktop)
+        statusTime = findViewById(R.id.statusTime)
+        statusBattery = findViewById(R.id.statusBattery)
+        desktopTime = findViewById(R.id.desktopTime)
+        desktopDate = findViewById(R.id.desktopDate)
+        gridTop = findViewById(R.id.gridTop)
+        gridBottom = findViewById(R.id.gridBottom)
+        pageDots = findViewById(R.id.pageDots)
+
+        // ===== 绑定立绘模式元素 =====
+        liveDesktop = findViewById(R.id.liveDesktop)
+        liveBgImage = findViewById(R.id.liveBgImage)
+        liveStatusTime = findViewById(R.id.liveStatusTime)
+        liveStatusBattery = findViewById(R.id.liveStatusBattery)
+        liveTime = findViewById(R.id.liveTime)
+        liveDate = findViewById(R.id.liveDate)
+        drawerBtn = findViewById(R.id.drawerBtn)
+        drawerBtnIcon = findViewById(R.id.drawerBtnIcon)
+        drawerPanel = findViewById(R.id.drawerPanel)
+        drawerOverlay = findViewById(R.id.drawerOverlay)
+        drawerGrid = findViewById(R.id.drawerGrid)
+
+        // ===== 加载保存的图标顺序 =====
+        loadIconOrder()
+
+        // ===== 填充图标 =====
+        refreshDesktopIcons()
+        fillIcons(drawerGrid, currentIcons, 3, 16, false)
+
+        setupPageDots(3, 0)
+
+        // ===== 抽屉按钮图标 =====
+        drawerBtnIcon.setImageDrawable(LineIconDrawable("grid", dpToPx(20)))
+
+        // ===== 抽屉按钮点击 =====
+        drawerBtn.setOnClickListener { toggleDrawer() }
+
+        // ===== 遮罩点击关闭抽屉 =====
+        drawerOverlay.setOnClickListener { toggleDrawer() }
+
+        // ===== 长按切换模式（普通桌面） =====
+        normalDesktop.setOnLongClickListener {
+            if (isEditMode) {
+                exitEditMode()
+            } else {
+                showModeMenu()
+            }
+            true
+        }
+
+        // ===== 长按切换模式（立绘桌面） =====
+        liveDesktop.setOnLongClickListener {
+            showModeMenu()
+            true
+        }
+
+        // ===== 读取上次的模式 =====
+        isLiveMode = prefs.getBoolean("live_mode", false)
+        if (isLiveMode) {
+            switchToLiveMode(false)
+        }
+
+        updateTimeAndDate()
+        updateBattery()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        handler.post(updateRunnable)
+    }
+
+    override fun onPause() {
+        super.onPause()
+        handler.removeCallbacks(updateRunnable)
+    }
+
+    // ===== 保存图标顺序 =====
+    private fun saveIconOrder() {
+        val orderStr = currentIcons.joinToString(",") { it.action }
+        prefs.edit().putString("icon_order", orderStr).apply()
+    }
+
+    // ===== 加载图标顺序 =====
+    private fun loadIconOrder() {
+        val orderStr = prefs.getString("icon_order", null)
+        if (orderStr != null) {
+            val actionOrder = orderStr.split(",")
+            val reordered = mutableListOf<AppIcon>()
+            for (action in actionOrder) {
+                val icon = defaultIcons.find { it.action == action }
+                if (icon != null) reordered.add(icon)
+            }
+            // 把可能漏掉的新图标补到末尾
+            for (icon in defaultIcons) {
+                if (reordered.none { it.action == icon.action }) {
+                    reordered.add(icon)
+                }
+            }
+            currentIcons = reordered
+        } else {
+            currentIcons = defaultIcons.toMutableList()
+        }
+    }
+
+    // ===== 刷新桌面图标显示 =====
+    private fun refreshDesktopIcons() {
+        fillIcons(gridTop, currentIcons, 4, 55, true)
+    }
+
+    // ===== 进入编辑模式 =====
+    private fun enterEditMode() {
+        isEditMode = true
+        selectedIndex = -1
+        Toast.makeText(this, "编辑模式：点击两个图标交换位置\n长按空白处退出", Toast.LENGTH_SHORT).show()
+        refreshDesktopIcons()  // 重新填充，带上晃动动画
+    }
+
+    // ===== 退出编辑模式 =====
+    private fun exitEditMode() {
+        isEditMode = false
+        selectedIndex = -1
+        // 停止所有晃动动画
+        for (anim in wobbleAnimators) {
+            anim.cancel()
+        }
+        wobbleAnimators.clear()
+        // 重新填充，去掉晃动
+        refreshDesktopIcons()
+        Toast.makeText(this, "已退出编辑模式", Toast.LENGTH_SHORT).show()
+    }
+
+    // ===== 长按弹出菜单 =====
+    private fun showModeMenu() {
+        val items = if (isLiveMode) {
+            arrayOf("切换到普通模式", "更换立绘背景")
+        } else {
+            arrayOf("切换到立绘模式", "设置立绘背景", "编辑桌面图标")
+        }
+
+        AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog)
+            .setTitle("桌面设置")
+            .setItems(items) { _, which ->
+                if (isLiveMode) {
+                    when (which) {
+                        0 -> switchToNormalMode()
+                        1 -> pickImage()
+                    }
+                } else {
+                    when (which) {
+                        0 -> switchToLiveMode(true)
+                        1 -> pickImage()
+                        2 -> enterEditMode()
+                    }
+                }
+            }
+            .show()
+    }
+
+    // ===== 切换到立绘模式 =====
+    private fun switchToLiveMode(save: Boolean) {
+        // 如果在编辑模式，先退出
+        if (isEditMode) exitEditMode()
+
+        isLiveMode = true
+        if (save) prefs.edit().putBoolean("live_mode", true).apply()
+
+        normalDesktop.visibility = View.GONE
+        liveDesktop.visibility = View.VISIBLE
+        liveBgImage.visibility = View.VISIBLE
+        drawerBtn.visibility = View.VISIBLE
+
+        val bgUri = prefs.getString("live_bg_uri", null)
+        if (bgUri != null) {
+            try {
+                liveBgImage.setImageURI(Uri.parse(bgUri))
+            } catch (e: Exception) {
+                liveBgImage.visibility = View.GONE
+            }
+        }
+    }
+
+    // ===== 切换到普通模式 =====
+    private fun switchToNormalMode() {
+        isLiveMode = false
+        prefs.edit().putBoolean("live_mode", false).apply()
+
+        if (isDrawerOpen) toggleDrawer()
+
+        normalDesktop.visibility = View.VISIBLE
+        liveDesktop.visibility = View.GONE
+        liveBgImage.visibility = View.GONE
+        drawerBtn.visibility = View.GONE
+    }
+
+    // ===== 打开/关闭抽屉 =====
+    private fun toggleDrawer() {
+        if (isDrawerOpen) {
+            drawerPanel.animate()
+                .translationX(dpToPx(220).toFloat())
+                .setDuration(250)
+                .setInterpolator(DecelerateInterpolator())
+                .withEndAction {
+                    drawerPanel.visibility = View.GONE
+                    drawerOverlay.visibility = View.GONE
+                }
+                .start()
+            isDrawerOpen = false
+        } else {
+            drawerPanel.visibility = View.VISIBLE
+            drawerOverlay.visibility = View.VISIBLE
+            drawerPanel.translationX = dpToPx(220).toFloat()
+            drawerPanel.animate()
+                .translationX(0f)
+                .setDuration(250)
+                .setInterpolator(DecelerateInterpolator())
+                .start()
+            isDrawerOpen = true
+        }
+    }
+
+    // ===== 选择图片 =====
+    private fun pickImage() {
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "image/*"
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+        }
+        startActivityForResult(intent, PICK_IMAGE_REQUEST)
+    }
+
+    @Suppress("DEPRECATION")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == PICK_IMAGE_REQUEST && resultCode == RESULT_OK) {
+            val uri = data?.data ?: return
+            try {
+                contentResolver.takePersistableUriPermission(
+                    uri, Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+            } catch (e: Exception) { }
+
+            prefs.edit().putString("live_bg_uri", uri.toString()).apply()
+            liveBgImage.setImageURI(uri)
+            liveBgImage.visibility = View.VISIBLE
+
+            if (!isLiveMode) switchToLiveMode(true)
+            Toast.makeText(this, "立绘设置成功 ♡", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    // ===== 更新时间和日期 =====
+    private fun updateTimeAndDate() {
+        val now = Calendar.getInstance()
+        val timeFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
+        val timeStr = timeFormat.format(now.time)
+
+        val weekDays = arrayOf(
+            "星期日", "星期一", "星期二", "星期三",
+            "星期四", "星期五", "星期六"
+        )
+        val year = now.get(Calendar.YEAR)
+        val month = now.get(Calendar.MONTH) + 1
+        val day = now.get(Calendar.DAY_OF_MONTH)
+        val weekDay = weekDays[now.get(Calendar.DAY_OF_WEEK) - 1]
+        val dateStr = "${year}年${month}月${day}日  $weekDay"
+        val liveDateStr = "${year}/${month}/${day} $weekDay"
+
+        statusTime.text = timeStr
+        desktopTime.text = timeStr
+        desktopDate.text = dateStr
+
+        liveStatusTime.text = timeStr
+        liveTime.text = timeStr
+        liveDate.text = liveDateStr
+    }
+
+    // ===== 更新电量 =====
+    private fun updateBattery() {
+        val batteryIntent = registerReceiver(
+            null, IntentFilter(Intent.ACTION_BATTERY_CHANGED)
+        )
+        val level = batteryIntent?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
+        val scale = batteryIntent?.getIntExtra(BatteryManager.EXTRA_SCALE, 100) ?: 100
+        val percent = (level * 100) / scale
+        val battStr = "$percent%"
+
+        statusBattery.text = battStr
+        liveStatusBattery.text = battStr
+    }
+
+    // ===== 填充图标 =====
+    private fun fillIcons(
+        grid: GridLayout,
+        icons: List<AppIcon>,
+        columns: Int,
+        vMargin: Int,
+        isDesktop: Boolean  // 是否是桌面的主图标区（需要支持编辑模式）
+    ) {
+        grid.removeAllViews()
+        for ((index, icon) in icons.withIndex()) {
+            val itemLayout = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER_HORIZONTAL
+                layoutParams = GridLayout.LayoutParams().apply {
+                    width = 0
+                    height = GridLayout.LayoutParams.WRAP_CONTENT
+                    columnSpec = GridLayout.spec(index % columns, 1, 1f)
+                    rowSpec = GridLayout.spec(index / columns)
+                    setMargins(4, vMargin, 4, vMargin)
+                }
+            }
+
+            val iconSize = dpToPx(44)
+            val iconView = ImageView(this).apply {
+                layoutParams = LinearLayout.LayoutParams(iconSize, iconSize)
+                scaleType = ImageView.ScaleType.CENTER
+                background = createIconBackground()
+                setImageDrawable(LineIconDrawable(icon.type, dpToPx(20)))
+            }
+
+            val labelView = TextView(this).apply {
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { topMargin = dpToPx(3) }
+                text = icon.label
+                textSize = 9f
+                setTextColor(Color.parseColor("#66FFFFFF"))
+                gravity = Gravity.CENTER
+            }
+
+            itemLayout.addView(iconView)
+            itemLayout.addView(labelView)
+
+            if (isDesktop && isEditMode) {
+                // ===== 编辑模式：点击交换，显示晃动 =====
+
+                // 选中状态高亮
+                if (index == selectedIndex) {
+                    iconView.background = createSelectedBackground()
+                }
+
+                // 晃动动画
+                val wobble = ObjectAnimator.ofFloat(
+                    itemLayout, "rotation",
+                    -2f, 2f
+                ).apply {
+                    duration = 150
+                    repeatCount = ValueAnimator.INFINITE
+                    repeatMode = ValueAnimator.REVERSE
+                    // 每个图标错开一点启动时间，看起来更自然
+                    startDelay = (index * 30).toLong()
+                }
+                wobble.start()
+                wobbleAnimators.add(wobble)
+
+                // 点击：选中或交换
+                itemLayout.setOnClickListener {
+                    if (selectedIndex == -1) {
+                        // 没有选中的，选中当前这个
+                        selectedIndex = index
+                        refreshDesktopIcons()
+                    } else if (selectedIndex == index) {
+                        // 点了同一个，取消选中
+                        selectedIndex = -1
+                        refreshDesktopIcons()
+                    } else {
+                        // 有选中的，交换！
+                        val temp = currentIcons[selectedIndex]
+                        currentIcons[selectedIndex] = currentIcons[index]
+                        currentIcons[index] = temp
+                        selectedIndex = -1
+                        saveIconOrder()
+                        refreshDesktopIcons()
+                        // 同步更新抽屉里的顺序
+                        fillIcons(drawerGrid, currentIcons, 3, 16, false)
+                        Toast.makeText(this, "交换成功！", Toast.LENGTH_SHORT).show()
+                    }
+                }
+
+                // 长按：退出编辑模式
+                itemLayout.setOnLongClickListener {
+                    exitEditMode()
+                    true
+                }
+            } else {
+                // ===== 普通模式：正常点击 =====
+                itemLayout.setOnClickListener {
+                    if (isDrawerOpen) toggleDrawer()
+                    onIconClick(icon)
+                }
+
+                // 桌面图标长按进入编辑模式（只在桌面主区域）
+                if (isDesktop) {
+                    itemLayout.setOnLongClickListener {
+                        enterEditMode()
+                        true
+                    }
+                }
+            }
+
+            grid.addView(itemLayout)
+        }
+    }
+
+    // ===== 图标点击 =====
+    private fun onIconClick(icon: AppIcon) {
+        when (icon.action) {
+            "chat" -> Toast.makeText(this, "聊天 - 主战场即将到来 ♡", Toast.LENGTH_SHORT).show()
+            "sms" -> Toast.makeText(this, "短信 - 求挽留模式开发中", Toast.LENGTH_SHORT).show()
+            "archive" -> Toast.makeText(this, "馆藏 - 书城·档案馆", Toast.LENGTH_SHORT).show()
+            "world" -> Toast.makeText(this, "世界 - 预设·正则·世界书", Toast.LENGTH_SHORT).show()
+            "workshop" -> Toast.makeText(this, "工坊 - AI项目·代码·文件", Toast.LENGTH_SHORT).show()
+            "settings" -> {
+    val intent = Intent(this, SettingsActivity::class.java)
+    startActivity(intent)
+}
+            "beautify" -> Toast.makeText(this, "美化 - 主题·图标·名字", Toast.LENGTH_SHORT).show()
+            else -> Toast.makeText(this, "${icon.label} - 开发中", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    // ===== 白点点 =====
+    private fun setupPageDots(totalPages: Int, currentPage: Int) {
+        pageDots.removeAllViews()
+        for (i in 0 until totalPages) {
+            val dot = View(this)
+            val isActive = (i == currentPage)
+            val size = if (isActive) dpToPx(7) else dpToPx(5)
+            dot.layoutParams = LinearLayout.LayoutParams(size, size).apply {
+                marginStart = dpToPx(3)
+                marginEnd = dpToPx(3)
+                gravity = Gravity.CENTER_VERTICAL
+            }
+            val shape = android.graphics.drawable.GradientDrawable().apply {
+                shape = android.graphics.drawable.GradientDrawable.OVAL
+                setColor(if (isActive) Color.WHITE else Color.parseColor("#40FFFFFF"))
+            }
+            dot.background = shape
+            pageDots.addView(dot)
+        }
+    }
+
+    // ===== 普通图标背景 =====
+    private fun createIconBackground(): android.graphics.drawable.GradientDrawable {
+        return android.graphics.drawable.GradientDrawable().apply {
+            shape = android.graphics.drawable.GradientDrawable.RECTANGLE
+            cornerRadius = dpToPx(13).toFloat()
+            setColor(Color.parseColor("#14FFFFFF"))
+            setStroke(dpToPx(1), Color.parseColor("#26FFFFFF"))
+        }
+    }
+
+    // ===== 选中状态的高亮背景 =====
+    private fun createSelectedBackground(): android.graphics.drawable.GradientDrawable {
+        return android.graphics.drawable.GradientDrawable().apply {
+            shape = android.graphics.drawable.GradientDrawable.RECTANGLE
+            cornerRadius = dpToPx(13).toFloat()
+            setColor(Color.parseColor("#33FFFFFF"))
+            setStroke(dpToPx(2), Color.parseColor("#99FFFFFF"))
+        }
+    }
+
+    private fun dpToPx(dp: Int): Int {
+        return TypedValue.applyDimension(
+            TypedValue.COMPLEX_UNIT_DIP, dp.toFloat(), resources.displayMetrics
+        ).toInt()
+    }
+
+    // =======================================================
+    // 线条图标
+    // =======================================================
+    inner class LineIconDrawable(
+        private val type: String,
+        private val size: Int
+    ) : Drawable() {
+
+        private val paint = Paint().apply {
+            isAntiAlias = true
+            style = Paint.Style.STROKE
+            strokeWidth = size * 0.08f
+            strokeCap = Paint.Cap.ROUND
+            strokeJoin = Paint.Join.ROUND
+            color = Color.parseColor("#99FFFFFF")
+        }
+
+        private val fillPaint = Paint().apply {
+            isAntiAlias = true
+            style = Paint.Style.FILL
+            color = Color.parseColor("#99FFFFFF")
+        }
+
+        override fun draw(canvas: Canvas) {
+            val b = bounds
+            val cx = b.centerX().toFloat()
+            val cy = b.centerY().toFloat()
+            val s = size.toFloat()
+            val u = s / 24f
+
+            canvas.save()
+            canvas.translate(cx - s / 2f, cy - s / 2f)
+
+            when (type) {
+                "chat" -> {
+                    val path = Path().apply {
+                        addRoundRect(RectF(3*u,3*u,21*u,17*u), 2*u, 2*u, Path.Direction.CW)
+                        moveTo(3*u, 17*u); lineTo(3*u, 21*u); lineTo(7*u, 17*u)
+                    }
+                    canvas.drawPath(path, paint)
+                }
+                "sms" -> {
+                    canvas.drawRoundRect(RectF(6*u,2*u,22*u,13*u), 2*u, 2*u, paint)
+                    val front = Path().apply {
+                        addRoundRect(RectF(2*u,9*u,18*u,19*u), 2*u, 2*u, Path.Direction.CW)
+                        moveTo(2*u,19*u); lineTo(2*u,22*u); lineTo(6*u,19*u)
+                    }
+                    canvas.drawPath(front, paint)
+                    canvas.drawCircle(7*u,14*u,0.7f*u,fillPaint)
+                    canvas.drawCircle(10*u,14*u,0.7f*u,fillPaint)
+                    canvas.drawCircle(13*u,14*u,0.7f*u,fillPaint)
+                }
+                "archive" -> {
+                    canvas.drawRoundRect(RectF(3*u,2*u,21*u,22*u), 2*u, 2*u, paint)
+                    canvas.drawLine(3*u,12*u,21*u,12*u, paint)
+                    canvas.drawRoundRect(RectF(6*u,4*u,10*u,10*u), 1*u, 1*u, paint)
+                    canvas.drawRoundRect(RectF(12*u,5*u,16*u,10*u), 1*u, 1*u, paint)
+                    val folder = Path().apply {
+                        moveTo(6*u,14*u); lineTo(6*u,20*u); lineTo(18*u,20*u)
+                        lineTo(18*u,14*u); lineTo(13*u,14*u); lineTo(12*u,15.5f*u); lineTo(6*u,15.5f*u)
+                    }
+                    canvas.drawPath(folder, paint)
+                }
+                "world" -> {
+                    val left = Path().apply {
+                        moveTo(12*u,6*u); lineTo(12*u,20*u); lineTo(3*u,19*u); lineTo(3*u,5*u); close()
+                    }
+                    canvas.drawPath(left, paint)
+                    val right = Path().apply {
+                        moveTo(12*u,6*u); lineTo(12*u,20*u); lineTo(21*u,19*u); lineTo(21*u,5*u); close()
+                    }
+                    canvas.drawPath(right, paint)
+                    canvas.drawCircle(17*u,3*u,0.8f*u,fillPaint)
+                    canvas.drawCircle(20*u,5*u,0.5f*u,fillPaint)
+                }
+                "workshop" -> {
+                    canvas.drawCircle(9*u,15*u,4*u, paint)
+                    canvas.drawCircle(9*u,15*u,1.5f*u, paint)
+                    for (i in 0 until 6) {
+                        val a = Math.toRadians((i*60).toDouble())
+                        canvas.drawLine(
+                            9*u+(4*u*Math.cos(a)).toFloat(), 15*u+(4*u*Math.sin(a)).toFloat(),
+                            9*u+(5.5f*u*Math.cos(a)).toFloat(), 15*u+(5.5f*u*Math.sin(a)).toFloat(), paint)
+                    }
+                    canvas.drawLine(15*u,3*u,19*u,7*u, paint)
+                    canvas.drawLine(19*u,7*u,17*u,9*u, paint)
+                    canvas.drawLine(15*u,3*u,13*u,5*u, paint)
+                    canvas.drawLine(13*u,5*u,15*u,7*u, paint)
+                    canvas.drawLine(15*u,7*u,12*u,10*u, paint)
+                }
+                "clock" -> {
+                    canvas.drawCircle(12*u,12*u,10*u, paint)
+                    canvas.drawLine(12*u,12*u,12*u,7*u, paint)
+                    canvas.drawLine(12*u,12*u,16*u,14*u, paint)
+                    canvas.drawCircle(12*u,12*u,0.5f*u, fillPaint)
+                }
+                "weather" -> {
+                    canvas.drawCircle(10*u,9*u,3.5f*u, paint)
+                    val rays = arrayOf(
+                        floatArrayOf(10f,3f,10f,1.5f), floatArrayOf(10f,15f,10f,16.5f),
+                        floatArrayOf(4f,9f,2.5f,9f), floatArrayOf(16f,9f,17.5f,9f),
+                        floatArrayOf(5.5f,4.5f,4.5f,3.5f), floatArrayOf(14.5f,4.5f,15.5f,3.5f)
+                    )
+                    for (r in rays) canvas.drawLine(r[0]*u,r[1]*u,r[2]*u,r[3]*u, paint)
+                    val cloud = Path().apply {
+                        moveTo(8*u,19*u); lineTo(20*u,19*u)
+                        cubicTo(22*u,19*u,22*u,15*u,19*u,15*u)
+                        cubicTo(19*u,13*u,16*u,12*u,14*u,13.5f*u)
+                        cubicTo(12*u,12*u,9*u,12.5f*u,8*u,15*u)
+                        cubicTo(6*u,15*u,6*u,19*u,8*u,19*u)
+                    }
+                    canvas.drawPath(cloud, paint)
+                }
+                "calendar" -> {
+                    canvas.drawRoundRect(RectF(3*u,4*u,21*u,22*u), 2*u, 2*u, paint)
+                    canvas.drawLine(8*u,2*u,8*u,6*u, paint)
+                    canvas.drawLine(16*u,2*u,16*u,6*u, paint)
+                    canvas.drawLine(3*u,10*u,21*u,10*u, paint)
+                }
+                "music" -> {
+                    canvas.drawLine(9*u,18*u,9*u,5*u, paint)
+                    canvas.drawLine(9*u,5*u,21*u,3*u, paint)
+                    canvas.drawLine(21*u,3*u,21*u,16*u, paint)
+                    canvas.drawCircle(6*u,18*u,3*u, paint)
+                    canvas.drawCircle(18*u,16*u,3*u, paint)
+                }
+                "browser" -> {
+                    canvas.drawCircle(12*u,12*u,10*u, paint)
+                    canvas.drawLine(2*u,12*u,22*u,12*u, paint)
+                    val m = Path().apply {
+                        moveTo(12*u,2*u); cubicTo(16*u,6*u,16*u,18*u,12*u,22*u)
+                        moveTo(12*u,2*u); cubicTo(8*u,6*u,8*u,18*u,12*u,22*u)
+                    }
+                    canvas.drawPath(m, paint)
+                }
+                "settings" -> {
+                    canvas.drawCircle(12*u,12*u,3*u, paint)
+                    canvas.drawCircle(12*u,12*u,7*u, paint)
+                    for (i in 0 until 8) {
+                        val a = Math.toRadians((i*45).toDouble())
+                        canvas.drawLine(
+                            12*u+(7*u*Math.cos(a)).toFloat(), 12*u+(7*u*Math.sin(a)).toFloat(),
+                            12*u+(9.5f*u*Math.cos(a)).toFloat(), 12*u+(9.5f*u*Math.sin(a)).toFloat(), paint)
+                    }
+                }
+                "beautify" -> {
+                    canvas.drawCircle(12*u,12*u,9*u, paint)
+                    canvas.drawCircle(8*u,8*u,1.5f*u, fillPaint)
+                    canvas.drawCircle(14*u,7*u,1.5f*u, fillPaint)
+                    canvas.drawCircle(17*u,11*u,1.5f*u, fillPaint)
+                    canvas.drawCircle(8*u,14*u,1.5f*u, fillPaint)
+                    canvas.drawCircle(14*u,16*u,2.5f*u, paint)
+                }
+                "grid" -> {
+                    canvas.drawRoundRect(RectF(3*u,3*u,10.5f*u,10.5f*u), 1.5f*u, 1.5f*u, paint)
+                    canvas.drawRoundRect(RectF(13.5f*u,3*u,21*u,10.5f*u), 1.5f*u, 1.5f*u, paint)
+                    canvas.drawRoundRect(RectF(3*u,13.5f*u,10.5f*u,21*u), 1.5f*u, 1.5f*u, paint)
+                    canvas.drawRoundRect(RectF(13.5f*u,13.5f*u,21*u,21*u), 1.5f*u, 1.5f*u, paint)
+                }
+            }
+            canvas.restore()
+        }
+
+        override fun setAlpha(alpha: Int) { paint.alpha = alpha; fillPaint.alpha = alpha }
+        override fun setColorFilter(cf: ColorFilter?) { paint.colorFilter = cf }
+        @Suppress("DEPRECATION")
+        override fun getOpacity(): Int = PixelFormat.TRANSLUCENT
+        override fun getIntrinsicWidth(): Int = size
+        override fun getIntrinsicHeight(): Int = size
+    }
+}

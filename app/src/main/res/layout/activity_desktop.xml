@@ -1,0 +1,288 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/rootLayout"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/desktop_bg">
+
+    <!-- ===== 立绘背景图（立绘模式才显示） ===== -->
+    <ImageView
+        android:id="@+id/liveBgImage"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:scaleType="centerCrop"
+        android:visibility="gone" />
+
+    <!-- ===== 普通模式的桌面内容 ===== -->
+    <LinearLayout
+        android:id="@+id/normalDesktop"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical">
+
+        <!-- 状态栏 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingHorizontal="16dp"
+            android:paddingVertical="6dp">
+
+            <TextView
+                android:id="@+id/statusTime"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="13:54"
+                android:textColor="#80FFFFFF"
+                android:textSize="11sp" />
+
+            <TextView
+                android:id="@+id/statusSignal"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="•"
+                android:textColor="#66FF66"
+                android:textSize="14sp"
+                android:layout_marginEnd="8dp" />
+
+            <TextView
+                android:id="@+id/statusBattery"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="100%"
+                android:textColor="#80FFFFFF"
+                android:textSize="11sp" />
+        </LinearLayout>
+
+        <Space
+            android:layout_width="match_parent"
+            android:layout_height="70dp" />
+
+        <!-- 时间 + 可编辑短文字 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="bottom"
+            android:orientation="horizontal"
+            android:paddingHorizontal="20dp"
+            android:paddingBottom="6dp">
+
+            <TextView
+                android:id="@+id/desktopTime"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:fontFamily="monospace"
+                android:text="13:54"
+                android:textColor="#E6FFFFFF"
+                android:textSize="36sp"
+                android:letterSpacing="0.05" />
+
+            <TextView
+                android:id="@+id/desktopMotto"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="归栖"
+                android:textColor="#59FFFFFF"
+                android:textSize="12sp"
+                android:gravity="end" />
+        </LinearLayout>
+
+        <!-- 日期搜索栏 -->
+        <TextView
+            android:id="@+id/desktopDate"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginHorizontal="16dp"
+            android:layout_marginTop="4dp"
+            android:background="@drawable/search_bar_bg"
+            android:paddingHorizontal="16dp"
+            android:paddingVertical="8dp"
+            android:text="2026年5月5日  星期二"
+            android:textColor="#66FFFFFF"
+            android:textSize="12sp" />
+
+        <Space
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1" />
+
+        <!-- 上半图标区 -->
+        <GridLayout
+            android:id="@+id/gridTop"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:columnCount="4"
+            android:paddingHorizontal="12dp"
+            android:useDefaultMargins="true" />
+
+        <!-- 白点点 -->
+        <LinearLayout
+            android:id="@+id/pageDots"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center"
+            android:orientation="horizontal"
+            android:paddingVertical="8dp" />
+
+        <!-- 下半图标区 -->
+        <GridLayout
+            android:id="@+id/gridBottom"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:minHeight="102dp"
+            android:columnCount="4"
+            android:paddingHorizontal="12dp"
+            android:paddingBottom="16dp"
+            android:useDefaultMargins="true" />
+
+    </LinearLayout>
+
+    <!-- ===== 立绘模式的覆盖层 ===== -->
+    <LinearLayout
+        android:id="@+id/liveDesktop"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:visibility="gone">
+
+        <!-- 立绘模式状态栏 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingHorizontal="16dp"
+            android:paddingVertical="6dp">
+
+            <TextView
+                android:id="@+id/liveStatusTime"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="13:54"
+                android:textColor="#80FFFFFF"
+                android:textSize="11sp" />
+
+            <TextView
+                android:id="@+id/liveStatusBattery"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="100%"
+                android:textColor="#80FFFFFF"
+                android:textSize="11sp" />
+        </LinearLayout>
+
+        <!-- 立绘模式时间和日期 -->
+        <TextView
+            android:id="@+id/liveTime"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:paddingHorizontal="18dp"
+            android:paddingTop="12dp"
+            android:fontFamily="monospace"
+            android:text="13:54"
+            android:textColor="#D9FFFFFF"
+            android:textSize="32sp"
+            android:letterSpacing="0.03"
+            android:shadowColor="#80000000"
+            android:shadowDx="0"
+            android:shadowDy="2"
+            android:shadowRadius="8" />
+
+        <TextView
+            android:id="@+id/liveDate"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:paddingHorizontal="20dp"
+            android:paddingTop="2dp"
+            android:text="2026/05/05 星期二"
+            android:textColor="#66FFFFFF"
+            android:textSize="11sp"
+            android:shadowColor="#80000000"
+            android:shadowDx="0"
+            android:shadowDy="1"
+            android:shadowRadius="4" />
+
+        <!-- 撑满剩余空间 -->
+        <Space
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1" />
+
+    </LinearLayout>
+
+    <!-- ===== 抽屉按钮（立绘模式才显示） ===== -->
+    <FrameLayout
+        android:id="@+id/drawerBtn"
+        android:layout_width="46dp"
+        android:layout_height="46dp"
+        android:layout_gravity="top|end"
+        android:layout_marginTop="60dp"
+        android:layout_marginEnd="16dp"
+        android:visibility="gone">
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="@drawable/icon_bg" />
+
+        <ImageView
+            android:id="@+id/drawerBtnIcon"
+            android:layout_width="24dp"
+            android:layout_height="24dp"
+            android:layout_gravity="center" />
+    </FrameLayout>
+
+    <!-- ===== 抽屉遮罩（点击关闭抽屉） ===== -->
+    <View
+        android:id="@+id/drawerOverlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#66000000"
+        android:visibility="gone" />
+
+    <!-- ===== 抽屉面板（从右侧滑出） ===== -->
+    <LinearLayout
+        android:id="@+id/drawerPanel"
+        android:layout_width="220dp"
+        android:layout_height="match_parent"
+        android:layout_gravity="end"
+        android:background="#D9080820"
+        android:orientation="vertical"
+        android:paddingTop="50dp"
+        android:paddingHorizontal="12dp"
+        android:translationX="220dp"
+        android:visibility="gone">
+
+        <!-- 抽屉标题 -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="应 用"
+            android:textColor="#4DFFFFFF"
+            android:textSize="12sp"
+            android:letterSpacing="0.3"
+            android:paddingBottom="16dp"
+            android:paddingHorizontal="4dp" />
+
+        <!-- 抽屉里的图标网格 -->
+        <ScrollView
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:scrollbars="none">
+
+            <GridLayout
+                android:id="@+id/drawerGrid"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:columnCount="3"
+                android:useDefaultMargins="true" />
+        </ScrollView>
+
+    </LinearLayout>
+
+</FrameLayout>
