@@ -53,6 +53,7 @@ class FriendStorage(private val context: Context) {
                     apiUrl = obj.optString("api_url", ""),
                     apiKey = obj.optString("api_key", ""),
                     apiModel = obj.optString("api_model", ""),
+                    apiType = obj.optString("api_type", "openai"),
                     createdAt = obj.optLong("created_at", System.currentTimeMillis())
                 ))
             }
@@ -76,6 +77,7 @@ class FriendStorage(private val context: Context) {
                 put("api_url", f.apiUrl)
                 put("api_key", f.apiKey)
                 put("api_model", f.apiModel)
+                put("api_type", f.apiType)
                 put("created_at", f.createdAt)
             })
         }
@@ -146,5 +148,6 @@ data class Friend(
     val apiUrl: String = "",       // 单独 API（空则用全局配置）
     val apiKey: String = "",
     val apiModel: String = "",
+    val apiType: String = "openai", // "openai" / "claude" / "gemini"
     val createdAt: Long = System.currentTimeMillis()
 )

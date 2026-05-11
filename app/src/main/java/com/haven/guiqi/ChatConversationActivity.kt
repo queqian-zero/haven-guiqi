@@ -43,6 +43,7 @@ class ChatConversationActivity : AppCompatActivity() {
     private var apiUrl = ""
     private var apiKey = ""
     private var apiModel = ""
+    private var apiType = "openai"
 
     // 完整聊天历史
     private val chatHistory = mutableListOf<ChatMessage>()
@@ -104,10 +105,24 @@ class ChatConversationActivity : AppCompatActivity() {
     }
 
     private fun loadApiConfig() {
-        val prefs = getSharedPreferences("haven_prefs", MODE_PRIVATE)
-        apiUrl = prefs.getString("api_url", "") ?: ""
-        apiKey = prefs.getString("api_key", "") ?: ""
-        apiModel = prefs.getString("api_model", "") ?: ""
+        // 先查好友是否有专属 API 配置
+        val friendStorage = FriendStorage(this)
+        val friend = friendStorage.getFriend(friendId)
+
+        if (friend != null && friend.apiUrl.isNotEmpty() && friend.apiKey.isNotEmpty()) {
+            // 用好友专属配置
+            apiUrl = friend.apiUrl
+            apiKey = friend.apiKey
+            apiModel = friend.apiModel
+            apiType = friend.apiType
+        } else {
+            // 用全局配置
+            val prefs = getSharedPreferences("haven_prefs", MODE_PRIVATE)
+            apiUrl = prefs.getString("api_url", "") ?: ""
+            apiKey = prefs.getString("api_key", "") ?: ""
+            apiModel = prefs.getString("api_model", "") ?: ""
+            apiType = "openai"  // 全局配置默认 OpenAI 格式
+        }
     }
 
     // 构建滑动窗口：system 消息 + 最近 N 条对话
@@ -181,7 +196,7 @@ class ChatConversationActivity : AppCompatActivity() {
         showTypingIndicator()
         Thread {
             try {
-                val api = ApiHelper(apiUrl, apiKey, apiModel)
+                val api = ApiHelper(apiUrl, apiKey, apiModel, apiType)
                 // 用滑动窗口而不是完整历史
                 val reply = api.sendChat(buildContextWindow())
                 val replyTime = System.currentTimeMillis()

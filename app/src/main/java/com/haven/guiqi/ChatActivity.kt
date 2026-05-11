@@ -461,14 +461,15 @@ class ChatActivity : AppCompatActivity() {
 
     // ===== 好友选项菜单（长按触发） =====
     private fun showFriendOptions(friend: Friend) {
-        val options = arrayOf("编辑名称", "修改分组", "删除好友")
+        val options = arrayOf("编辑名称", "修改分组", "配置 API", "删除好友")
         AlertDialog.Builder(this)
             .setTitle(friend.name)
             .setItems(options) { _, which ->
                 when (which) {
                     0 -> showEditNameDialog(friend)
                     1 -> showEditGroupDialog(friend)
-                    2 -> showDeleteConfirm(friend)
+                    2 -> showApiConfigDialog(friend)
+                    3 -> showDeleteConfirm(friend)
                 }
             }
             .show()
@@ -519,6 +520,97 @@ class ChatActivity : AppCompatActivity() {
                     refreshMessagesList()
                     refreshFriendsList()
                 }
+            }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    // ===== 配置好友专属 API =====
+    private fun showApiConfigDialog(friend: Friend) {
+        val dp = { value: Int -> (value * resources.displayMetrics.density).toInt() }
+
+        // 创建表单布局
+        val layout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(16), dp(20), dp(8))
+        }
+
+        // API 类型选择按钮
+        var selectedType = friend.apiType
+        val typeNames = arrayOf("OpenAI 格式（GPT/DeepSeek/中转站）", "Claude 原生", "Gemini 原生")
+        val typeValues = arrayOf("openai", "claude", "gemini")
+        val currentTypeIndex = typeValues.indexOf(selectedType).coerceAtLeast(0)
+
+        val typeBtn = TextView(this).apply {
+            this.text = "API 类型: ${typeNames[currentTypeIndex]}"
+            textSize = 14f
+            setPadding(0, 0, 0, dp(12))
+        }
+        typeBtn.setOnClickListener {
+            AlertDialog.Builder(this)
+                .setTitle("选择 API 类型")
+                .setItems(typeNames) { _, which ->
+                    selectedType = typeValues[which]
+                    typeBtn.text = "API 类型: ${typeNames[which]}"
+                }
+                .show()
+        }
+        layout.addView(typeBtn)
+
+        // 提示文字
+        val hint = TextView(this).apply {
+            this.text = "留空则使用全局配置（设置页的配置）"
+            textSize = 11f
+            setTextColor(0xFF888888.toInt())
+            setPadding(0, 0, 0, dp(12))
+        }
+        layout.addView(hint)
+
+        // API 地址
+        val inputUrl = EditText(this).apply {
+            this.hint = "API 地址"
+            setText(friend.apiUrl)
+            textSize = 14f
+        }
+        layout.addView(inputUrl)
+
+        // API 密钥
+        val inputKey = EditText(this).apply {
+            this.hint = "API 密钥"
+            setText(friend.apiKey)
+            textSize = 14f
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or
+                    android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+        }
+        layout.addView(inputKey)
+
+        // 模型名
+        val inputModel = EditText(this).apply {
+            this.hint = "模型名称"
+            setText(friend.apiModel)
+            textSize = 14f
+        }
+        layout.addView(inputModel)
+
+        AlertDialog.Builder(this)
+            .setTitle("${friend.name} 的 API 配置")
+            .setView(layout)
+            .setPositiveButton("保存") { _, _ ->
+                friendStorage.updateFriend(friend.copy(
+                    apiUrl = inputUrl.text.toString().trim(),
+                    apiKey = inputKey.text.toString().trim(),
+                    apiModel = inputModel.text.toString().trim(),
+                    apiType = selectedType
+                ))
+                Toast.makeText(this, "API 配置已保存 ♡", Toast.LENGTH_SHORT).show()
+                refreshFriendsList()
+            }
+            .setNeutralButton("清除配置") { _, _ ->
+                friendStorage.updateFriend(friend.copy(
+                    apiUrl = "", apiKey = "", apiModel = "", apiType = "openai"
+                ))
+                Toast.makeText(this, "已清除，将使用全局配置", Toast.LENGTH_SHORT).show()
+                refreshFriendsList()
             }
             .setNegativeButton("取消", null)
             .show()
