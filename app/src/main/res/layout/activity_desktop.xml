@@ -20,42 +20,6 @@
         android:layout_height="match_parent"
         android:orientation="vertical">
 
-        <!-- 状态栏 -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:gravity="center_vertical"
-            android:orientation="horizontal"
-            android:paddingHorizontal="16dp"
-            android:paddingVertical="6dp">
-
-            <TextView
-                android:id="@+id/statusTime"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="13:54"
-                android:textColor="#80FFFFFF"
-                android:textSize="11sp" />
-
-            <TextView
-                android:id="@+id/statusSignal"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="•"
-                android:textColor="#66FF66"
-                android:textSize="14sp"
-                android:layout_marginEnd="8dp" />
-
-            <TextView
-                android:id="@+id/statusBattery"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="100%"
-                android:textColor="#80FFFFFF"
-                android:textSize="11sp" />
-        </LinearLayout>
-
         <Space
             android:layout_width="match_parent"
             android:layout_height="70dp" />
@@ -147,33 +111,6 @@
         android:layout_height="match_parent"
         android:orientation="vertical"
         android:visibility="gone">
-
-        <!-- 立绘模式状态栏 -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:gravity="center_vertical"
-            android:orientation="horizontal"
-            android:paddingHorizontal="16dp"
-            android:paddingVertical="6dp">
-
-            <TextView
-                android:id="@+id/liveStatusTime"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="13:54"
-                android:textColor="#80FFFFFF"
-                android:textSize="11sp" />
-
-            <TextView
-                android:id="@+id/liveStatusBattery"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="100%"
-                android:textColor="#80FFFFFF"
-                android:textSize="11sp" />
-        </LinearLayout>
 
         <!-- 立绘模式时间和日期 -->
         <TextView

@@ -1,0 +1,253 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/chat_bg"
+    android:orientation="vertical">
+
+    <!-- ===== 内容区域（四个标签页叠在一起，切换显示） ===== -->
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+
+        <!-- 来信页 -->
+        <LinearLayout
+            android:id="@+id/tabMessages"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingHorizontal="20dp"
+                android:paddingTop="16dp"
+                android:paddingBottom="12dp"
+                android:text="来信"
+                android:textColor="#BFFFFFFF"
+                android:textSize="22sp"
+                android:letterSpacing="0.15" />
+
+            <ScrollView
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:scrollbars="none"
+                android:paddingHorizontal="14dp">
+
+                <LinearLayout
+                    android:id="@+id/messagesList"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:paddingBottom="16dp" />
+            </ScrollView>
+        </LinearLayout>
+
+        <!-- 好友页 -->
+        <LinearLayout
+            android:id="@+id/tabFriends"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingHorizontal="20dp"
+                android:paddingTop="16dp"
+                android:paddingBottom="12dp"
+                android:text="好友"
+                android:textColor="#BFFFFFFF"
+                android:textSize="22sp"
+                android:letterSpacing="0.15" />
+
+            <ScrollView
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:scrollbars="none"
+                android:paddingHorizontal="14dp">
+
+                <LinearLayout
+                    android:id="@+id/friendsList"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:paddingBottom="16dp" />
+            </ScrollView>
+        </LinearLayout>
+
+        <!-- 足迹页 -->
+        <LinearLayout
+            android:id="@+id/tabFootprints"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingHorizontal="20dp"
+                android:paddingTop="16dp"
+                android:paddingBottom="12dp"
+                android:text="足迹"
+                android:textColor="#BFFFFFFF"
+                android:textSize="22sp"
+                android:letterSpacing="0.15" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:gravity="center"
+                android:text="你们共同走过的时光"
+                android:textColor="#33FFFFFF"
+                android:textSize="13sp" />
+        </LinearLayout>
+
+        <!-- 我的页 -->
+        <LinearLayout
+            android:id="@+id/tabProfile"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingHorizontal="20dp"
+                android:paddingTop="16dp"
+                android:paddingBottom="12dp"
+                android:text="我的"
+                android:textColor="#BFFFFFFF"
+                android:textSize="22sp"
+                android:letterSpacing="0.15" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:gravity="center"
+                android:text="这里是你的归栖"
+                android:textColor="#33FFFFFF"
+                android:textSize="13sp" />
+        </LinearLayout>
+
+    </FrameLayout>
+
+    <!-- ===== 底部标签栏 ===== -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:background="#0AFFFFFF"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <LinearLayout
+            android:id="@+id/btnTabMessages"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/iconTabMessages"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="✉"
+                android:textSize="18sp"
+                android:textColor="#B3A0FF" />
+
+            <TextView
+                android:id="@+id/labelTabMessages"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="来信"
+                android:textSize="9sp"
+                android:textColor="#B3A0FF"
+                android:layout_marginTop="1dp" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/btnTabFriends"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/iconTabFriends"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="♡"
+                android:textSize="18sp"
+                android:textColor="#33FFFFFF" />
+
+            <TextView
+                android:id="@+id/labelTabFriends"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="好友"
+                android:textSize="9sp"
+                android:textColor="#33FFFFFF"
+                android:layout_marginTop="1dp" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/btnTabFootprints"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/iconTabFootprints"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="☆"
+                android:textSize="18sp"
+                android:textColor="#33FFFFFF" />
+
+            <TextView
+                android:id="@+id/labelTabFootprints"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="足迹"
+                android:textSize="9sp"
+                android:textColor="#33FFFFFF"
+                android:layout_marginTop="1dp" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/btnTabProfile"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/iconTabProfile"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="○"
+                android:textSize="18sp"
+                android:textColor="#33FFFFFF" />
+
+            <TextView
+                android:id="@+id/labelTabProfile"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="我的"
+                android:textSize="9sp"
+                android:textColor="#33FFFFFF"
+                android:layout_marginTop="1dp" />
+        </LinearLayout>
+
+    </LinearLayout>
+
+</LinearLayout>

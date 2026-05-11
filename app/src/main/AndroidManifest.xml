@@ -21,5 +21,7 @@
         </activity>
         <activity android:name=".DesktopActivity" />
         <activity android:name=".SettingsActivity" />
+        <activity android:name=".ChatActivity" />
+        <activity android:name=".ChatConversationActivity" />
     </application>
 </manifest>

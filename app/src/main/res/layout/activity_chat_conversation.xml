@@ -1,0 +1,140 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/chat_bg"
+    android:orientation="vertical">
+
+    <!-- ===== 顶部栏：返回 + 名字 + 菜单 ===== -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingHorizontal="14dp"
+        android:paddingTop="10dp"
+        android:paddingBottom="10dp">
+
+        <!-- 返回按钮 -->
+        <TextView
+            android:id="@+id/btnBack"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:gravity="center"
+            android:text="←"
+            android:textColor="#59FFFFFF"
+            android:textSize="18sp" />
+
+        <!-- 中间：名字 + 状态 -->
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/tvFriendName"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="星河"
+                android:textColor="#D9FFFFFF"
+                android:textSize="15sp" />
+
+            <TextView
+                android:id="@+id/tvStatus"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="在线"
+                android:textColor="#4DB3A0FF"
+                android:textSize="9sp"
+                android:letterSpacing="0.1" />
+        </LinearLayout>
+
+        <!-- 右侧菜单按钮 -->
+        <TextView
+            android:id="@+id/btnMenu"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:gravity="center"
+            android:text="⋮"
+            android:textColor="#33FFFFFF"
+            android:textSize="18sp" />
+    </LinearLayout>
+
+    <!-- 分隔线 -->
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="0.5dp"
+        android:background="#08FFFFFF" />
+
+    <!-- ===== 消息区域 ===== -->
+    <ScrollView
+        android:id="@+id/scrollMessages"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:scrollbars="none"
+        android:fillViewport="true">
+
+        <LinearLayout
+            android:id="@+id/messagesContainer"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingHorizontal="14dp"
+            android:paddingTop="12dp"
+            android:paddingBottom="8dp" />
+    </ScrollView>
+
+    <!-- ===== 底部输入栏 ===== -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingHorizontal="12dp"
+        android:paddingVertical="8dp"
+        android:background="#08FFFFFF">
+
+        <!-- 加号按钮（以后用来发图片/文件） -->
+        <TextView
+            android:id="@+id/btnPlus"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:gravity="center"
+            android:text="＋"
+            android:textColor="#26FFFFFF"
+            android:textSize="20sp" />
+
+        <!-- 输入框 -->
+        <EditText
+            android:id="@+id/inputMessage"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginHorizontal="8dp"
+            android:minHeight="38dp"
+            android:maxLines="4"
+            android:background="@drawable/chat_input_bg"
+            android:paddingHorizontal="14dp"
+            android:paddingVertical="8dp"
+            android:hint="说点什么..."
+            android:textColor="#B3FFFFFF"
+            android:textColorHint="#26FFFFFF"
+            android:textSize="14sp"
+            android:inputType="textMultiLine"
+            android:imeOptions="actionNone" />
+
+        <!-- 发送按钮 -->
+        <TextView
+            android:id="@+id/btnSend"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:gravity="center"
+            android:text="➤"
+            android:textColor="#4DB3A0FF"
+            android:textSize="20sp" />
+    </LinearLayout>
+
+</LinearLayout>

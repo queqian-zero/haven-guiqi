@@ -10,6 +10,7 @@ import android.graphics.*
 import android.graphics.drawable.Drawable
 import android.net.Uri
 import android.os.BatteryManager
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -20,6 +21,10 @@ import android.view.WindowManager
 import android.view.animation.DecelerateInterpolator
 import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -27,8 +32,6 @@ class DesktopActivity : AppCompatActivity() {
 
     // ===== 普通模式元素 =====
     private lateinit var normalDesktop: LinearLayout
-    private lateinit var statusTime: TextView
-    private lateinit var statusBattery: TextView
     private lateinit var desktopTime: TextView
     private lateinit var desktopDate: TextView
     private lateinit var gridTop: GridLayout
@@ -38,8 +41,6 @@ class DesktopActivity : AppCompatActivity() {
     // ===== 立绘模式元素 =====
     private lateinit var liveDesktop: LinearLayout
     private lateinit var liveBgImage: ImageView
-    private lateinit var liveStatusTime: TextView
-    private lateinit var liveStatusBattery: TextView
     private lateinit var liveTime: TextView
     private lateinit var liveDate: TextView
     private lateinit var drawerBtn: FrameLayout
@@ -63,7 +64,6 @@ class DesktopActivity : AppCompatActivity() {
     private val updateRunnable = object : Runnable {
         override fun run() {
             updateTimeAndDate()
-            updateBattery()
             handler.postDelayed(this, 1000)
         }
     }
@@ -101,21 +101,30 @@ class DesktopActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        @Suppress("DEPRECATION")
-        window.setFlags(
-            WindowManager.LayoutParams.FLAG_FULLSCREEN,
-            WindowManager.LayoutParams.FLAG_FULLSCREEN
-        )
-        supportActionBar?.hide()
+        // 沉浸式全屏
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        window.statusBarColor = android.graphics.Color.TRANSPARENT
+        window.navigationBarColor = android.graphics.Color.TRANSPARENT
+
+        // 允许内容画到挖孔/刘海区域
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            window.attributes.layoutInDisplayCutoutMode =
+                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+        }
 
         setContentView(R.layout.activity_desktop)
+
+        // 只隐藏底部导航栏，保留顶部状态栏
+        val insetsController = WindowInsetsControllerCompat(window, window.decorView)
+        insetsController.hide(WindowInsetsCompat.Type.navigationBars())
+        insetsController.systemBarsBehavior =
+            WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        insetsController.isAppearanceLightStatusBars = false
 
         prefs = getSharedPreferences("haven_prefs", MODE_PRIVATE)
 
         // ===== 绑定普通模式元素 =====
         normalDesktop = findViewById(R.id.normalDesktop)
-        statusTime = findViewById(R.id.statusTime)
-        statusBattery = findViewById(R.id.statusBattery)
         desktopTime = findViewById(R.id.desktopTime)
         desktopDate = findViewById(R.id.desktopDate)
         gridTop = findViewById(R.id.gridTop)
@@ -125,8 +134,6 @@ class DesktopActivity : AppCompatActivity() {
         // ===== 绑定立绘模式元素 =====
         liveDesktop = findViewById(R.id.liveDesktop)
         liveBgImage = findViewById(R.id.liveBgImage)
-        liveStatusTime = findViewById(R.id.liveStatusTime)
-        liveStatusBattery = findViewById(R.id.liveStatusBattery)
         liveTime = findViewById(R.id.liveTime)
         liveDate = findViewById(R.id.liveDate)
         drawerBtn = findViewById(R.id.drawerBtn)
@@ -134,6 +141,16 @@ class DesktopActivity : AppCompatActivity() {
         drawerPanel = findViewById(R.id.drawerPanel)
         drawerOverlay = findViewById(R.id.drawerOverlay)
         drawerGrid = findViewById(R.id.drawerGrid)
+
+        // ===== 适配状态栏高度：给内容加顶部 padding =====
+        val rootLayout = findViewById<FrameLayout>(R.id.rootLayout)
+        ViewCompat.setOnApplyWindowInsetsListener(rootLayout) { view, insets ->
+            val statusBarHeight = insets.getInsets(WindowInsetsCompat.Type.statusBars()).top
+            // 普通模式和立绘模式都加上顶部 padding
+            normalDesktop.setPadding(0, statusBarHeight, 0, 0)
+            liveDesktop.setPadding(0, statusBarHeight, 0, 0)
+            insets
+        }
 
         // ===== 加载保存的图标顺序 =====
         loadIconOrder()
@@ -176,12 +193,17 @@ class DesktopActivity : AppCompatActivity() {
         }
 
         updateTimeAndDate()
-        updateBattery()
     }
 
     override fun onResume() {
         super.onResume()
         handler.post(updateRunnable)
+        // 返回桌面时重新隐藏底部导航栏
+        WindowInsetsControllerCompat(window, window.decorView).apply {
+            hide(WindowInsetsCompat.Type.navigationBars())
+            systemBarsBehavior =
+                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        }
     }
 
     override fun onPause() {
@@ -381,27 +403,11 @@ class DesktopActivity : AppCompatActivity() {
         val dateStr = "${year}年${month}月${day}日  $weekDay"
         val liveDateStr = "${year}/${month}/${day} $weekDay"
 
-        statusTime.text = timeStr
         desktopTime.text = timeStr
         desktopDate.text = dateStr
 
-        liveStatusTime.text = timeStr
         liveTime.text = timeStr
         liveDate.text = liveDateStr
-    }
-
-    // ===== 更新电量 =====
-    private fun updateBattery() {
-        val batteryIntent = registerReceiver(
-            null, IntentFilter(Intent.ACTION_BATTERY_CHANGED)
-        )
-        val level = batteryIntent?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
-        val scale = batteryIntent?.getIntExtra(BatteryManager.EXTRA_SCALE, 100) ?: 100
-        val percent = (level * 100) / scale
-        val battStr = "$percent%"
-
-        statusBattery.text = battStr
-        liveStatusBattery.text = battStr
     }
 
     // ===== 填充图标 =====
@@ -522,7 +528,10 @@ class DesktopActivity : AppCompatActivity() {
     // ===== 图标点击 =====
     private fun onIconClick(icon: AppIcon) {
         when (icon.action) {
-            "chat" -> Toast.makeText(this, "聊天 - 主战场即将到来 ♡", Toast.LENGTH_SHORT).show()
+            "chat" -> {
+                val intent = Intent(this, ChatActivity::class.java)
+                startActivity(intent)
+            }
             "sms" -> Toast.makeText(this, "短信 - 求挽留模式开发中", Toast.LENGTH_SHORT).show()
             "archive" -> Toast.makeText(this, "馆藏 - 书城·档案馆", Toast.LENGTH_SHORT).show()
             "world" -> Toast.makeText(this, "世界 - 预设·正则·世界书", Toast.LENGTH_SHORT).show()
