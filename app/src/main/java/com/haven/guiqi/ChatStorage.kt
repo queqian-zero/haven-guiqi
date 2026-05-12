@@ -45,6 +45,9 @@ class ChatStorage(private val context: Context) {
                 put("role", msg.role)
                 put("content", msg.content)
                 put("timestamp", msg.timestamp)
+                if (msg.thinking.isNotEmpty()) {
+                    put("thinking", msg.thinking)
+                }
             })
         }
 
@@ -75,7 +78,8 @@ class ChatStorage(private val context: Context) {
                 messages.add(StoredMessage(
                     role = obj.getString("role"),
                     content = obj.getString("content"),
-                    timestamp = obj.optLong("timestamp", 0L)
+                    timestamp = obj.optLong("timestamp", 0L),
+                    thinking = obj.optString("thinking", "")
                 ))
             }
 
@@ -117,7 +121,8 @@ class ChatStorage(private val context: Context) {
  * 跟 ChatMessage 的区别是多了一个 timestamp（时间戳）
  */
 data class StoredMessage(
-    val role: String,       // "user" / "assistant" / "system"
-    val content: String,    // 消息内容
-    val timestamp: Long     // 发送时间（毫秒）
+    val role: String,           // "user" / "assistant" / "system"
+    val content: String,        // 消息内容
+    val timestamp: Long,        // 发送时间（毫秒）
+    val thinking: String = ""   // AI 的思考过程（可能为空）
 )

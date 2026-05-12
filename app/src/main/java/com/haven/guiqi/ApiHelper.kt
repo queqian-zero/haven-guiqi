@@ -9,21 +9,28 @@ import java.net.HttpURLConnection
 import java.net.URL
 
 /**
+ * API 回复结果
+ * thinking = AI 的思考过程（可能为空）
+ * text = AI 的正式回复
+ */
+data class ApiResponse(
+    val thinking: String,
+    val text: String
+)
+
+/**
  * ApiHelper - 负责跟 AI 的 API 通信
- *
- * 支持三种格式：
- * - "openai"  → OpenAI 格式（GPT、DeepSeek、通义千问、Moonshot、中转站）
- * - "claude"  → Claude 原生格式（api.anthropic.com）
- * - "gemini"  → Gemini 原生格式（generativelanguage.googleapis.com）
+ * 支持 OpenAI / Claude / Gemini 三种格式
+ * 自动提取思维链（thinking/reasoning）
  */
 class ApiHelper(
     private val apiUrl: String,
     private val apiKey: String,
     private val model: String,
-    private val apiType: String = "openai"  // "openai" / "claude" / "gemini"
+    private val apiType: String = "openai"
 ) {
 
-    fun sendChat(messages: List<ChatMessage>): String {
+    fun sendChat(messages: List<ChatMessage>): ApiResponse {
         return when (apiType) {
             "claude" -> sendClaude(messages)
             "gemini" -> sendGemini(messages)
@@ -32,9 +39,7 @@ class ApiHelper(
     }
 
     // ===== OpenAI 格式 =====
-    // 适用于：GPT、DeepSeek、通义千问、Moonshot、各种中转站
-    // 地址格式：https://api.openai.com/v1 或 https://中转站/v1
-    private fun sendOpenAI(messages: List<ChatMessage>): String {
+    private fun sendOpenAI(messages: List<ChatMessage>): ApiResponse {
         val chatUrl = if (apiUrl.endsWith("/")) {
             "${apiUrl}chat/completions"
         } else {
@@ -74,20 +79,26 @@ class ApiHelper(
             reader.close()
 
             val json = JSONObject(response)
-            return json.getJSONArray("choices")
-                .getJSONObject(0)
-                .getJSONObject("message")
-                .getString("content")
+            val choice = json.getJSONArray("choices").getJSONObject(0)
+            val message = choice.getJSONObject("message")
+            val content = message.getString("content")
+
+            // DeepSeek 等模型有 reasoning_content 字段
+            val reasoning = message.optString("reasoning_content", "")
+
+            if (reasoning.isNotEmpty()) {
+                return ApiResponse(thinking = reasoning, text = content)
+            }
+
+            // 有些模型用 <think> 标签包裹思考过程
+            return extractThinkTags(content)
         } else {
             throw Exception(readError(connection, responseCode))
         }
     }
 
     // ===== Claude 原生格式 =====
-    // 适用于：api.anthropic.com 直连
-    // 地址格式：https://api.anthropic.com（不需要加 /v1）
-    private fun sendClaude(messages: List<ChatMessage>): String {
-        // 拼接 URL
+    private fun sendClaude(messages: List<ChatMessage>): ApiResponse {
         val baseUrl = apiUrl.trimEnd('/')
         val chatUrl = if (baseUrl.endsWith("/v1/messages")) {
             baseUrl
@@ -99,20 +110,17 @@ class ApiHelper(
 
         val connection = URL(chatUrl).openConnection() as HttpURLConnection
         connection.requestMethod = "POST"
-        // Claude 用 x-api-key 而不是 Bearer token
         connection.setRequestProperty("x-api-key", apiKey)
         connection.setRequestProperty("anthropic-version", "2023-06-01")
         connection.setRequestProperty("Content-Type", "application/json")
         connection.connectTimeout = 30000
-        connection.readTimeout = 60000
+        connection.readTimeout = 120000  // Claude 思考时间可能较长
         connection.doOutput = true
 
-        // Claude 的 system 消息要单独放，不能混在 messages 里
         var systemContent = ""
         val messagesArray = JSONArray()
         for (msg in messages) {
             if (msg.role == "system") {
-                // 多条 system 消息合并
                 if (systemContent.isNotEmpty()) systemContent += "\n"
                 systemContent += msg.content
             } else {
@@ -122,6 +130,73 @@ class ApiHelper(
                 })
             }
         }
+
+        val body = JSONObject().apply {
+            put("model", model)
+            put("max_tokens", 16000)
+            put("messages", messagesArray)
+            if (systemContent.isNotEmpty()) {
+                put("system", systemContent)
+            }
+            // 启用扩展思维（extended thinking）
+            // 支持思维链的模型会返回 thinking 块，不支持的会忽略
+            put("thinking", JSONObject().apply {
+                put("type", "enabled")
+                put("budget_tokens", 10000)
+            })
+        }
+
+        val writer = OutputStreamWriter(connection.outputStream)
+        writer.write(body.toString())
+        writer.flush()
+        writer.close()
+
+        val responseCode = connection.responseCode
+        if (responseCode == 200) {
+            val reader = BufferedReader(InputStreamReader(connection.inputStream))
+            val response = reader.readText()
+            reader.close()
+
+            val json = JSONObject(response)
+            val contentArray = json.getJSONArray("content")
+
+            var thinking = ""
+            var text = ""
+
+            for (i in 0 until contentArray.length()) {
+                val block = contentArray.getJSONObject(i)
+                when (block.getString("type")) {
+                    "thinking" -> thinking += block.getString("thinking")
+                    "text" -> text += block.getString("text")
+                }
+            }
+
+            return ApiResponse(thinking = thinking, text = text)
+        } else {
+            // 如果开启 thinking 导致报错，重试不带 thinking
+            val errorMsg = readError(connection, responseCode)
+            if (errorMsg.contains("thinking") || errorMsg.contains("not supported")) {
+                return sendClaudeWithoutThinking(messages, chatUrl, systemContent, messagesArray)
+            }
+            throw Exception(errorMsg)
+        }
+    }
+
+    // Claude 不支持 thinking 时的降级方案
+    private fun sendClaudeWithoutThinking(
+        messages: List<ChatMessage>,
+        chatUrl: String,
+        systemContent: String,
+        messagesArray: JSONArray
+    ): ApiResponse {
+        val connection = URL(chatUrl).openConnection() as HttpURLConnection
+        connection.requestMethod = "POST"
+        connection.setRequestProperty("x-api-key", apiKey)
+        connection.setRequestProperty("anthropic-version", "2023-06-01")
+        connection.setRequestProperty("Content-Type", "application/json")
+        connection.connectTimeout = 30000
+        connection.readTimeout = 60000
+        connection.doOutput = true
 
         val body = JSONObject().apply {
             put("model", model)
@@ -143,7 +218,6 @@ class ApiHelper(
             val response = reader.readText()
             reader.close()
 
-            // Claude 的响应格式：{ content: [{ type: "text", text: "..." }] }
             val json = JSONObject(response)
             val contentArray = json.getJSONArray("content")
             val textParts = StringBuilder()
@@ -153,17 +227,14 @@ class ApiHelper(
                     textParts.append(block.getString("text"))
                 }
             }
-            return textParts.toString()
+            return ApiResponse(thinking = "", text = textParts.toString())
         } else {
             throw Exception(readError(connection, responseCode))
         }
     }
 
     // ===== Gemini 原生格式 =====
-    // 适用于：generativelanguage.googleapis.com 直连
-    // 地址格式：https://generativelanguage.googleapis.com
-    private fun sendGemini(messages: List<ChatMessage>): String {
-        // Gemini 的 URL 格式比较特殊，model 名字嵌在路径里，key 放在参数里
+    private fun sendGemini(messages: List<ChatMessage>): ApiResponse {
         val baseUrl = apiUrl.trimEnd('/')
         val chatUrl = "$baseUrl/v1beta/models/$model:generateContent?key=$apiKey"
 
@@ -174,8 +245,6 @@ class ApiHelper(
         connection.readTimeout = 60000
         connection.doOutput = true
 
-        // Gemini 用 "user" 和 "model" 作为角色名（不是 "assistant"）
-        // system 消息放在 systemInstruction 里
         var systemContent = ""
         val contentsArray = JSONArray()
         for (msg in messages) {
@@ -206,6 +275,12 @@ class ApiHelper(
                     })
                 })
             }
+            // Gemini 2.5 开启思考
+            put("generationConfig", JSONObject().apply {
+                put("thinkingConfig", JSONObject().apply {
+                    put("thinkingBudget", 8000)
+                })
+            })
         }
 
         val writer = OutputStreamWriter(connection.outputStream)
@@ -219,16 +294,49 @@ class ApiHelper(
             val response = reader.readText()
             reader.close()
 
-            // Gemini 的响应：{ candidates: [{ content: { parts: [{ text: "..." }] } }] }
             val json = JSONObject(response)
-            return json.getJSONArray("candidates")
+            val parts = json.getJSONArray("candidates")
                 .getJSONObject(0)
                 .getJSONObject("content")
                 .getJSONArray("parts")
-                .getJSONObject(0)
-                .getString("text")
+
+            var thinking = ""
+            var text = ""
+
+            for (i in 0 until parts.length()) {
+                val part = parts.getJSONObject(i)
+                if (part.has("thought") && part.getBoolean("thought")) {
+                    // Gemini 思考部分有 thought: true 标记
+                    thinking += part.getString("text")
+                } else if (part.has("text")) {
+                    text += part.getString("text")
+                }
+            }
+
+            // 如果没有 thought 标记，尝试提取 <think> 标签
+            if (thinking.isEmpty()) {
+                val extracted = extractThinkTags(text)
+                return extracted
+            }
+
+            return ApiResponse(thinking = thinking, text = text)
         } else {
             throw Exception(readError(connection, responseCode))
+        }
+    }
+
+    // ===== 从文本中提取 <think> 标签 =====
+    private fun extractThinkTags(content: String): ApiResponse {
+        // 匹配 <think>...</think> 或 <thinking>...</thinking>
+        val thinkRegex = Regex("<think(?:ing)?>(.*?)</think(?:ing)?>", RegexOption.DOT_MATCHES_ALL)
+        val match = thinkRegex.find(content)
+
+        return if (match != null) {
+            val thinking = match.groupValues[1].trim()
+            val text = content.replace(match.value, "").trim()
+            ApiResponse(thinking = thinking, text = text)
+        } else {
+            ApiResponse(thinking = "", text = content)
         }
     }
 
@@ -238,7 +346,6 @@ class ApiHelper(
         return try {
             val errText = BufferedReader(InputStreamReader(errorStream)).readText()
             val errJson = JSONObject(errText)
-            // 不同平台的错误格式不一样，多试几种
             errJson.optJSONObject("error")?.optString("message")
                 ?: errJson.optString("message")
                 ?: "请求失败 ($code)"
@@ -248,10 +355,7 @@ class ApiHelper(
     }
 }
 
-/**
- * 一条聊天消息
- */
 data class ChatMessage(
-    val role: String,    // "system" / "user" / "assistant"
+    val role: String,
     val content: String
 )

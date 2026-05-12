@@ -1,17 +1,17 @@
 {
   "allFiles": [
     {
-      "file": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/java/com/haven/guiqi/MarkdownRenderer.kt",
+      "file": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/java/com/haven/guiqi/ApiHelper.kt",
       "selection": {
         "end": {
           "column": 1,
-          "index": 6009,
-          "line": 166
+          "index": 12549,
+          "line": 360
         },
         "start": {
           "column": 1,
-          "index": 6009,
-          "line": 166
+          "index": 12549,
+          "line": 360
         }
       }
     },
@@ -19,14 +19,59 @@
       "file": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/java/com/haven/guiqi/ChatConversationActivity.kt",
       "selection": {
         "end": {
-          "column": 58,
-          "index": 11695,
-          "line": 292
+          "column": 1,
+          "index": 20755,
+          "line": 531
         },
         "start": {
-          "column": 58,
-          "index": 11695,
-          "line": 292
+          "column": 1,
+          "index": 20755,
+          "line": 531
+        }
+      }
+    },
+    {
+      "file": "/storage/emulated/0/AndroidIDEProjects/归栖/app/.gitignore",
+      "selection": {
+        "end": {
+          "column": 0,
+          "index": 0,
+          "line": 0
+        },
+        "start": {
+          "column": 0,
+          "index": 0,
+          "line": 0
+        }
+      }
+    },
+    {
+      "file": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/res/drawable/chat_thinking_bg.xml",
+      "selection": {
+        "end": {
+          "column": 8,
+          "index": 271,
+          "line": 7
+        },
+        "start": {
+          "column": 8,
+          "index": 271,
+          "line": 7
+        }
+      }
+    },
+    {
+      "file": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/java/com/haven/guiqi/ChatStorage.kt",
+      "selection": {
+        "end": {
+          "column": 1,
+          "index": 3399,
+          "line": 127
+        },
+        "start": {
+          "column": 1,
+          "index": 3399,
+          "line": 127
         }
       }
     }

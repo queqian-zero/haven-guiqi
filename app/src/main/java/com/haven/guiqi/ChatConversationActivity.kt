@@ -156,7 +156,12 @@ class ChatConversationActivity : AppCompatActivity() {
                     .format(Date(msg.timestamp))
                 when (msg.role) {
                     "user" -> addUserBubble(msg.content, timeStr)
-                    "assistant" -> addAiBubble(msg.content, timeStr)
+                    "assistant" -> {
+                        if (msg.thinking.isNotEmpty()) {
+                            addThinkingBlock(msg.thinking)
+                        }
+                        addAiBubble(msg.content, timeStr)
+                    }
                 }
                 chatHistory.add(ChatMessage(msg.role, msg.content))
             }
@@ -187,17 +192,27 @@ class ChatConversationActivity : AppCompatActivity() {
         Thread {
             try {
                 val api = ApiHelper(apiUrl, apiKey, apiModel, apiType)
-                val reply = api.sendChat(buildContextWindow())
+                val response = api.sendChat(buildContextWindow())
                 val replyTime = System.currentTimeMillis()
                 val replyTimeStr = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
                     .format(Date(replyTime))
 
-                chatStorage.appendMessage(friendId, StoredMessage("assistant", reply, replyTime))
-                chatHistory.add(ChatMessage("assistant", reply))
+                // 保存回复（包含思考过程）到聊天记录
+                chatStorage.appendMessage(friendId, StoredMessage(
+                    role = "assistant",
+                    content = response.text,
+                    timestamp = replyTime,
+                    thinking = response.thinking
+                ))
+                chatHistory.add(ChatMessage("assistant", response.text))
 
                 handler.post {
                     removeTypingIndicator()
-                    addAiBubble(reply, replyTimeStr)
+                    // 如果有思维链，先显示可折叠的思考块
+                    if (response.thinking.isNotEmpty()) {
+                        addThinkingBlock(response.thinking)
+                    }
+                    addAiBubble(response.text, replyTimeStr)
                 }
             } catch (e: Exception) {
                 handler.post {
@@ -222,7 +237,84 @@ class ChatConversationActivity : AppCompatActivity() {
         Toast.makeText(this, "已复制", Toast.LENGTH_SHORT).show()
     }
 
-    // ===== 用户气泡（右侧） =====
+    // ===== 思维链折叠块 =====
+    private fun addThinkingBlock(thinking: String) {
+        val dp = { value: Int -> (value * resources.displayMetrics.density).toInt() }
+
+        // 外层：跟 AI 气泡一样左对齐，留头像位置
+        val wrapper = LinearLayout(this).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = dp(4) }
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.START
+        }
+
+        // 占位（跟头像同宽，保持对齐）
+        val spacer = View(this).apply {
+            layoutParams = LinearLayout.LayoutParams(dp(28 + 7), dp(1))
+        }
+
+        // 可折叠的思考内容区
+        val thinkingLayout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        }
+
+        // 折叠的内容
+        val contentView = TextView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+            maxWidth = (resources.displayMetrics.widthPixels * 0.75).toInt()
+            this.text = thinking
+            setTextColor(0x66B3A0FF.toInt())
+            textSize = 12f
+            setLineSpacing(0f, 1.3f)
+            setPadding(dp(10), dp(6), dp(10), dp(6))
+            setBackgroundResource(R.drawable.chat_thinking_bg)
+            visibility = View.GONE  // 默认折叠
+        }
+
+        // 点击展开/折叠的标题
+        val toggleView = TextView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+            this.text = "💭 思考过程 ▸"
+            textSize = 11f
+            setTextColor(0x4DB3A0FF.toInt())
+            setPadding(dp(4), dp(2), dp(4), dp(2))
+
+            setOnClickListener {
+                if (contentView.visibility == View.GONE) {
+                    contentView.visibility = View.VISIBLE
+                    this.text = "💭 思考过程 ▾"
+                } else {
+                    contentView.visibility = View.GONE
+                    this.text = "💭 思考过程 ▸"
+                }
+            }
+        }
+
+        // 长按复制思考内容
+        contentView.setOnLongClickListener { copyToClipboard(thinking); true }
+
+        thinkingLayout.addView(toggleView)
+        thinkingLayout.addView(contentView)
+
+        wrapper.addView(spacer)
+        wrapper.addView(thinkingLayout)
+        messagesContainer.addView(wrapper)
+    }
+
+    // ===== 用户气泡 =====
     private fun addUserBubble(msg: String, timeStr: String): View {
         val dp = { value: Int -> (value * resources.displayMetrics.density).toInt() }
 
@@ -276,7 +368,7 @@ class ChatConversationActivity : AppCompatActivity() {
         return wrapper
     }
 
-    // ===== AI 气泡（左侧，Markdown 渲染） =====
+    // ===== AI 气泡 =====
     private fun addAiBubble(msg: String, timeStr: String) {
         val dp = { value: Int -> (value * resources.displayMetrics.density).toInt() }
 
@@ -403,7 +495,7 @@ class ChatConversationActivity : AppCompatActivity() {
             gravity = Gravity.START
         }
         val avatar = TextView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(dp(28), dp(28)).apply {
+            layoutParams = LinearLayout.LayoutParams(dp(30), dp(30)).apply {
                 marginEnd = dp(7); topMargin = dp(2)
             }
             gravity = Gravity.CENTER
