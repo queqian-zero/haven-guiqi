@@ -74,7 +74,37 @@
           "line": 127
         }
       }
+    },
+    {
+      "file": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/java/com/haven/guiqi/ChatActivity.kt",
+      "selection": {
+        "end": {
+          "column": 1,
+          "index": 24422,
+          "line": 691
+        },
+        "start": {
+          "column": 1,
+          "index": 24422,
+          "line": 691
+        }
+      }
+    },
+    {
+      "file": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/res/layout/activity_chat.xml",
+      "selection": {
+        "end": {
+          "column": 15,
+          "index": 9764,
+          "line": 269
+        },
+        "start": {
+          "column": 15,
+          "index": 9764,
+          "line": 269
+        }
+      }
     }
   ],
-  "selectedFile": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/java/com/haven/guiqi/ChatConversationActivity.kt"
+  "selectedFile": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/res/layout/activity_chat.xml"
 }

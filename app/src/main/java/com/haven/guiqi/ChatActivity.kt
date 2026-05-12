@@ -111,6 +111,11 @@ class ChatActivity : AppCompatActivity() {
         btnTabFriends.setOnClickListener { switchTab(1) }
         btnTabFootprints.setOnClickListener { switchTab(2) }
         btnTabProfile.setOnClickListener { switchTab(3) }
+
+        // ===== 来信页加号按钮 =====
+        findViewById<TextView>(R.id.btnAddFromMessages).setOnClickListener {
+            showAddFriendDialog()
+        }
     }
 
     // 每次回到这个页面都刷新列表（从聊天回来后显示最新消息）
@@ -297,6 +302,25 @@ class ChatActivity : AppCompatActivity() {
         }
 
         topRow.addView(tvName)
+
+        // 模型标签（如果有单独配置的话显示）
+        if (friend.apiModel.isNotEmpty()) {
+            val modelName = friend.apiModel.split("/").last()  // 去掉前缀只显示模型名
+            val shortName = if (modelName.length > 12) modelName.substring(0, 12) + ".." else modelName
+            val tvModel = TextView(this).apply {
+                this.text = shortName
+                textSize = 8f
+                setTextColor(0x4DB3A0FF.toInt())
+                setPadding(dp(6), dp(1), dp(6), dp(1))
+                background = getDrawable(R.drawable.chat_card_bg)
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { marginEnd = dp(6) }
+            }
+            topRow.addView(tvModel)
+        }
+
         topRow.addView(tvTime)
 
         val tvLastMsg = TextView(this).apply {
