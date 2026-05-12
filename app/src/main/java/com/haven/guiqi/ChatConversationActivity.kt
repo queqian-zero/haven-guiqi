@@ -45,12 +45,8 @@ class ChatConversationActivity : AppCompatActivity() {
     private var apiModel = ""
     private var apiType = "openai"
 
-    // 完整聊天历史
     private val chatHistory = mutableListOf<ChatMessage>()
-
-    // 滑动窗口大小：只把最近 N 条发给 API
     private val maxContextMessages = 30
-
     private lateinit var chatStorage: ChatStorage
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -105,27 +101,22 @@ class ChatConversationActivity : AppCompatActivity() {
     }
 
     private fun loadApiConfig() {
-        // 先查好友是否有专属 API 配置
         val friendStorage = FriendStorage(this)
         val friend = friendStorage.getFriend(friendId)
-
         if (friend != null && friend.apiUrl.isNotEmpty() && friend.apiKey.isNotEmpty()) {
-            // 用好友专属配置
             apiUrl = friend.apiUrl
             apiKey = friend.apiKey
             apiModel = friend.apiModel
             apiType = friend.apiType
         } else {
-            // 用全局配置
             val prefs = getSharedPreferences("haven_prefs", MODE_PRIVATE)
             apiUrl = prefs.getString("api_url", "") ?: ""
             apiKey = prefs.getString("api_key", "") ?: ""
             apiModel = prefs.getString("api_model", "") ?: ""
-            apiType = "openai"  // 全局配置默认 OpenAI 格式
+            apiType = "openai"
         }
     }
 
-    // 构建滑动窗口：system 消息 + 最近 N 条对话
     private fun buildContextWindow(): List<ChatMessage> {
         val systemMsgs = chatHistory.filter { it.role == "system" }
         val nonSystemMsgs = chatHistory.filter { it.role != "system" }
@@ -143,7 +134,6 @@ class ChatConversationActivity : AppCompatActivity() {
         chatHistory.add(ChatMessage("system", "当前时间: $timeInfo"))
 
         val savedMessages = chatStorage.loadMessages(friendId)
-
         if (savedMessages.isEmpty()) {
             addTimeLabel("—— 今天 ——")
             if (apiUrl.isEmpty() || apiKey.isEmpty() || apiModel.isEmpty()) {
@@ -197,7 +187,6 @@ class ChatConversationActivity : AppCompatActivity() {
         Thread {
             try {
                 val api = ApiHelper(apiUrl, apiKey, apiModel, apiType)
-                // 用滑动窗口而不是完整历史
                 val reply = api.sendChat(buildContextWindow())
                 val replyTime = System.currentTimeMillis()
                 val replyTimeStr = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
@@ -227,7 +216,6 @@ class ChatConversationActivity : AppCompatActivity() {
         }.start()
     }
 
-    // ===== 复制到剪贴板 =====
     private fun copyToClipboard(content: String) {
         val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         clipboard.setPrimaryClip(ClipData.newPlainText("chat_message", content))
@@ -242,7 +230,7 @@ class ChatConversationActivity : AppCompatActivity() {
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { bottomMargin = dp(10) }
+            ).apply { bottomMargin = dp(8) }
             gravity = Gravity.END
         }
 
@@ -251,14 +239,13 @@ class ChatConversationActivity : AppCompatActivity() {
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
             )
-            maxWidth = (resources.displayMetrics.widthPixels * 0.75).toInt()
-            this.text = msg
+            maxWidth = (resources.displayMetrics.widthPixels * 0.82).toInt()
+            this.text = MarkdownRenderer.render(msg)
             setTextColor(0xB3FFFFFF.toInt())
             textSize = 14f
-            setLineSpacing(0f, 1.4f)
-            setPadding(dp(12), dp(9), dp(12), dp(9))
+            setLineSpacing(0f, 1.35f)
+            setPadding(dp(11), dp(8), dp(11), dp(8))
             setBackgroundResource(R.drawable.chat_bubble_user)
-            // 长按复制
             setOnLongClickListener { copyToClipboard(msg); true }
         }
 
@@ -266,7 +253,7 @@ class ChatConversationActivity : AppCompatActivity() {
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { topMargin = dp(3) }
+            ).apply { topMargin = dp(2) }
             gravity = Gravity.END
             this.text = timeStr
             textSize = 9f
@@ -289,7 +276,7 @@ class ChatConversationActivity : AppCompatActivity() {
         return wrapper
     }
 
-    // ===== AI 气泡（左侧） =====
+    // ===== AI 气泡（左侧，Markdown 渲染） =====
     private fun addAiBubble(msg: String, timeStr: String) {
         val dp = { value: Int -> (value * resources.displayMetrics.density).toInt() }
 
@@ -297,18 +284,18 @@ class ChatConversationActivity : AppCompatActivity() {
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { bottomMargin = dp(10) }
+            ).apply { bottomMargin = dp(8) }
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.START
         }
 
         val avatar = TextView(this).apply {
             layoutParams = LinearLayout.LayoutParams(dp(30), dp(30)).apply {
-                marginEnd = dp(8); topMargin = dp(2)
+                marginEnd = dp(7); topMargin = dp(2)
             }
             gravity = Gravity.CENTER
             this.text = friendIcon
-            textSize = 13f
+            textSize = 12f
             setTextColor(0x80B3A0FF.toInt())
             setBackgroundResource(R.drawable.icon_bg)
         }
@@ -326,14 +313,13 @@ class ChatConversationActivity : AppCompatActivity() {
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
             )
-            maxWidth = (resources.displayMetrics.widthPixels * 0.72).toInt()
-            this.text = msg
+            maxWidth = (resources.displayMetrics.widthPixels * 0.80).toInt()
+            this.text = MarkdownRenderer.render(msg)
             setTextColor(0xB3FFFFFF.toInt())
             textSize = 14f
-            setLineSpacing(0f, 1.4f)
-            setPadding(dp(12), dp(9), dp(12), dp(9))
+            setLineSpacing(0f, 1.35f)
+            setPadding(dp(11), dp(8), dp(11), dp(8))
             setBackgroundResource(R.drawable.chat_bubble_ai)
-            // 长按复制
             setOnLongClickListener { copyToClipboard(msg); true }
         }
 
@@ -341,7 +327,7 @@ class ChatConversationActivity : AppCompatActivity() {
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { topMargin = dp(3) }
+            ).apply { topMargin = dp(2) }
             this.text = timeStr
             textSize = 9f
             setTextColor(0x1AFFFFFF.toInt())
@@ -362,12 +348,12 @@ class ChatConversationActivity : AppCompatActivity() {
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { topMargin = dp(4); bottomMargin = dp(12) }
+            ).apply { topMargin = dp(4); bottomMargin = dp(10) }
             gravity = Gravity.CENTER
             this.text = msg
             textSize = 11f
             setTextColor(0x33FFFFFF.toInt())
-            setLineSpacing(0f, 1.4f)
+            setLineSpacing(0f, 1.35f)
             setPadding(dp(20), 0, dp(20), 0)
         }
         messagesContainer.addView(tip)
@@ -380,7 +366,7 @@ class ChatConversationActivity : AppCompatActivity() {
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { topMargin = dp(8); bottomMargin = dp(12) }
+            ).apply { topMargin = dp(6); bottomMargin = dp(10) }
             gravity = Gravity.CENTER
             this.text = labelText
             textSize = 10f
@@ -412,17 +398,17 @@ class ChatConversationActivity : AppCompatActivity() {
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { bottomMargin = dp(10) }
+            ).apply { bottomMargin = dp(8) }
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.START
         }
         val avatar = TextView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(dp(30), dp(30)).apply {
-                marginEnd = dp(8); topMargin = dp(2)
+            layoutParams = LinearLayout.LayoutParams(dp(28), dp(28)).apply {
+                marginEnd = dp(7); topMargin = dp(2)
             }
             gravity = Gravity.CENTER
             this.text = friendIcon
-            textSize = 13f
+            textSize = 12f
             setTextColor(0x80B3A0FF.toInt())
             setBackgroundResource(R.drawable.icon_bg)
         }
@@ -434,7 +420,7 @@ class ChatConversationActivity : AppCompatActivity() {
             this.text = "$friendName 正在输入..."
             textSize = 12f
             setTextColor(0x4DB3A0FF.toInt())
-            setPadding(dp(12), dp(9), dp(12), dp(9))
+            setPadding(dp(11), dp(8), dp(11), dp(8))
             setBackgroundResource(R.drawable.chat_bubble_ai)
         }
         wrapper.addView(avatar)
