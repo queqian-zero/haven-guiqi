@@ -1,9 +1,26 @@
 <resources xmlns:tools="http://schemas.android.com/tools">
   <!-- Base application theme. -->
   <style name="Base.AppTheme" parent="Theme.Material3.DayNight.NoActionBar">
-    <!-- Customize your theme here. -->
-    <!-- <item name="colorPrimary">@color/my_light_primary</item> -->
+    <!-- 让所有弹窗都用深色主题 -->
+    <item name="alertDialogTheme">@style/HavenDialogTheme</item>
+    <item name="android:alertDialogTheme">@style/HavenDialogTheme</item>
   </style>
 
   <style name="AppTheme" parent="Base.AppTheme" />
+
+  <!-- 归栖深色弹窗主题 -->
+  <style name="HavenDialogTheme" parent="ThemeOverlay.Material3.MaterialAlertDialog">
+    <item name="android:windowBackground">@drawable/dialog_bg</item>
+    <item name="android:textColor">#D9FFFFFF</item>
+    <item name="android:textColorPrimary">#D9FFFFFF</item>
+    <item name="android:textColorSecondary">#80FFFFFF</item>
+    <item name="android:textColorHint">#4DFFFFFF</item>
+    <item name="android:editTextColor">#D9FFFFFF</item>
+    <item name="colorPrimary">#B3A0FF</item>
+    <item name="colorOnPrimary">#FFFFFF</item>
+    <item name="colorOnSurface">#D9FFFFFF</item>
+    <item name="colorOnSurfaceVariant">#B3FFFFFF</item>
+    <item name="colorSurface">#0D1B2A</item>
+    <item name="colorSurfaceVariant">#1A2535</item>
+  </style>
 </resources>

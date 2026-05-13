@@ -1,110 +1,50 @@
 {
   "allFiles": [
     {
-      "file": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/java/com/haven/guiqi/ApiHelper.kt",
+      "file": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/java/com/haven/guiqi/ChatSettingsActivity.kt",
       "selection": {
         "end": {
           "column": 1,
-          "index": 12549,
-          "line": 360
+          "index": 13483,
+          "line": 383
         },
         "start": {
           "column": 1,
-          "index": 12549,
-          "line": 360
+          "index": 13483,
+          "line": 383
         }
       }
     },
     {
-      "file": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/java/com/haven/guiqi/ChatConversationActivity.kt",
+      "file": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/res/values/themes.xml",
       "selection": {
         "end": {
-          "column": 1,
-          "index": 20755,
-          "line": 531
+          "column": 12,
+          "index": 1174,
+          "line": 25
         },
         "start": {
-          "column": 1,
-          "index": 20755,
-          "line": 531
+          "column": 12,
+          "index": 1174,
+          "line": 25
         }
       }
     },
     {
-      "file": "/storage/emulated/0/AndroidIDEProjects/归栖/app/.gitignore",
+      "file": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/res/values-night/themes.xml",
       "selection": {
         "end": {
-          "column": 0,
-          "index": 0,
-          "line": 0
+          "column": 12,
+          "index": 1094,
+          "line": 22
         },
         "start": {
-          "column": 0,
-          "index": 0,
-          "line": 0
-        }
-      }
-    },
-    {
-      "file": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/res/drawable/chat_thinking_bg.xml",
-      "selection": {
-        "end": {
-          "column": 8,
-          "index": 271,
-          "line": 7
-        },
-        "start": {
-          "column": 8,
-          "index": 271,
-          "line": 7
-        }
-      }
-    },
-    {
-      "file": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/java/com/haven/guiqi/ChatStorage.kt",
-      "selection": {
-        "end": {
-          "column": 1,
-          "index": 3399,
-          "line": 127
-        },
-        "start": {
-          "column": 1,
-          "index": 3399,
-          "line": 127
-        }
-      }
-    },
-    {
-      "file": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/java/com/haven/guiqi/ChatActivity.kt",
-      "selection": {
-        "end": {
-          "column": 1,
-          "index": 24422,
-          "line": 691
-        },
-        "start": {
-          "column": 1,
-          "index": 24422,
-          "line": 691
-        }
-      }
-    },
-    {
-      "file": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/res/layout/activity_chat.xml",
-      "selection": {
-        "end": {
-          "column": 15,
-          "index": 9764,
-          "line": 269
-        },
-        "start": {
-          "column": 15,
-          "index": 9764,
-          "line": 269
+          "column": 12,
+          "index": 1094,
+          "line": 22
         }
       }
     }
   ],
-  "selectedFile": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/res/layout/activity_chat.xml"
+  "selectedFile": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/res/values-night/themes.xml"
 }

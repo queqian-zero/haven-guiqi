@@ -23,5 +23,6 @@
         <activity android:name=".SettingsActivity" />
         <activity android:name=".ChatActivity" />
         <activity android:name=".ChatConversationActivity" />
+        <activity android:name=".ChatSettingsActivity" />
     </application>
 </manifest>

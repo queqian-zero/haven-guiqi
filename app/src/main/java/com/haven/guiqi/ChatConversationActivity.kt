@@ -3,6 +3,7 @@ package com.haven.guiqi
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -46,7 +47,7 @@ class ChatConversationActivity : AppCompatActivity() {
     private var apiType = "openai"
 
     private val chatHistory = mutableListOf<ChatMessage>()
-    private val maxContextMessages = 30
+    private var maxContextMessages = 30
     private lateinit var chatStorage: ChatStorage
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -93,11 +94,20 @@ class ChatConversationActivity : AppCompatActivity() {
 
         btnBack.setOnClickListener { finish() }
         btnMenu.setOnClickListener {
-            Toast.makeText(this, "聊天设置开发中 ♡", Toast.LENGTH_SHORT).show()
+            val intent = Intent(this, ChatSettingsActivity::class.java)
+            intent.putExtra("friend_id", friendId)
+            intent.putExtra("friend_name", friendName)
+            startActivity(intent)
         }
         btnSend.setOnClickListener { sendMessage() }
 
         initChat()
+    }
+
+    // 从设置页回来时重新加载配置（API可能被改了，聊天记录可能被清了）
+    override fun onResume() {
+        super.onResume()
+        loadApiConfig()
     }
 
     private fun loadApiConfig() {
@@ -115,6 +125,9 @@ class ChatConversationActivity : AppCompatActivity() {
             apiModel = prefs.getString("api_model", "") ?: ""
             apiType = "openai"
         }
+        // 读取每个好友单独的上下文条数
+        val chatPrefs = getSharedPreferences("haven_chat_prefs", MODE_PRIVATE)
+        maxContextMessages = chatPrefs.getInt("context_$friendId", 30)
     }
 
     private fun buildContextWindow(): List<ChatMessage> {
