@@ -50,13 +50,13 @@
       "selection": {
         "end": {
           "column": 1,
-          "index": 39603,
-          "line": 1090
+          "index": 49524,
+          "line": 1360
         },
         "start": {
           "column": 1,
-          "index": 39603,
-          "line": 1090
+          "index": 49524,
+          "line": 1360
         }
       }
     },
@@ -65,13 +65,13 @@
       "selection": {
         "end": {
           "column": 1,
-          "index": 28107,
-          "line": 724
+          "index": 29697,
+          "line": 748
         },
         "start": {
           "column": 1,
-          "index": 28107,
-          "line": 724
+          "index": 29697,
+          "line": 748
         }
       }
     },
@@ -80,13 +80,13 @@
       "selection": {
         "end": {
           "column": 15,
-          "index": 10017,
-          "line": 275
+          "index": 10949,
+          "line": 298
         },
         "start": {
           "column": 15,
-          "index": 10017,
-          "line": 275
+          "index": 10949,
+          "line": 298
         }
       }
     },
@@ -119,7 +119,37 @@
           "line": 132
         }
       }
+    },
+    {
+      "file": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/java/com/haven/guiqi/FootprintStorage.kt",
+      "selection": {
+        "end": {
+          "column": 1,
+          "index": 5026,
+          "line": 155
+        },
+        "start": {
+          "column": 1,
+          "index": 5026,
+          "line": 155
+        }
+      }
+    },
+    {
+      "file": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/res/layout/activity_chat_conversation.xml",
+      "selection": {
+        "end": {
+          "column": 15,
+          "index": 4952,
+          "line": 147
+        },
+        "start": {
+          "column": 15,
+          "index": 4952,
+          "line": 147
+        }
+      }
     }
   ],
-  "selectedFile": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/java/com/haven/guiqi/ChatStorage.kt"
+  "selectedFile": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/res/layout/activity_chat_conversation.xml"
 }

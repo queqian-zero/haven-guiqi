@@ -87,6 +87,14 @@
             android:paddingBottom="8dp" />
     </ScrollView>
 
+    <!-- ===== 图片预览区（选图后显示在这里） ===== -->
+    <LinearLayout
+        android:id="@+id/imagePreviewContainer"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:visibility="gone" />
+
     <!-- ===== 底部输入栏 ===== -->
     <LinearLayout
         android:layout_width="match_parent"

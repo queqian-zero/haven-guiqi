@@ -103,24 +103,47 @@
             android:orientation="vertical"
             android:visibility="gone">
 
-            <TextView
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
                 android:paddingHorizontal="20dp"
                 android:paddingTop="16dp"
-                android:paddingBottom="12dp"
-                android:text="足迹"
-                android:textColor="#BFFFFFFF"
-                android:textSize="22sp"
-                android:letterSpacing="0.15" />
+                android:paddingBottom="12dp">
 
-            <TextView
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="足迹"
+                    android:textColor="#BFFFFFFF"
+                    android:textSize="22sp"
+                    android:letterSpacing="0.15" />
+
+                <TextView
+                    android:id="@+id/btnPostFootprint"
+                    android:layout_width="32dp"
+                    android:layout_height="32dp"
+                    android:gravity="center"
+                    android:text="✎"
+                    android:textColor="#40B3A0FF"
+                    android:textSize="18sp" />
+            </LinearLayout>
+
+            <ScrollView
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
-                android:gravity="center"
-                android:text="你们共同走过的时光"
-                android:textColor="#33FFFFFF"
-                android:textSize="13sp" />
+                android:scrollbars="none"
+                android:paddingHorizontal="14dp">
+
+                <LinearLayout
+                    android:id="@+id/footprintsList"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:paddingBottom="24dp" />
+            </ScrollView>
         </LinearLayout>
 
         <!-- 我的页 -->

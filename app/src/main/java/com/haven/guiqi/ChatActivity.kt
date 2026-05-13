@@ -54,10 +54,12 @@ class ChatActivity : AppCompatActivity() {
     private lateinit var messagesList: LinearLayout
     private lateinit var friendsList: LinearLayout
     private lateinit var profileContainer: LinearLayout
+    private lateinit var footprintsList: LinearLayout
 
     // ===== 数据 =====
     private lateinit var friendStorage: FriendStorage
     private lateinit var chatStorage: ChatStorage
+    private lateinit var footprintStorage: FootprintStorage
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -110,10 +112,12 @@ class ChatActivity : AppCompatActivity() {
         messagesList = findViewById(R.id.messagesList)
         friendsList = findViewById(R.id.friendsList)
         profileContainer = findViewById(R.id.profileContainer)
+        footprintsList = findViewById(R.id.footprintsList)
 
         // ===== 初始化数据 =====
         friendStorage = FriendStorage(this)
         chatStorage = ChatStorage(this)
+        footprintStorage = FootprintStorage(this)
 
         // ===== 标签切换 =====
         btnTabMessages.setOnClickListener { switchTab(0) }
@@ -125,6 +129,11 @@ class ChatActivity : AppCompatActivity() {
         findViewById<TextView>(R.id.btnAddFromMessages).setOnClickListener {
             showAddFriendDialog()
         }
+
+        // ===== 足迹发布按钮 =====
+        findViewById<TextView>(R.id.btnPostFootprint).setOnClickListener {
+            showPostFootprintDialog()
+        }
     }
 
     // 每次回到这个页面都刷新列表（从聊天回来后显示最新消息）
@@ -133,6 +142,7 @@ class ChatActivity : AppCompatActivity() {
         refreshMessagesList()
         refreshFriendsList()
         refreshProfile()
+        refreshFootprints()
     }
 
     // ===== 切换标签页 =====
@@ -885,6 +895,266 @@ class ChatActivity : AppCompatActivity() {
         }
 
         profileContainer.addView(card)
+    }
+
+    // ===== 刷新足迹列表 =====
+    private fun refreshFootprints() {
+        footprintsList.removeAllViews()
+        val dp = { value: Int -> (value * resources.displayMetrics.density).toInt() }
+
+        val footprints = footprintStorage.loadFootprints()
+
+        if (footprints.isEmpty()) {
+            val hint = TextView(this).apply {
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { topMargin = dp(80) }
+                gravity = Gravity.CENTER
+                this.text = "还没有足迹~\n点右上角 ✎ 发布第一条吧"
+                textSize = 13f
+                setTextColor(0x26FFFFFF.toInt())
+                setLineSpacing(0f, 1.4f)
+            }
+            footprintsList.addView(hint)
+            return
+        }
+
+        for (fp in footprints) {
+            addFootprintCard(fp)
+        }
+    }
+
+    // ===== 足迹卡片 =====
+    private fun addFootprintCard(fp: Footprint) {
+        val dp = { value: Int -> (value * resources.displayMetrics.density).toInt() }
+
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = getDrawable(R.drawable.chat_card_bg)
+            setPadding(dp(14), dp(12), dp(14), dp(12))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = dp(10) }
+        }
+
+        // 头部：头像 + 名字 + 时间
+        val header = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = dp(8) }
+        }
+
+        val isUser = fp.authorId == "user"
+        val avatar = TextView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(dp(28), dp(28)).apply {
+                marginEnd = dp(8)
+            }
+            gravity = Gravity.CENTER
+            this.text = if (isUser) "♡" else "★"
+            textSize = 12f
+            setTextColor(if (isUser) 0x80FFFFFF.toInt() else 0x80B3A0FF.toInt())
+            setBackgroundResource(R.drawable.icon_bg)
+        }
+
+        val name = TextView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            this.text = fp.authorName
+            textSize = 13f
+            setTextColor(0x99FFFFFF.toInt())
+        }
+
+        val timeAgo = TextView(this).apply {
+            this.text = formatTimeAgo(fp.timestamp)
+            textSize = 10f
+            setTextColor(0x26FFFFFF.toInt())
+        }
+
+        header.addView(avatar)
+        header.addView(name)
+        header.addView(timeAgo)
+        card.addView(header)
+
+        // 正文
+        if (fp.content.isNotEmpty()) {
+            val content = TextView(this).apply {
+                this.text = fp.content
+                textSize = 14f
+                setTextColor(0xB3FFFFFF.toInt())
+                setLineSpacing(0f, 1.4f)
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { bottomMargin = dp(6) }
+            }
+            card.addView(content)
+        }
+
+        // 图片
+        if (fp.imagePath.isNotEmpty()) {
+            val file = java.io.File(fp.imagePath)
+            if (file.exists()) {
+                val imageView = android.widget.ImageView(this).apply {
+                    layoutParams = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT
+                    ).apply { bottomMargin = dp(6) }
+                    adjustViewBounds = true
+                    scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
+                    val bitmap = android.graphics.BitmapFactory.decodeFile(fp.imagePath)
+                    setImageBitmap(bitmap)
+                }
+                card.addView(imageView)
+            }
+        }
+
+        // 评论区
+        if (fp.comments.isNotEmpty()) {
+            val commentBg = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setBackgroundColor(0x08FFFFFF.toInt())
+                setPadding(dp(10), dp(6), dp(10), dp(6))
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { bottomMargin = dp(6) }
+            }
+
+            for (c in fp.comments) {
+                val commentView = TextView(this).apply {
+                    this.text = "${c.authorName}: ${c.content}"
+                    textSize = 12f
+                    setTextColor(0x80FFFFFF.toInt())
+                    setLineSpacing(0f, 1.3f)
+                    layoutParams = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT
+                    ).apply { bottomMargin = dp(2) }
+                }
+                commentBg.addView(commentView)
+            }
+            card.addView(commentBg)
+        }
+
+        // 底部操作栏：评论 + 删除
+        val actions = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+
+        val btnComment = TextView(this).apply {
+            this.text = "💬 评论"
+            textSize = 11f
+            setTextColor(0x4DFFFFFF.toInt())
+            setPadding(0, dp(4), dp(16), dp(4))
+            setOnClickListener { showCommentDialog(fp) }
+        }
+        actions.addView(btnComment)
+
+        // 只有自己发的才能删
+        if (fp.authorId == "user") {
+            val btnDelete = TextView(this).apply {
+                this.text = "🗑 删除"
+                textSize = 11f
+                setTextColor(0x33FF6B6B.toInt())
+                setPadding(0, dp(4), 0, dp(4))
+                setOnClickListener {
+                    AlertDialog.Builder(this@ChatActivity)
+                        .setTitle("删除足迹")
+                        .setMessage("确定删除这条足迹吗？")
+                        .setPositiveButton("删除") { _, _ ->
+                            footprintStorage.deleteFootprint(fp.id)
+                            refreshFootprints()
+                        }
+                        .setNegativeButton("取消", null)
+                        .show()
+                }
+            }
+            actions.addView(btnDelete)
+        }
+
+        card.addView(actions)
+        footprintsList.addView(card)
+    }
+
+    // ===== 发布足迹对话框 =====
+    private fun showPostFootprintDialog() {
+        val dp = { value: Int -> (value * resources.displayMetrics.density).toInt() }
+        val prefs = getSharedPreferences("haven_prefs", MODE_PRIVATE)
+        val userName = prefs.getString("user_name", "") ?: ""
+
+        if (userName.isEmpty()) {
+            Toast.makeText(this, "请先在「我的」页面设置名字", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val input = EditText(this).apply {
+            this.hint = "此刻你在想什么..."
+            setPadding(dp(16), dp(12), dp(16), dp(12))
+            textSize = 14f
+            minLines = 3
+            gravity = Gravity.TOP
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle("发布足迹")
+            .setView(input)
+            .setPositiveButton("发布") { _, _ ->
+                val content = input.text.toString().trim()
+                if (content.isNotEmpty()) {
+                    footprintStorage.addFootprint("user", userName, content)
+                    refreshFootprints()
+                    Toast.makeText(this, "已发布 ♡", Toast.LENGTH_SHORT).show()
+                }
+            }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    // ===== 评论对话框 =====
+    private fun showCommentDialog(fp: Footprint) {
+        val dp = { value: Int -> (value * resources.displayMetrics.density).toInt() }
+        val prefs = getSharedPreferences("haven_prefs", MODE_PRIVATE)
+        val userName = prefs.getString("user_name", "") ?: "我"
+
+        val input = EditText(this).apply {
+            this.hint = "写点评论..."
+            setPadding(dp(16), dp(12), dp(16), dp(12))
+            textSize = 14f
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle("评论")
+            .setView(input)
+            .setPositiveButton("发送") { _, _ ->
+                val content = input.text.toString().trim()
+                if (content.isNotEmpty()) {
+                    footprintStorage.addComment(fp.id, "user", userName, content)
+                    refreshFootprints()
+                }
+            }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    // ===== 时间格式化（几分钟前/几小时前） =====
+    private fun formatTimeAgo(timestamp: Long): String {
+        val diff = System.currentTimeMillis() - timestamp
+        val minutes = diff / 60000
+        val hours = minutes / 60
+        val days = hours / 24
+
+        return when {
+            minutes < 1 -> "刚刚"
+            minutes < 60 -> "${minutes}分钟前"
+            hours < 24 -> "${hours}小时前"
+            days < 7 -> "${days}天前"
+            else -> SimpleDateFormat("M月d日", Locale.CHINESE).format(Date(timestamp))
+        }
     }
 
     // ===== 导出数据 =====
