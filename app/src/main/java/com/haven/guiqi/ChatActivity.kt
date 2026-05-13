@@ -2,6 +2,7 @@ package com.haven.guiqi
 
 import android.app.AlertDialog
 import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.view.Gravity
@@ -16,10 +17,16 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import org.json.JSONArray
+import org.json.JSONObject
 import java.text.SimpleDateFormat
 import java.util.*
 
 class ChatActivity : AppCompatActivity() {
+
+    // 文件操作请求码
+    private val EXPORT_REQUEST = 2001
+    private val IMPORT_REQUEST = 2002
 
     // ===== 四个标签页 =====
     private lateinit var tabMessages: LinearLayout
@@ -769,11 +776,11 @@ class ChatActivity : AppCompatActivity() {
         addProfileSectionTitle("数据管理")
 
         addProfileItem("导出数据", "", "把好友和聊天记录导出备份") {
-            Toast.makeText(this, "导出功能开发中 ♡", Toast.LENGTH_SHORT).show()
+            startExport()
         }
 
         addProfileItem("导入数据", "", "从备份文件恢复好友和聊天记录") {
-            Toast.makeText(this, "导入功能开发中 ♡", Toast.LENGTH_SHORT).show()
+            startImport()
         }
 
         addProfileSectionTitle("关于")
@@ -878,6 +885,173 @@ class ChatActivity : AppCompatActivity() {
         }
 
         profileContainer.addView(card)
+    }
+
+    // ===== 导出数据 =====
+    private fun startExport() {
+        val dateStr = SimpleDateFormat("yyyyMMdd_HHmm", Locale.getDefault()).format(Date())
+        val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "application/json"
+            putExtra(Intent.EXTRA_TITLE, "haven_backup_$dateStr.json")
+        }
+        startActivityForResult(intent, EXPORT_REQUEST)
+    }
+
+    private fun doExport(uri: Uri) {
+        try {
+            val friends = friendStorage.loadFriends()
+
+            // 构建导出数据
+            val friendsArray = JSONArray()
+            for (f in friends) {
+                val chatMessages = chatStorage.loadMessages(f.id)
+                val msgsArray = JSONArray()
+                for (msg in chatMessages) {
+                    msgsArray.put(JSONObject().apply {
+                        put("role", msg.role)
+                        put("content", msg.content)
+                        put("timestamp", msg.timestamp)
+                        if (msg.thinking.isNotEmpty()) put("thinking", msg.thinking)
+                    })
+                }
+
+                friendsArray.put(JSONObject().apply {
+                    put("id", f.id)
+                    put("name", f.name)
+                    put("group", f.group)
+                    put("icon", f.icon)
+                    put("bio", f.bio)
+                    put("api_url", f.apiUrl)
+                    put("api_key", f.apiKey)
+                    put("api_model", f.apiModel)
+                    put("api_type", f.apiType)
+                    put("created_at", f.createdAt)
+                    put("messages", msgsArray)
+                })
+            }
+
+            val prefs = getSharedPreferences("haven_prefs", MODE_PRIVATE)
+            val exportData = JSONObject().apply {
+                put("app", "haven_guiqi")
+                put("version", "0.1.0")
+                put("export_time", System.currentTimeMillis())
+                put("user_name", prefs.getString("user_name", "") ?: "")
+                put("friends", friendsArray)
+            }
+
+            // 写入文件
+            contentResolver.openOutputStream(uri)?.use { stream ->
+                stream.write(exportData.toString(2).toByteArray())
+            }
+
+            val totalMsgs = friends.sumOf { chatStorage.loadMessages(it.id).size }
+            Toast.makeText(this,
+                "导出成功 ♡\n${friends.size} 个好友，$totalMsgs 条消息",
+                Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            Toast.makeText(this, "导出失败: ${e.message}", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    // ===== 导入数据 =====
+    private fun startImport() {
+        AlertDialog.Builder(this)
+            .setTitle("导入数据")
+            .setMessage("导入会覆盖当前的好友和聊天记录，确定继续吗？\n建议先导出一份当前数据备份。")
+            .setPositiveButton("选择文件") { _, _ ->
+                val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                    addCategory(Intent.CATEGORY_OPENABLE)
+                    type = "application/json"
+                }
+                startActivityForResult(intent, IMPORT_REQUEST)
+            }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    private fun doImport(uri: Uri) {
+        try {
+            val jsonStr = contentResolver.openInputStream(uri)?.use { stream ->
+                stream.bufferedReader().readText()
+            } ?: throw Exception("无法读取文件")
+
+            val data = JSONObject(jsonStr)
+
+            // 验证是归栖的备份文件
+            if (data.optString("app") != "haven_guiqi") {
+                Toast.makeText(this, "这不是归栖的备份文件", Toast.LENGTH_SHORT).show()
+                return
+            }
+
+            // 恢复用户名
+            val userName = data.optString("user_name", "")
+            if (userName.isNotEmpty()) {
+                getSharedPreferences("haven_prefs", MODE_PRIVATE)
+                    .edit().putString("user_name", userName).apply()
+            }
+
+            // 恢复好友和聊天记录
+            val friendsArray = data.getJSONArray("friends")
+            val friends = mutableListOf<Friend>()
+
+            for (i in 0 until friendsArray.length()) {
+                val obj = friendsArray.getJSONObject(i)
+                val friend = Friend(
+                    id = obj.getString("id"),
+                    name = obj.getString("name"),
+                    group = obj.optString("group", "好友"),
+                    icon = obj.optString("icon", "★"),
+                    bio = obj.optString("bio", ""),
+                    apiUrl = obj.optString("api_url", ""),
+                    apiKey = obj.optString("api_key", ""),
+                    apiModel = obj.optString("api_model", ""),
+                    apiType = obj.optString("api_type", "openai"),
+                    createdAt = obj.optLong("created_at", System.currentTimeMillis())
+                )
+                friends.add(friend)
+
+                // 恢复聊天记录
+                val msgsArray = obj.optJSONArray("messages")
+                if (msgsArray != null && msgsArray.length() > 0) {
+                    val messages = mutableListOf<StoredMessage>()
+                    for (j in 0 until msgsArray.length()) {
+                        val msgObj = msgsArray.getJSONObject(j)
+                        messages.add(StoredMessage(
+                            role = msgObj.getString("role"),
+                            content = msgObj.getString("content"),
+                            timestamp = msgObj.optLong("timestamp", 0L),
+                            thinking = msgObj.optString("thinking", "")
+                        ))
+                    }
+                    chatStorage.saveMessages(friend.id, messages)
+                }
+            }
+
+            friendStorage.saveFriends(friends)
+
+            // 刷新界面
+            refreshMessagesList()
+            refreshFriendsList()
+            refreshProfile()
+
+            Toast.makeText(this,
+                "导入成功 ♡\n${friends.size} 个好友已恢复",
+                Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            Toast.makeText(this, "导入失败: ${e.message}", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    // ===== 处理文件选择结果 =====
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (resultCode != RESULT_OK || data?.data == null) return
+
+        when (requestCode) {
+            EXPORT_REQUEST -> doExport(data.data!!)
+            IMPORT_REQUEST -> doImport(data.data!!)
+        }
     }
 
     // ===== 空状态提示 =====

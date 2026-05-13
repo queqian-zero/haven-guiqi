@@ -50,13 +50,13 @@
       "selection": {
         "end": {
           "column": 1,
-          "index": 33012,
-          "line": 916
+          "index": 39603,
+          "line": 1090
         },
         "start": {
           "column": 1,
-          "index": 33012,
-          "line": 916
+          "index": 39603,
+          "line": 1090
         }
       }
     },
@@ -91,5 +91,5 @@
       }
     }
   ],
-  "selectedFile": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/res/layout/activity_chat.xml"
+  "selectedFile": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/java/com/haven/guiqi/ChatActivity.kt"
 }
