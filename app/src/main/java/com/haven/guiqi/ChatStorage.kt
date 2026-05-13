@@ -48,6 +48,9 @@ class ChatStorage(private val context: Context) {
                 if (msg.thinking.isNotEmpty()) {
                     put("thinking", msg.thinking)
                 }
+                if (msg.imagePath.isNotEmpty()) {
+                    put("image_path", msg.imagePath)
+                }
             })
         }
 
@@ -79,7 +82,8 @@ class ChatStorage(private val context: Context) {
                     role = obj.getString("role"),
                     content = obj.getString("content"),
                     timestamp = obj.optLong("timestamp", 0L),
-                    thinking = obj.optString("thinking", "")
+                    thinking = obj.optString("thinking", ""),
+                    imagePath = obj.optString("image_path", "")
                 ))
             }
 
@@ -124,5 +128,6 @@ data class StoredMessage(
     val role: String,           // "user" / "assistant" / "system"
     val content: String,        // 消息内容
     val timestamp: Long,        // 发送时间（毫秒）
-    val thinking: String = ""   // AI 的思考过程（可能为空）
+    val thinking: String = "",  // AI 的思考过程（可能为空）
+    val imagePath: String = ""  // 图片路径（可能为空）
 )

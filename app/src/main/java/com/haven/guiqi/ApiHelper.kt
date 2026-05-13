@@ -56,10 +56,31 @@ class ApiHelper(
 
         val messagesArray = JSONArray()
         for (msg in messages) {
-            messagesArray.put(JSONObject().apply {
-                put("role", msg.role)
-                put("content", msg.content)
-            })
+            if (msg.imageBase64.isNotEmpty()) {
+                // 带图片的消息：content 用数组格式
+                val contentArray = JSONArray()
+                contentArray.put(JSONObject().apply {
+                    put("type", "image_url")
+                    put("image_url", JSONObject().apply {
+                        put("url", "data:image/jpeg;base64,${msg.imageBase64}")
+                    })
+                })
+                if (msg.content.isNotEmpty()) {
+                    contentArray.put(JSONObject().apply {
+                        put("type", "text")
+                        put("text", msg.content)
+                    })
+                }
+                messagesArray.put(JSONObject().apply {
+                    put("role", msg.role)
+                    put("content", contentArray)
+                })
+            } else {
+                messagesArray.put(JSONObject().apply {
+                    put("role", msg.role)
+                    put("content", msg.content)
+                })
+            }
         }
 
         val body = JSONObject().apply {
@@ -123,6 +144,27 @@ class ApiHelper(
             if (msg.role == "system") {
                 if (systemContent.isNotEmpty()) systemContent += "\n"
                 systemContent += msg.content
+            } else if (msg.imageBase64.isNotEmpty()) {
+                // Claude 图片格式
+                val contentArray = JSONArray()
+                contentArray.put(JSONObject().apply {
+                    put("type", "image")
+                    put("source", JSONObject().apply {
+                        put("type", "base64")
+                        put("media_type", "image/jpeg")
+                        put("data", msg.imageBase64)
+                    })
+                })
+                if (msg.content.isNotEmpty()) {
+                    contentArray.put(JSONObject().apply {
+                        put("type", "text")
+                        put("text", msg.content)
+                    })
+                }
+                messagesArray.put(JSONObject().apply {
+                    put("role", msg.role)
+                    put("content", contentArray)
+                })
             } else {
                 messagesArray.put(JSONObject().apply {
                     put("role", msg.role)
@@ -253,13 +295,24 @@ class ApiHelper(
                 systemContent += msg.content
             } else {
                 val geminiRole = if (msg.role == "assistant") "model" else "user"
-                contentsArray.put(JSONObject().apply {
-                    put("role", geminiRole)
-                    put("parts", JSONArray().apply {
-                        put(JSONObject().apply {
-                            put("text", msg.content)
+                val partsArray = JSONArray()
+                // Gemini 图片格式
+                if (msg.imageBase64.isNotEmpty()) {
+                    partsArray.put(JSONObject().apply {
+                        put("inlineData", JSONObject().apply {
+                            put("mimeType", "image/jpeg")
+                            put("data", msg.imageBase64)
                         })
                     })
+                }
+                if (msg.content.isNotEmpty()) {
+                    partsArray.put(JSONObject().apply {
+                        put("text", msg.content)
+                    })
+                }
+                contentsArray.put(JSONObject().apply {
+                    put("role", geminiRole)
+                    put("parts", partsArray)
                 })
             }
         }
@@ -357,5 +410,6 @@ class ApiHelper(
 
 data class ChatMessage(
     val role: String,
-    val content: String
+    val content: String,
+    val imageBase64: String = ""  // 图片的 base64（可选，发图时用）
 )

@@ -4,14 +4,19 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.util.Base64
 import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
 import android.widget.EditText
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -21,6 +26,9 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import java.io.ByteArrayOutputStream
+import java.io.File
+import java.io.FileOutputStream
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -34,8 +42,10 @@ class ChatConversationActivity : AppCompatActivity() {
     private lateinit var btnSend: TextView
     private lateinit var btnBack: TextView
     private lateinit var btnMenu: TextView
+    private lateinit var btnPlus: TextView
 
     private val handler = Handler(Looper.getMainLooper())
+    private val PICK_IMAGE = 3001
 
     private var friendId = ""
     private var friendName = "好友"
@@ -49,6 +59,14 @@ class ChatConversationActivity : AppCompatActivity() {
     private val chatHistory = mutableListOf<ChatMessage>()
     private var maxContextMessages = 30
     private lateinit var chatStorage: ChatStorage
+
+    // 图片存储目录
+    private val imageDir: File
+        get() {
+            val dir = File(filesDir, "chat_images")
+            if (!dir.exists()) dir.mkdirs()
+            return dir
+        }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -84,6 +102,7 @@ class ChatConversationActivity : AppCompatActivity() {
         btnSend = findViewById(R.id.btnSend)
         btnBack = findViewById(R.id.btnBack)
         btnMenu = findViewById(R.id.btnMenu)
+        btnPlus = findViewById(R.id.btnPlus)
 
         friendId = intent.getStringExtra("friend_id") ?: ""
         friendName = intent.getStringExtra("friend_name") ?: "好友"
@@ -101,13 +120,182 @@ class ChatConversationActivity : AppCompatActivity() {
         }
         btnSend.setOnClickListener { sendMessage() }
 
+        // 点 ＋ 号打开相册选图
+        btnPlus.setOnClickListener {
+            val intent = Intent(Intent.ACTION_PICK).apply {
+                type = "image/*"
+            }
+            startActivityForResult(intent, PICK_IMAGE)
+        }
+
         initChat()
     }
 
-    // 从设置页回来时重新加载配置（API可能被改了，聊天记录可能被清了）
     override fun onResume() {
         super.onResume()
         loadApiConfig()
+    }
+
+    // 处理选图结果
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == PICK_IMAGE && resultCode == RESULT_OK && data?.data != null) {
+            handlePickedImage(data.data!!)
+        }
+    }
+
+    // ===== 处理选中的图片 =====
+    private fun handlePickedImage(uri: Uri) {
+        try {
+            // 读取并压缩图片
+            val inputStream = contentResolver.openInputStream(uri) ?: return
+            val original = BitmapFactory.decodeStream(inputStream)
+            inputStream.close()
+            if (original == null) {
+                Toast.makeText(this, "无法读取图片", Toast.LENGTH_SHORT).show()
+                return
+            }
+
+            // 压缩到最大800px宽度
+            val maxSize = 800
+            val scale = if (original.width > maxSize) maxSize.toFloat() / original.width else 1f
+            val scaled = if (scale < 1f) {
+                Bitmap.createScaledBitmap(
+                    original,
+                    (original.width * scale).toInt(),
+                    (original.height * scale).toInt(),
+                    true
+                )
+            } else {
+                original
+            }
+
+            // 保存到App内部存储
+            val fileName = "img_${System.currentTimeMillis()}.jpg"
+            val file = File(imageDir, fileName)
+            FileOutputStream(file).use { out ->
+                scaled.compress(Bitmap.CompressFormat.JPEG, 80, out)
+            }
+
+            val imagePath = file.absolutePath
+            val now = System.currentTimeMillis()
+            val timeStr = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date(now))
+
+            // 显示图片气泡
+            addImageBubble(imagePath, timeStr)
+
+            // 保存到聊天记录
+            chatStorage.appendMessage(friendId, StoredMessage(
+                role = "user", content = "[图片]", timestamp = now, imagePath = imagePath
+            ))
+
+            // 转 base64 发给 API
+            val base64 = imageToBase64(file)
+            chatHistory.add(ChatMessage("user", "[用户发送了一张图片]", base64))
+
+            // 调用 API
+            if (apiUrl.isEmpty() || apiKey.isEmpty() || apiModel.isEmpty()) {
+                Toast.makeText(this, "图片已保存，但未配置 API 无法发送", Toast.LENGTH_SHORT).show()
+                return
+            }
+
+            showTypingIndicator()
+            Thread {
+                try {
+                    val api = ApiHelper(apiUrl, apiKey, apiModel, apiType)
+                    val response = api.sendChat(buildContextWindow())
+                    val replyTime = System.currentTimeMillis()
+                    val replyTimeStr = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
+                        .format(Date(replyTime))
+
+                    chatStorage.appendMessage(friendId, StoredMessage(
+                        "assistant", response.text, replyTime, response.thinking
+                    ))
+                    chatHistory.add(ChatMessage("assistant", response.text))
+
+                    handler.post {
+                        removeTypingIndicator()
+                        if (response.thinking.isNotEmpty()) addThinkingBlock(response.thinking)
+                        addAiBubble(response.text, replyTimeStr)
+                    }
+                } catch (e: Exception) {
+                    handler.post {
+                        removeTypingIndicator()
+                        Toast.makeText(this, "发送失败: ${e.message}", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }.start()
+
+            // 释放内存
+            if (scaled != original) scaled.recycle()
+            original.recycle()
+
+        } catch (e: Exception) {
+            Toast.makeText(this, "图片处理失败: ${e.message}", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    // ===== 图片转 base64 =====
+    private fun imageToBase64(file: File): String {
+        val bytes = file.readBytes()
+        return Base64.encodeToString(bytes, Base64.NO_WRAP)
+    }
+
+    // ===== 显示图片气泡（用户发的，右侧） =====
+    private fun addImageBubble(imagePath: String, timeStr: String) {
+        val dp = { value: Int -> (value * resources.displayMetrics.density).toInt() }
+
+        val wrapper = LinearLayout(this).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = dp(8) }
+            gravity = Gravity.END
+        }
+
+        val column = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        }
+
+        // 图片视图
+        val imageView = ImageView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                dp(180), LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+            adjustViewBounds = true
+            scaleType = ImageView.ScaleType.FIT_CENTER
+            setBackgroundResource(R.drawable.chat_bubble_user)
+            setPadding(dp(4), dp(4), dp(4), dp(4))
+
+            // 加载图片
+            val file = File(imagePath)
+            if (file.exists()) {
+                val bitmap = BitmapFactory.decodeFile(imagePath)
+                setImageBitmap(bitmap)
+            }
+        }
+
+        val time = TextView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { topMargin = dp(2) }
+            gravity = Gravity.END
+            this.text = timeStr
+            textSize = 9f
+            setTextColor(0x1AFFFFFF.toInt())
+            setPadding(0, 0, dp(4), 0)
+        }
+
+        column.addView(imageView)
+        column.addView(time)
+        wrapper.addView(column)
+        messagesContainer.addView(wrapper)
+        scrollToBottom()
     }
 
     private fun loadApiConfig() {
@@ -125,7 +313,6 @@ class ChatConversationActivity : AppCompatActivity() {
             apiModel = prefs.getString("api_model", "") ?: ""
             apiType = "openai"
         }
-        // 读取每个好友单独的上下文条数
         val chatPrefs = getSharedPreferences("haven_chat_prefs", MODE_PRIVATE)
         maxContextMessages = chatPrefs.getInt("context_$friendId", 30)
     }
@@ -144,7 +331,6 @@ class ChatConversationActivity : AppCompatActivity() {
     private fun initChat() {
         val timeInfo = SimpleDateFormat("yyyy年M月d日 EEEE HH:mm", Locale.CHINESE)
             .format(Date())
-        // 读取用户名
         val userName = getSharedPreferences("haven_prefs", MODE_PRIVATE)
             .getString("user_name", "") ?: ""
         val userInfo = if (userName.isNotEmpty()) "\n用户名称: $userName" else ""
@@ -172,15 +358,21 @@ class ChatConversationActivity : AppCompatActivity() {
                 val timeStr = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
                     .format(Date(msg.timestamp))
                 when (msg.role) {
-                    "user" -> addUserBubble(msg.content, timeStr)
-                    "assistant" -> {
-                        if (msg.thinking.isNotEmpty()) {
-                            addThinkingBlock(msg.thinking)
+                    "user" -> {
+                        if (msg.imagePath.isNotEmpty()) {
+                            addImageBubble(msg.imagePath, timeStr)
+                            chatHistory.add(ChatMessage("user", "[用户之前发送了一张图片]"))
+                        } else {
+                            addUserBubble(msg.content, timeStr)
+                            chatHistory.add(ChatMessage(msg.role, msg.content))
                         }
+                    }
+                    "assistant" -> {
+                        if (msg.thinking.isNotEmpty()) addThinkingBlock(msg.thinking)
                         addAiBubble(msg.content, timeStr)
+                        chatHistory.add(ChatMessage(msg.role, msg.content))
                     }
                 }
-                chatHistory.add(ChatMessage(msg.role, msg.content))
             }
             if (apiUrl.isEmpty() || apiKey.isEmpty() || apiModel.isEmpty()) {
                 tvStatus.text = "未配置"
@@ -214,21 +406,14 @@ class ChatConversationActivity : AppCompatActivity() {
                 val replyTimeStr = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
                     .format(Date(replyTime))
 
-                // 保存回复（包含思考过程）到聊天记录
                 chatStorage.appendMessage(friendId, StoredMessage(
-                    role = "assistant",
-                    content = response.text,
-                    timestamp = replyTime,
-                    thinking = response.thinking
+                    "assistant", response.text, replyTime, response.thinking
                 ))
                 chatHistory.add(ChatMessage("assistant", response.text))
 
                 handler.post {
                     removeTypingIndicator()
-                    // 如果有思维链，先显示可折叠的思考块
-                    if (response.thinking.isNotEmpty()) {
-                        addThinkingBlock(response.thinking)
-                    }
+                    if (response.thinking.isNotEmpty()) addThinkingBlock(response.thinking)
                     addAiBubble(response.text, replyTimeStr)
                 }
             } catch (e: Exception) {
@@ -258,7 +443,6 @@ class ChatConversationActivity : AppCompatActivity() {
     private fun addThinkingBlock(thinking: String) {
         val dp = { value: Int -> (value * resources.displayMetrics.density).toInt() }
 
-        // 外层：跟 AI 气泡一样左对齐，留头像位置
         val wrapper = LinearLayout(this).apply {
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
@@ -268,12 +452,10 @@ class ChatConversationActivity : AppCompatActivity() {
             gravity = Gravity.START
         }
 
-        // 占位（跟头像同宽，保持对齐）
         val spacer = View(this).apply {
-            layoutParams = LinearLayout.LayoutParams(dp(28 + 7), dp(1))
+            layoutParams = LinearLayout.LayoutParams(dp(37), dp(1))
         }
 
-        // 可折叠的思考内容区
         val thinkingLayout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             layoutParams = LinearLayout.LayoutParams(
@@ -282,7 +464,6 @@ class ChatConversationActivity : AppCompatActivity() {
             )
         }
 
-        // 折叠的内容
         val contentView = TextView(this).apply {
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -295,10 +476,9 @@ class ChatConversationActivity : AppCompatActivity() {
             setLineSpacing(0f, 1.3f)
             setPadding(dp(10), dp(6), dp(10), dp(6))
             setBackgroundResource(R.drawable.chat_thinking_bg)
-            visibility = View.GONE  // 默认折叠
+            visibility = View.GONE
         }
 
-        // 点击展开/折叠的标题
         val toggleView = TextView(this).apply {
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -308,7 +488,6 @@ class ChatConversationActivity : AppCompatActivity() {
             textSize = 11f
             setTextColor(0x4DB3A0FF.toInt())
             setPadding(dp(4), dp(2), dp(4), dp(2))
-
             setOnClickListener {
                 if (contentView.visibility == View.GONE) {
                     contentView.visibility = View.VISIBLE
@@ -320,12 +499,9 @@ class ChatConversationActivity : AppCompatActivity() {
             }
         }
 
-        // 长按复制思考内容
         contentView.setOnLongClickListener { copyToClipboard(thinking); true }
-
         thinkingLayout.addView(toggleView)
         thinkingLayout.addView(contentView)
-
         wrapper.addView(spacer)
         wrapper.addView(thinkingLayout)
         messagesContainer.addView(wrapper)
