@@ -44,7 +44,52 @@
           "line": 22
         }
       }
+    },
+    {
+      "file": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/java/com/haven/guiqi/ChatActivity.kt",
+      "selection": {
+        "end": {
+          "column": 1,
+          "index": 33012,
+          "line": 916
+        },
+        "start": {
+          "column": 1,
+          "index": 33012,
+          "line": 916
+        }
+      }
+    },
+    {
+      "file": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/java/com/haven/guiqi/ChatConversationActivity.kt",
+      "selection": {
+        "end": {
+          "column": 1,
+          "index": 21450,
+          "line": 548
+        },
+        "start": {
+          "column": 1,
+          "index": 21450,
+          "line": 548
+        }
+      }
+    },
+    {
+      "file": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/res/layout/activity_chat.xml",
+      "selection": {
+        "end": {
+          "column": 15,
+          "index": 10017,
+          "line": 275
+        },
+        "start": {
+          "column": 15,
+          "index": 10017,
+          "line": 275
+        }
+      }
     }
   ],
-  "selectedFile": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/res/values-night/themes.xml"
+  "selectedFile": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/res/layout/activity_chat.xml"
 }

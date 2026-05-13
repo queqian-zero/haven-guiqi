@@ -142,13 +142,19 @@
                 android:textSize="22sp"
                 android:letterSpacing="0.15" />
 
-            <TextView
+            <ScrollView
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
-                android:gravity="center"
-                android:text="这里是你的归栖"
-                android:textColor="#33FFFFFF"
-                android:textSize="13sp" />
+                android:scrollbars="none"
+                android:paddingHorizontal="14dp">
+
+                <LinearLayout
+                    android:id="@+id/profileContainer"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:paddingBottom="24dp" />
+            </ScrollView>
         </LinearLayout>
 
     </FrameLayout>

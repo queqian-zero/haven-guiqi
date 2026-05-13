@@ -144,7 +144,11 @@ class ChatConversationActivity : AppCompatActivity() {
     private fun initChat() {
         val timeInfo = SimpleDateFormat("yyyy年M月d日 EEEE HH:mm", Locale.CHINESE)
             .format(Date())
-        chatHistory.add(ChatMessage("system", "当前时间: $timeInfo"))
+        // 读取用户名
+        val userName = getSharedPreferences("haven_prefs", MODE_PRIVATE)
+            .getString("user_name", "") ?: ""
+        val userInfo = if (userName.isNotEmpty()) "\n用户名称: $userName" else ""
+        chatHistory.add(ChatMessage("system", "当前时间: $timeInfo$userInfo"))
 
         val savedMessages = chatStorage.loadMessages(friendId)
         if (savedMessages.isEmpty()) {

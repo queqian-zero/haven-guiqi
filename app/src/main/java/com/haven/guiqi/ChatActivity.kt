@@ -46,6 +46,7 @@ class ChatActivity : AppCompatActivity() {
     // ===== 列表容器 =====
     private lateinit var messagesList: LinearLayout
     private lateinit var friendsList: LinearLayout
+    private lateinit var profileContainer: LinearLayout
 
     // ===== 数据 =====
     private lateinit var friendStorage: FriendStorage
@@ -101,6 +102,7 @@ class ChatActivity : AppCompatActivity() {
 
         messagesList = findViewById(R.id.messagesList)
         friendsList = findViewById(R.id.friendsList)
+        profileContainer = findViewById(R.id.profileContainer)
 
         // ===== 初始化数据 =====
         friendStorage = FriendStorage(this)
@@ -123,6 +125,7 @@ class ChatActivity : AppCompatActivity() {
         super.onResume()
         refreshMessagesList()
         refreshFriendsList()
+        refreshProfile()
     }
 
     // ===== 切换标签页 =====
@@ -653,6 +656,228 @@ class ChatActivity : AppCompatActivity() {
             }
             .setNegativeButton("取消", null)
             .show()
+    }
+
+    // ===== 刷新"我的"页面 =====
+    private fun refreshProfile() {
+        profileContainer.removeAllViews()
+        val dp = { value: Int -> (value * resources.displayMetrics.density).toInt() }
+        val prefs = getSharedPreferences("haven_prefs", MODE_PRIVATE)
+        val userName = prefs.getString("user_name", "") ?: ""
+
+        // ===== 头像区 =====
+        val avatarSection = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setPadding(0, dp(20), 0, dp(20))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        }
+
+        val avatarCircle = TextView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(dp(64), dp(64))
+            gravity = Gravity.CENTER
+            this.text = if (userName.isNotEmpty()) userName.first().toString() else "?"
+            textSize = 26f
+            setTextColor(0x80B3A0FF.toInt())
+            setBackgroundResource(R.drawable.icon_bg)
+        }
+
+        val nameText = TextView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { topMargin = dp(10) }
+            this.text = if (userName.isNotEmpty()) userName else "点击设置名字"
+            textSize = 18f
+            setTextColor(if (userName.isNotEmpty()) 0xD9FFFFFF.toInt() else 0x4DFFFFFF.toInt())
+        }
+
+        val subtitle = TextView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { topMargin = dp(4) }
+            this.text = "这里是你的归栖"
+            textSize = 11f
+            setTextColor(0x26FFFFFF.toInt())
+        }
+
+        avatarSection.addView(avatarCircle)
+        avatarSection.addView(nameText)
+        avatarSection.addView(subtitle)
+        avatarSection.setOnClickListener { showEditUserNameDialog() }
+        profileContainer.addView(avatarSection)
+
+        // ===== 统计卡片 =====
+        val friends = friendStorage.loadFriends()
+        var totalMessages = 0
+        for (f in friends) {
+            totalMessages += chatStorage.loadMessages(f.id).size
+        }
+
+        val statsCard = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            background = getDrawable(R.drawable.chat_card_bg)
+            setPadding(dp(16), dp(14), dp(16), dp(14))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = dp(16) }
+        }
+
+        fun statItem(number: String, label: String): LinearLayout {
+            return LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            }.also { layout ->
+                layout.addView(TextView(this).apply {
+                    this.text = number
+                    textSize = 20f
+                    setTextColor(0xD9FFFFFF.toInt())
+                    gravity = Gravity.CENTER
+                })
+                layout.addView(TextView(this).apply {
+                    this.text = label
+                    textSize = 10f
+                    setTextColor(0x4DFFFFFF.toInt())
+                    gravity = Gravity.CENTER
+                    layoutParams = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT
+                    ).apply { topMargin = dp(3) }
+                })
+            }
+        }
+
+        statsCard.addView(statItem("${friends.size}", "好友"))
+        statsCard.addView(statItem("$totalMessages", "消息"))
+        statsCard.addView(statItem("${friends.count { it.apiUrl.isNotEmpty() }}", "专属API"))
+        profileContainer.addView(statsCard)
+
+        // ===== 设置列表 =====
+        addProfileSectionTitle("个人设置")
+
+        addProfileItem("用户名称", if (userName.isNotEmpty()) userName else "未设置",
+            "AI 能看到的你的名字") {
+            showEditUserNameDialog()
+        }
+
+        addProfileSectionTitle("数据管理")
+
+        addProfileItem("导出数据", "", "把好友和聊天记录导出备份") {
+            Toast.makeText(this, "导出功能开发中 ♡", Toast.LENGTH_SHORT).show()
+        }
+
+        addProfileItem("导入数据", "", "从备份文件恢复好友和聊天记录") {
+            Toast.makeText(this, "导入功能开发中 ♡", Toast.LENGTH_SHORT).show()
+        }
+
+        addProfileSectionTitle("关于")
+
+        addProfileItem("归栖 Haven", "v0.1.0", "一个属于你的地方") { }
+    }
+
+    // ===== 编辑用户名 =====
+    private fun showEditUserNameDialog() {
+        val dp = { value: Int -> (value * resources.displayMetrics.density).toInt() }
+        val prefs = getSharedPreferences("haven_prefs", MODE_PRIVATE)
+        val currentName = prefs.getString("user_name", "") ?: ""
+
+        val input = EditText(this).apply {
+            setText(currentName)
+            this.hint = "你希望 AI 怎么称呼你"
+            setPadding(dp(16), dp(12), dp(16), dp(12))
+            textSize = 15f
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle("设置名字")
+            .setView(input)
+            .setPositiveButton("保存") { _, _ ->
+                val name = input.text.toString().trim()
+                prefs.edit().putString("user_name", name).apply()
+                refreshProfile()
+                if (name.isNotEmpty()) {
+                    Toast.makeText(this, "以后 AI 就叫你「$name」了 ♡", Toast.LENGTH_SHORT).show()
+                }
+            }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    // ===== "我的"页面辅助方法 =====
+    private fun addProfileSectionTitle(title: String) {
+        val dp = { value: Int -> (value * resources.displayMetrics.density).toInt() }
+        val tv = TextView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { topMargin = dp(12); bottomMargin = dp(8) }
+            this.text = title
+            textSize = 12f
+            setTextColor(0x66B3A0FF.toInt())
+            setPadding(dp(4), 0, 0, 0)
+            letterSpacing = 0.1f
+        }
+        profileContainer.addView(tv)
+    }
+
+    private fun addProfileItem(title: String, value: String, desc: String, onClick: () -> Unit) {
+        val dp = { value: Int -> (value * resources.displayMetrics.density).toInt() }
+
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = getDrawable(R.drawable.chat_card_bg)
+            setPadding(dp(14), dp(12), dp(14), dp(12))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = dp(6) }
+            setOnClickListener { onClick() }
+        }
+
+        val topRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+
+        val tvTitle = TextView(this).apply {
+            this.text = title
+            textSize = 14f
+            setTextColor(0xD9FFFFFF.toInt())
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        topRow.addView(tvTitle)
+
+        if (value.isNotEmpty()) {
+            val tvValue = TextView(this).apply {
+                this.text = value
+                textSize = 12f
+                setTextColor(0x4DB3A0FF.toInt())
+            }
+            topRow.addView(tvValue)
+        }
+
+        card.addView(topRow)
+
+        if (desc.isNotEmpty()) {
+            val tvDesc = TextView(this).apply {
+                this.text = desc
+                textSize = 11f
+                setTextColor(0x4DFFFFFF.toInt())
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { topMargin = dp(3) }
+            }
+            card.addView(tvDesc)
+        }
+
+        profileContainer.addView(card)
     }
 
     // ===== 空状态提示 =====
