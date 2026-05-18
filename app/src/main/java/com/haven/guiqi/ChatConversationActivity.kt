@@ -1,5 +1,6 @@
 package com.haven.guiqi
 
+import android.app.AlertDialog
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -44,6 +45,10 @@ class ChatConversationActivity : AppCompatActivity() {
     private lateinit var btnMenu: TextView
     private lateinit var btnPlus: TextView
     private lateinit var imagePreviewContainer: LinearLayout
+    private lateinit var quotePreviewContainer: LinearLayout
+    private lateinit var inputBar: LinearLayout
+    private lateinit var expandedInputPanel: LinearLayout
+    private lateinit var expandedInput: EditText
 
     private val handler = Handler(Looper.getMainLooper())
     private val PICK_IMAGE = 3001
@@ -61,8 +66,12 @@ class ChatConversationActivity : AppCompatActivity() {
     private var maxContextMessages = 30
     private lateinit var chatStorage: ChatStorage
 
-    // 待发送的图片（选图后暂存，点发送才真正发出）
+    // 待发送的图片
     private var pendingImagePath: String? = null
+
+    // 待引用的消息
+    private var pendingQuoteAuthor: String? = null
+    private var pendingQuoteContent: String? = null
 
     // 记录最后一条消息的日期（用于判断是否需要加分隔线）
     private var lastMessageDate = ""
@@ -110,6 +119,10 @@ class ChatConversationActivity : AppCompatActivity() {
         btnMenu = findViewById(R.id.btnMenu)
         btnPlus = findViewById(R.id.btnPlus)
         imagePreviewContainer = findViewById(R.id.imagePreviewContainer)
+        quotePreviewContainer = findViewById(R.id.quotePreviewContainer)
+        inputBar = findViewById(R.id.inputBar)
+        expandedInputPanel = findViewById(R.id.expandedInputPanel)
+        expandedInput = findViewById(R.id.expandedInput)
 
         friendId = intent.getStringExtra("friend_id") ?: ""
         friendName = intent.getStringExtra("friend_name") ?: "好友"
@@ -129,6 +142,17 @@ class ChatConversationActivity : AppCompatActivity() {
         btnPlus.setOnClickListener {
             val intent = Intent(Intent.ACTION_PICK).apply { type = "image/*" }
             startActivityForResult(intent, PICK_IMAGE)
+        }
+
+        // 展开模式
+        findViewById<TextView>(R.id.btnExpand).setOnClickListener { toggleExpandedInput(true) }
+        findViewById<TextView>(R.id.btnCollapse).setOnClickListener { toggleExpandedInput(false) }
+        findViewById<TextView>(R.id.btnExpandSend).setOnClickListener {
+            // 把展开框的内容搬到普通输入框，然后收起，然后发送
+            val text = expandedInput.text.toString()
+            toggleExpandedInput(false)
+            inputMessage.setText(text)
+            sendMessage()
         }
 
         initChat()
@@ -324,6 +348,26 @@ class ChatConversationActivity : AppCompatActivity() {
         }
     }
 
+    // ===== 展开/收起输入框 =====
+    private fun toggleExpandedInput(expand: Boolean) {
+        if (expand) {
+            // 把普通输入框的内容搬到展开框
+            expandedInput.setText(inputMessage.text)
+            expandedInput.setSelection(expandedInput.text.length)
+            // 隐藏普通输入栏，显示展开面板
+            inputBar.visibility = View.GONE
+            expandedInputPanel.visibility = View.VISIBLE
+            expandedInput.requestFocus()
+        } else {
+            // 把展开框的内容搬回普通输入框
+            inputMessage.setText(expandedInput.text)
+            inputMessage.setSelection(inputMessage.text.length)
+            // 隐藏展开面板，显示普通输入栏
+            expandedInputPanel.visibility = View.GONE
+            inputBar.visibility = View.VISIBLE
+        }
+    }
+
     private fun loadApiConfig() {
         val friendStorage = FriendStorage(this)
         val friend = friendStorage.getFriend(friendId)
@@ -419,6 +463,9 @@ class ChatConversationActivity : AppCompatActivity() {
         removePendingPreview()
         pendingImagePath = null
 
+        // 如果发图片就不带引用了
+        if (imagePath != null) removeQuotePreview()
+
         val now = System.currentTimeMillis()
         val timeStr = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date(now))
 
@@ -439,10 +486,22 @@ class ChatConversationActivity : AppCompatActivity() {
             chatHistory.add(ChatMessage("user", apiContent, base64))
 
         } else {
-            // ===== 纯文字 =====
-            addUserBubble(msg, timeStr)
-            chatStorage.appendMessage(friendId, StoredMessage("user", msg, now))
-            chatHistory.add(ChatMessage("user", "[$timeStr] $msg"))
+            // ===== 纯文字（可能带引用） =====
+            val quoteAuthor = pendingQuoteAuthor
+            val quoteContent = pendingQuoteContent
+
+            if (quoteAuthor != null && quoteContent != null) {
+                // 带引用的消息：先显示引用块再显示气泡
+                addQuoteBubble(quoteAuthor, quoteContent, msg, timeStr)
+                val shortQuote = if (quoteContent.length > 50) quoteContent.substring(0, 50) + "..." else quoteContent
+                chatStorage.appendMessage(friendId, StoredMessage("user", "「回复 $quoteAuthor: $shortQuote」\n$msg", now))
+                chatHistory.add(ChatMessage("user", "[$timeStr] [引用 $quoteAuthor 说的: $shortQuote]\n$msg"))
+                removeQuotePreview()
+            } else {
+                addUserBubble(msg, timeStr)
+                chatStorage.appendMessage(friendId, StoredMessage("user", msg, now))
+                chatHistory.add(ChatMessage("user", "[$timeStr] $msg"))
+            }
         }
 
         // 调用 API
@@ -488,6 +547,93 @@ class ChatConversationActivity : AppCompatActivity() {
         val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         clipboard.setPrimaryClip(ClipData.newPlainText("chat_message", content))
         Toast.makeText(this, "已复制", Toast.LENGTH_SHORT).show()
+    }
+
+    // ===== 长按消息菜单 =====
+    private fun showMessageMenu(content: String, author: String) {
+        val options = arrayOf("复制", "引用回复")
+        AlertDialog.Builder(this)
+            .setItems(options) { _, which ->
+                when (which) {
+                    0 -> copyToClipboard(content)
+                    1 -> showQuotePreview(author, content)
+                }
+            }
+            .show()
+    }
+
+    // ===== 显示引用预览条 =====
+    private fun showQuotePreview(author: String, content: String) {
+        removeQuotePreview()
+        val dp = { value: Int -> (value * resources.displayMetrics.density).toInt() }
+
+        pendingQuoteAuthor = author
+        pendingQuoteContent = content
+
+        val previewLayout = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setBackgroundColor(0x10B3A0FF.toInt())
+            setPadding(dp(12), dp(8), dp(12), dp(8))
+        }
+
+        // 左边紫色竖条
+        val bar = View(this).apply {
+            layoutParams = LinearLayout.LayoutParams(dp(3), LinearLayout.LayoutParams.MATCH_PARENT).apply {
+                marginEnd = dp(8)
+            }
+            setBackgroundColor(0x66B3A0FF.toInt())
+        }
+
+        // 引用内容
+        val textLayout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+
+        val authorView = TextView(this).apply {
+            this.text = "回复 $author"
+            textSize = 11f
+            setTextColor(0x80B3A0FF.toInt())
+        }
+
+        // 截取前30个字符
+        val shortContent = if (content.length > 30) content.substring(0, 30) + "..." else content
+        val contentView = TextView(this).apply {
+            this.text = shortContent
+            textSize = 11f
+            setTextColor(0x59FFFFFF.toInt())
+            maxLines = 1
+        }
+
+        textLayout.addView(authorView)
+        textLayout.addView(contentView)
+
+        val cancelBtn = TextView(this).apply {
+            this.text = "✕"
+            textSize = 16f
+            setTextColor(0x4DFFFFFF.toInt())
+            setPadding(dp(8), 0, 0, 0)
+            setOnClickListener { removeQuotePreview() }
+        }
+
+        previewLayout.addView(bar)
+        previewLayout.addView(textLayout)
+        previewLayout.addView(cancelBtn)
+
+        quotePreviewContainer.removeAllViews()
+        quotePreviewContainer.addView(previewLayout)
+        quotePreviewContainer.visibility = View.VISIBLE
+
+        // 聚焦到输入框
+        inputMessage.requestFocus()
+    }
+
+    private fun removeQuotePreview() {
+        pendingQuoteAuthor = null
+        pendingQuoteContent = null
+        quotePreviewContainer.removeAllViews()
+        quotePreviewContainer.visibility = View.GONE
     }
 
     // ===== 思维链折叠块 =====
@@ -548,6 +694,103 @@ class ChatConversationActivity : AppCompatActivity() {
         messagesContainer.addView(wrapper)
     }
 
+    // ===== 带引用的用户气泡 =====
+    private fun addQuoteBubble(quoteAuthor: String, quoteContent: String, msg: String, timeStr: String): View {
+        val dp = { value: Int -> (value * resources.displayMetrics.density).toInt() }
+
+        val wrapper = LinearLayout(this).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = dp(8) }
+            gravity = Gravity.END
+        }
+
+        val column = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        }
+
+        // 引用块
+        val quoteBlock = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setBackgroundColor(0x10B3A0FF.toInt())
+            setPadding(dp(10), dp(6), dp(10), dp(6))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        }
+
+        val bar = View(this).apply {
+            layoutParams = LinearLayout.LayoutParams(dp(2), LinearLayout.LayoutParams.MATCH_PARENT).apply {
+                marginEnd = dp(6)
+            }
+            setBackgroundColor(0x66B3A0FF.toInt())
+        }
+
+        val quoteText = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+
+        quoteText.addView(TextView(this).apply {
+            this.text = quoteAuthor
+            textSize = 10f
+            setTextColor(0x80B3A0FF.toInt())
+        })
+
+        val shortContent = if (quoteContent.length > 40) quoteContent.substring(0, 40) + "..." else quoteContent
+        quoteText.addView(TextView(this).apply {
+            this.text = shortContent
+            textSize = 11f
+            setTextColor(0x59FFFFFF.toInt())
+            maxLines = 2
+            maxWidth = (resources.displayMetrics.widthPixels * 0.65).toInt()
+        })
+
+        quoteBlock.addView(bar)
+        quoteBlock.addView(quoteText)
+        column.addView(quoteBlock)
+
+        // 正文气泡
+        val bubble = TextView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { topMargin = dp(3) }
+            maxWidth = (resources.displayMetrics.widthPixels * 0.82).toInt()
+            this.text = MarkdownRenderer.render(msg)
+            setTextColor(0xB3FFFFFF.toInt())
+            textSize = 14f
+            setLineSpacing(0f, 1.35f)
+            setPadding(dp(11), dp(8), dp(11), dp(8))
+            setBackgroundResource(R.drawable.chat_bubble_user)
+            setOnLongClickListener { showMessageMenu(msg, "我"); true }
+        }
+        column.addView(bubble)
+
+        val time = TextView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { topMargin = dp(2) }
+            gravity = Gravity.END
+            this.text = timeStr
+            textSize = 9f
+            setTextColor(0x1AFFFFFF.toInt())
+            setPadding(0, 0, dp(4), 0)
+        }
+        column.addView(time)
+
+        wrapper.addView(column)
+        messagesContainer.addView(wrapper)
+        scrollToBottom()
+        return wrapper
+    }
+
     // ===== 用户气泡 =====
     private fun addUserBubble(msg: String, timeStr: String): View {
         val dp = { value: Int -> (value * resources.displayMetrics.density).toInt() }
@@ -570,7 +813,7 @@ class ChatConversationActivity : AppCompatActivity() {
             setLineSpacing(0f, 1.35f)
             setPadding(dp(11), dp(8), dp(11), dp(8))
             setBackgroundResource(R.drawable.chat_bubble_user)
-            setOnLongClickListener { copyToClipboard(msg); true }
+            setOnLongClickListener { showMessageMenu(msg, "我"); true }
         }
         val time = TextView(this).apply {
             layoutParams = LinearLayout.LayoutParams(
@@ -638,7 +881,7 @@ class ChatConversationActivity : AppCompatActivity() {
             setLineSpacing(0f, 1.35f)
             setPadding(dp(11), dp(8), dp(11), dp(8))
             setBackgroundResource(R.drawable.chat_bubble_ai)
-            setOnLongClickListener { copyToClipboard(msg); true }
+            setOnLongClickListener { showMessageMenu(msg, friendName); true }
         }
         val time = TextView(this).apply {
             layoutParams = LinearLayout.LayoutParams(

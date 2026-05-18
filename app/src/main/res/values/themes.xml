@@ -22,5 +22,7 @@
     <item name="colorOnSurfaceVariant">#B3FFFFFF</item>
     <item name="colorSurface">#0D1B2A</item>
     <item name="colorSurfaceVariant">#1A2535</item>
+    <item name="android:textColorAlertDialogListItem">#D9FFFFFF</item>
+    <item name="android:listPreferredItemHeightSmall">48dp</item>
   </style>
 </resources>

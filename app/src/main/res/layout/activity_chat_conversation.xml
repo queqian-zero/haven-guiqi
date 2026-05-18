@@ -87,7 +87,7 @@
             android:paddingBottom="8dp" />
     </ScrollView>
 
-    <!-- ===== 图片预览区（选图后显示在这里） ===== -->
+    <!-- ===== 图片预览区 ===== -->
     <LinearLayout
         android:id="@+id/imagePreviewContainer"
         android:layout_width="match_parent"
@@ -95,8 +95,17 @@
         android:orientation="vertical"
         android:visibility="gone" />
 
-    <!-- ===== 底部输入栏 ===== -->
+    <!-- ===== 引用预览区 ===== -->
     <LinearLayout
+        android:id="@+id/quotePreviewContainer"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:visibility="gone" />
+
+    <!-- ===== 底部输入栏（普通模式） ===== -->
+    <LinearLayout
+        android:id="@+id/inputBar"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:gravity="center_vertical"
@@ -105,7 +114,7 @@
         android:paddingVertical="8dp"
         android:background="#08FFFFFF">
 
-        <!-- 加号按钮（以后用来发图片/文件） -->
+        <!-- 加号按钮 -->
         <TextView
             android:id="@+id/btnPlus"
             android:layout_width="36dp"
@@ -134,6 +143,16 @@
             android:inputType="textMultiLine"
             android:imeOptions="actionNone" />
 
+        <!-- 展开按钮 -->
+        <TextView
+            android:id="@+id/btnExpand"
+            android:layout_width="28dp"
+            android:layout_height="36dp"
+            android:gravity="center"
+            android:text="↕"
+            android:textColor="#26FFFFFF"
+            android:textSize="16sp" />
+
         <!-- 发送按钮 -->
         <TextView
             android:id="@+id/btnSend"
@@ -143,6 +162,67 @@
             android:text="➤"
             android:textColor="#4DB3A0FF"
             android:textSize="20sp" />
+    </LinearLayout>
+
+    <!-- ===== 展开模式（半屏大输入框） ===== -->
+    <LinearLayout
+        android:id="@+id/expandedInputPanel"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:orientation="vertical"
+        android:background="#0D1B2A"
+        android:visibility="gone">
+
+        <!-- 展开模式顶栏 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingHorizontal="14dp"
+            android:paddingVertical="8dp"
+            android:background="#08FFFFFF">
+
+            <TextView
+                android:id="@+id/btnCollapse"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="↕ 收起"
+                android:textColor="#4DB3A0FF"
+                android:textSize="13sp"
+                android:paddingHorizontal="4dp" />
+
+            <View
+                android:layout_width="0dp"
+                android:layout_height="1dp"
+                android:layout_weight="1" />
+
+            <TextView
+                android:id="@+id/btnExpandSend"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="发送 ➤"
+                android:textColor="#4DB3A0FF"
+                android:textSize="13sp"
+                android:paddingHorizontal="4dp" />
+        </LinearLayout>
+
+        <!-- 大输入框 -->
+        <EditText
+            android:id="@+id/expandedInput"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="@null"
+            android:paddingHorizontal="16dp"
+            android:paddingTop="12dp"
+            android:hint="展开模式：回车就是换行，不会发送\n写完点右上角「发送」"
+            android:textColor="#B3FFFFFF"
+            android:textColorHint="#26FFFFFF"
+            android:textSize="14sp"
+            android:inputType="textMultiLine"
+            android:gravity="top"
+            android:scrollbars="vertical" />
     </LinearLayout>
 
 </LinearLayout>
