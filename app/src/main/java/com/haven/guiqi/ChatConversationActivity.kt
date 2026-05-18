@@ -139,6 +139,17 @@ class ChatConversationActivity : AppCompatActivity() {
             startActivity(intent)
         }
         btnSend.setOnClickListener { sendMessage() }
+
+        // 普通模式：回车发送
+        inputMessage.setOnKeyListener { _, keyCode, event ->
+            if (keyCode == android.view.KeyEvent.KEYCODE_ENTER && event.action == android.view.KeyEvent.ACTION_DOWN) {
+                sendMessage()
+                true
+            } else {
+                false
+            }
+        }
+
         btnPlus.setOnClickListener {
             val intent = Intent(Intent.ACTION_PICK).apply { type = "image/*" }
             startActivityForResult(intent, PICK_IMAGE)
@@ -388,12 +399,19 @@ class ChatConversationActivity : AppCompatActivity() {
     }
 
     private fun buildContextWindow(): List<ChatMessage> {
-        val systemMsgs = chatHistory.filter { it.role == "system" }
+        // 每次构建上下文时更新时间，让 AI 知道"现在"是什么时候
+        val timeInfo = SimpleDateFormat("yyyy年M月d日 EEEE HH:mm", Locale.CHINESE).format(Date())
+        val userName = getSharedPreferences("haven_prefs", MODE_PRIVATE)
+            .getString("user_name", "") ?: ""
+        val userInfo = if (userName.isNotEmpty()) "\n用户名称: $userName" else ""
+        val freshSystemMsg = ChatMessage("system", "当前时间: $timeInfo$userInfo")
+
         val nonSystemMsgs = chatHistory.filter { it.role != "system" }
         val recentMsgs = if (nonSystemMsgs.size > maxContextMessages) {
             nonSystemMsgs.takeLast(maxContextMessages)
         } else { nonSystemMsgs }
-        return systemMsgs + recentMsgs
+        // 用最新的 system 消息替换旧的
+        return listOf(freshSystemMsg) + recentMsgs
     }
 
     private fun initChat() {
