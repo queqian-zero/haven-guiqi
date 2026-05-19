@@ -360,6 +360,21 @@ class ChatActivity : AppCompatActivity() {
         infoLayout.addView(topRow)
         infoLayout.addView(tvLastMsg)
 
+        // 续火花
+        val streak = calculateStreak(friend.id)
+        if (streak > 0) {
+            val streakView = TextView(this).apply {
+                this.text = "🔥 $streak 天"
+                textSize = 10f
+                setTextColor(0x59FFB066.toInt())
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { topMargin = dp(3) }
+            }
+            infoLayout.addView(streakView)
+        }
+
         card.addView(avatar)
         card.addView(infoLayout)
 
@@ -443,6 +458,18 @@ class ChatActivity : AppCompatActivity() {
 
         detailRow.addView(tvGroup)
         detailRow.addView(tvCode)
+
+        // 续火花
+        val streak = calculateStreak(friend.id)
+        if (streak > 0) {
+            val tvStreak = TextView(this).apply {
+                this.text = "🔥$streak"
+                textSize = 9f
+                setTextColor(0x59FFB066.toInt())
+                setPadding(dp(8), 0, 0, 0)
+            }
+            detailRow.addView(tvStreak)
+        }
 
         infoLayout.addView(tvName)
         infoLayout.addView(detailRow)
@@ -1322,6 +1349,51 @@ class ChatActivity : AppCompatActivity() {
             EXPORT_REQUEST -> doExport(data.data!!)
             IMPORT_REQUEST -> doImport(data.data!!)
         }
+    }
+
+    // ===== 计算续火花（连续聊天天数） =====
+    private fun calculateStreak(friendId: String): Int {
+        val messages = chatStorage.loadMessages(friendId)
+        if (messages.isEmpty()) return 0
+
+        // 收集所有有消息的日期（去重）
+        val chatDays = messages.map { msg ->
+            val cal = Calendar.getInstance().apply { timeInMillis = msg.timestamp }
+            "${cal.get(Calendar.YEAR)}-${cal.get(Calendar.DAY_OF_YEAR)}"
+        }.distinct().sortedDescending()
+
+        if (chatDays.isEmpty()) return 0
+
+        // 从今天开始往回数连续天数
+        val today = Calendar.getInstance()
+        val todayKey = "${today.get(Calendar.YEAR)}-${today.get(Calendar.DAY_OF_YEAR)}"
+
+        // 如果今天没聊过，检查昨天
+        val yesterday = Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, -1) }
+        val yesterdayKey = "${yesterday.get(Calendar.YEAR)}-${yesterday.get(Calendar.DAY_OF_YEAR)}"
+
+        // 起点必须是今天或昨天，否则火花已断
+        val startDay = if (chatDays.contains(todayKey)) {
+            today.clone() as Calendar
+        } else if (chatDays.contains(yesterdayKey)) {
+            yesterday.clone() as Calendar
+        } else {
+            return 0
+        }
+
+        // 从起点往回数连续天
+        var streak = 0
+        val checkDay = startDay.clone() as Calendar
+        while (true) {
+            val dayKey = "${checkDay.get(Calendar.YEAR)}-${checkDay.get(Calendar.DAY_OF_YEAR)}"
+            if (chatDays.contains(dayKey)) {
+                streak++
+                checkDay.add(Calendar.DAY_OF_YEAR, -1)
+            } else {
+                break
+            }
+        }
+        return streak
     }
 
     // ===== 空状态提示 =====
