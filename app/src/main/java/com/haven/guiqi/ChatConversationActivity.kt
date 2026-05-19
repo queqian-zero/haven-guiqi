@@ -44,6 +44,7 @@ class ChatConversationActivity : AppCompatActivity() {
     private lateinit var btnBack: TextView
     private lateinit var btnMenu: TextView
     private lateinit var btnPlus: TextView
+    private lateinit var connectionBar: TextView
     private lateinit var imagePreviewContainer: LinearLayout
     private lateinit var quotePreviewContainer: LinearLayout
     private lateinit var inputBar: LinearLayout
@@ -118,6 +119,7 @@ class ChatConversationActivity : AppCompatActivity() {
         btnBack = findViewById(R.id.btnBack)
         btnMenu = findViewById(R.id.btnMenu)
         btnPlus = findViewById(R.id.btnPlus)
+        connectionBar = findViewById(R.id.connectionBar)
         imagePreviewContainer = findViewById(R.id.imagePreviewContainer)
         quotePreviewContainer = findViewById(R.id.quotePreviewContainer)
         inputBar = findViewById(R.id.inputBar)
@@ -359,6 +361,37 @@ class ChatConversationActivity : AppCompatActivity() {
         }
     }
 
+    // ===== 更新连接状态 =====
+    private fun setStatus(state: String) {
+        when (state) {
+            "online" -> {
+                tvStatus.text = "在线"
+                tvStatus.setTextColor(0x4DB3A0FF.toInt())
+                connectionBar.visibility = View.GONE
+            }
+            "sending" -> {
+                tvStatus.text = "发送中..."
+                tvStatus.setTextColor(0x80FFCC66.toInt())
+                connectionBar.visibility = View.GONE
+            }
+            "error" -> {
+                tvStatus.text = "连接失败"
+                tvStatus.setTextColor(0x80FF6B6B.toInt())
+                connectionBar.visibility = View.VISIBLE
+                connectionBar.text = "⚠ 消息发送失败，请检查网络和 API 配置"
+                // 点击断网条重新检查
+                connectionBar.setOnClickListener {
+                    connectionBar.visibility = View.GONE
+                    setStatus("online")
+                }
+            }
+            "unconfigured" -> {
+                tvStatus.text = "未配置"
+                tvStatus.setTextColor(0x4DFF6B6B.toInt())
+            }
+        }
+    }
+
     // ===== 展开/收起输入框 =====
     private fun toggleExpandedInput(expand: Boolean) {
         if (expand) {
@@ -427,10 +460,10 @@ class ChatConversationActivity : AppCompatActivity() {
             addTimeLabel("—— 今天 ——")
             if (apiUrl.isEmpty() || apiKey.isEmpty() || apiModel.isEmpty()) {
                 addSystemTip("还没有配置 API 哦~\n请先去桌面 → 设置 → 填写 API 地址、密钥和模型名称")
-                tvStatus.text = "未配置"
-                tvStatus.setTextColor(0x4DFF6B6B.toInt())
+                setStatus("unconfigured")
             } else {
                 addSystemTip("API 已就绪，开始聊天吧 ♡")
+                setStatus("online")
             }
         } else {
             for (msg in savedMessages) {
@@ -459,8 +492,9 @@ class ChatConversationActivity : AppCompatActivity() {
                 }
             }
             if (apiUrl.isEmpty() || apiKey.isEmpty() || apiModel.isEmpty()) {
-                tvStatus.text = "未配置"
-                tvStatus.setTextColor(0x4DFF6B6B.toInt())
+                setStatus("unconfigured")
+            } else {
+                setStatus("online")
             }
         }
     }
@@ -524,6 +558,7 @@ class ChatConversationActivity : AppCompatActivity() {
 
         // 调用 API
         val userBubbleView = messagesContainer.getChildAt(messagesContainer.childCount - 1)
+        setStatus("sending")
         showTypingIndicator()
         Thread {
             try {
@@ -540,6 +575,7 @@ class ChatConversationActivity : AppCompatActivity() {
 
                 handler.post {
                     removeTypingIndicator()
+                    setStatus("online")
                     if (response.thinking.isNotEmpty()) addThinkingBlock(response.thinking)
                     addAiBubble(response.text, replyTimeStr)
                 }
@@ -555,6 +591,7 @@ class ChatConversationActivity : AppCompatActivity() {
                         chatStorage.saveMessages(friendId, saved)
                     }
                     if (imagePath == null) inputMessage.setText(msg)
+                    setStatus("error")
                     Toast.makeText(this, "发送失败: ${e.message}", Toast.LENGTH_SHORT).show()
                 }
             }

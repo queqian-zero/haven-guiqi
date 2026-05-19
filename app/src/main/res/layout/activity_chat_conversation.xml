@@ -68,6 +68,19 @@
         android:layout_height="0.5dp"
         android:background="#08FFFFFF" />
 
+    <!-- 断网/状态提示条 -->
+    <TextView
+        android:id="@+id/connectionBar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="#33FF6B6B"
+        android:gravity="center"
+        android:paddingVertical="6dp"
+        android:text="网络连接失败，请检查网络"
+        android:textColor="#CCFF6B6B"
+        android:textSize="11sp"
+        android:visibility="gone" />
+
     <!-- ===== 消息区域 ===== -->
     <ScrollView
         android:id="@+id/scrollMessages"
