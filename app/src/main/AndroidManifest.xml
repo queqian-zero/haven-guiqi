@@ -24,5 +24,6 @@
         <activity android:name=".ChatActivity" />
         <activity android:name=".ChatConversationActivity" />
         <activity android:name=".ChatSettingsActivity" />
+        <activity android:name=".FriendDetailActivity" />
     </application>
 </manifest>

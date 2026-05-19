@@ -478,6 +478,13 @@ class ChatActivity : AppCompatActivity() {
             this.text = "›"
             textSize = 18f
             setTextColor(0x1AFFFFFF.toInt())
+            setPadding(dp(8), dp(8), dp(4), dp(8))
+            // 点击箭头进入好友详情
+            setOnClickListener {
+                val intent = Intent(this@ChatActivity, FriendDetailActivity::class.java)
+                intent.putExtra("friend_id", friend.id)
+                startActivity(intent)
+            }
         }
 
         card.addView(avatar)

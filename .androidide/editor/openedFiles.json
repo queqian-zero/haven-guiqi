@@ -5,13 +5,13 @@
       "selection": {
         "end": {
           "column": 1,
-          "index": 52020,
-          "line": 1432
+          "index": 52327,
+          "line": 1439
         },
         "start": {
           "column": 1,
-          "index": 52020,
-          "line": 1432
+          "index": 52327,
+          "line": 1439
         }
       }
     },
@@ -44,7 +44,52 @@
           "line": 240
         }
       }
+    },
+    {
+      "file": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/java/com/haven/guiqi/FriendDetailActivity.kt",
+      "selection": {
+        "end": {
+          "column": 1,
+          "index": 20519,
+          "line": 553
+        },
+        "start": {
+          "column": 1,
+          "index": 20519,
+          "line": 553
+        }
+      }
+    },
+    {
+      "file": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/res/layout/activity_friend_detail.xml",
+      "selection": {
+        "end": {
+          "column": 15,
+          "index": 1938,
+          "line": 60
+        },
+        "start": {
+          "column": 15,
+          "index": 1938,
+          "line": 60
+        }
+      }
+    },
+    {
+      "file": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/AndroidManifest.xml",
+      "selection": {
+        "end": {
+          "column": 11,
+          "index": 1175,
+          "line": 28
+        },
+        "start": {
+          "column": 11,
+          "index": 1175,
+          "line": 28
+        }
+      }
     }
   ],
-  "selectedFile": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/res/layout/activity_chat_conversation.xml"
+  "selectedFile": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/AndroidManifest.xml"
 }
