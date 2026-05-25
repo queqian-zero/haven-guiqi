@@ -4,6 +4,7 @@ import android.app.AlertDialog
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import android.view.Gravity
@@ -110,6 +111,32 @@ class ChatSettingsActivity : AppCompatActivity() {
             "发给 AI 的最近消息数量，越多 AI 记忆越长但越费 token"
         ) {
             showContextSizePicker(contextSize)
+        }
+
+        // ===== AI 内心世界 =====
+        addSectionTitle("AI 内心世界")
+
+        val memoryStorage = MemoryStorage(this)
+        val diaryStorage = DiaryStorage(this)
+        val impressionStorage = ImpressionStorage(this)
+        val dreamStorage = DreamStorage(this)
+        val friendIcon = friend?.icon ?: "★"
+
+        val memCount = memoryStorage.count(friendId)
+        val diaryCount = diaryStorage.count(friendId)
+        val dreamCount = dreamStorage.count(friendId)
+        val impression = impressionStorage.getImpression(friendId)
+
+        addClickItem(
+            "📂 打开档案馆",
+            "记忆 $memCount · 日记 $diaryCount · 梦境 $dreamCount" +
+                (if (impression.isNotEmpty()) " · 有印象" else "")
+        ) {
+            val intent = Intent(this, ArchiveDetailActivity::class.java)
+            intent.putExtra("friend_id", friendId)
+            intent.putExtra("friend_name", friendName)
+            intent.putExtra("friend_icon", friendIcon)
+            startActivity(intent)
         }
 
         // ===== 操作区 =====

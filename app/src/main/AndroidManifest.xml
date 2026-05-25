@@ -2,6 +2,10 @@
 <manifest 
     xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+        <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <application 
         android:allowBackup="true" 
         android:icon="@mipmap/ic_launcher" 
@@ -24,6 +28,17 @@
         <activity android:name=".ChatActivity" />
         <activity android:name=".ChatConversationActivity" />
         <activity android:name=".ChatSettingsActivity" />
+        <activity android:name=".ArchiveActivity" />
+        <activity android:name=".ArchiveDetailActivity" />
+        <activity android:name=".ArchiveFolderActivity" />
+                <service
+            android:name=".HavenService"
+            android:enabled="true"
+            android:exported="false" />
+                <service
+            android:name=".HavenService"
+            android:enabled="true"
+            android:exported="false" />
         <activity android:name=".FriendDetailActivity" />
     </application>
 </manifest>

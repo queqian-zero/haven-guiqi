@@ -30,6 +30,7 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var inputApiKey: EditText
     private lateinit var inputModel: EditText
     private lateinit var btnLanguage: TextView
+    private lateinit var btnTheme: TextView
     private lateinit var btnExport: TextView
     private lateinit var btnImport: TextView
     private lateinit var btnSave: TextView
@@ -85,6 +86,7 @@ class SettingsActivity : AppCompatActivity() {
         inputApiKey = findViewById(R.id.inputApiKey)
         inputModel = findViewById(R.id.inputModel)
         btnLanguage = findViewById(R.id.btnLanguage)
+        btnTheme = findViewById(R.id.btnTheme)
         btnExport = findViewById(R.id.btnExport)
         btnImport = findViewById(R.id.btnImport)
         btnSave = findViewById(R.id.btnSave)
@@ -98,6 +100,10 @@ class SettingsActivity : AppCompatActivity() {
 
         loadSettings()
 
+        // 显示当前主题
+        val themeNames = arrayOf("跟随系统", "始终深色", "始终浅色（Claude 配色）")
+        btnTheme.text = themeNames[ThemeHelper.getMode(this)]
+
         // ===== 返回 =====
         btnBack.setOnClickListener { finish() }
 
@@ -105,6 +111,20 @@ class SettingsActivity : AppCompatActivity() {
         btnSave.setOnClickListener {
             saveSettings()
             Toast.makeText(this, "设置已保存 ✓", Toast.LENGTH_SHORT).show()
+        }
+
+        // ===== 主题切换 =====
+        btnTheme.setOnClickListener {
+            val options = arrayOf("跟随系统", "始终深色", "始终浅色（Claude 配色）")
+            AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog)
+                .setTitle("选择主题")
+                .setItems(options) { _, which ->
+                    ThemeHelper.setMode(this, which)
+                    btnTheme.text = options[which]
+                    Toast.makeText(this, "主题已切换", Toast.LENGTH_SHORT).show()
+                    recreate()
+                }
+                .show()
         }
 
         // ===== 语言选择 =====

@@ -51,6 +51,16 @@
                 android:letterSpacing="0.1" />
         </LinearLayout>
 
+                <!-- 搜索按钮 -->
+        <TextView
+            android:id="@+id/btnSearch"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:gravity="center"
+            android:text="🔍"
+            android:textColor="#33FFFFFF"
+            android:textSize="14sp" />
+
         <!-- 右侧菜单按钮 -->
         <TextView
             android:id="@+id/btnMenu"
@@ -67,7 +77,66 @@
         android:layout_width="match_parent"
         android:layout_height="0.5dp"
         android:background="#08FFFFFF" />
-
+    <!-- ===== 搜索面板 ===== -->
+    <LinearLayout
+        android:id="@+id/searchPanel"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:background="#0D1B2A"
+        android:visibility="gone">
+ 
+        <!-- 搜索输入栏 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingHorizontal="14dp"
+            android:paddingVertical="8dp">
+ 
+            <EditText
+                android:id="@+id/searchInput"
+                android:layout_width="0dp"
+                android:layout_height="36dp"
+                android:layout_weight="1"
+                android:background="@drawable/input_bg"
+                android:hint="搜索聊天记录..."
+                android:textColorHint="#26FFFFFF"
+                android:textColor="#B3FFFFFF"
+                android:textSize="13sp"
+                android:singleLine="true"
+                android:paddingHorizontal="12dp"
+                android:imeOptions="actionSearch"
+                android:inputType="text" />
+ 
+            <TextView
+                android:id="@+id/btnCloseSearch"
+                android:layout_width="wrap_content"
+                android:layout_height="36dp"
+                android:gravity="center"
+                android:text="取消"
+                android:textColor="#4DB3A0FF"
+                android:textSize="13sp"
+                android:paddingStart="12dp" />
+        </LinearLayout>
+ 
+        <!-- 搜索结果列表 -->
+        <ScrollView
+            android:id="@+id/searchResultsScroll"
+            android:layout_width="match_parent"
+            android:layout_height="200dp"
+            android:visibility="gone">
+ 
+            <LinearLayout
+                android:id="@+id/searchResults"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:paddingHorizontal="14dp"
+                android:paddingBottom="8dp" />
+        </ScrollView>
+    </LinearLayout>
     <!-- 断网/状态提示条 -->
     <TextView
         android:id="@+id/connectionBar"
@@ -116,6 +185,57 @@
         android:orientation="vertical"
         android:visibility="gone" />
 
+    <!-- ===== 表情包面板 ===== -->
+    <LinearLayout
+        android:id="@+id/stickerPanel"
+        android:layout_width="match_parent"
+        android:layout_height="180dp"
+        android:orientation="vertical"
+        android:background="#0D1B2A"
+        android:visibility="gone"
+        android:paddingHorizontal="12dp"
+        android:paddingVertical="8dp">
+ 
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingBottom="8dp">
+ 
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="我的表情包"
+                android:textColor="#80FFFFFF"
+                android:textSize="12sp" />
+ 
+            <TextView
+                android:id="@+id/btnAddSticker"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="＋ 导入"
+                android:textColor="#4DB3A0FF"
+                android:textSize="12sp"
+                android:paddingHorizontal="8dp"
+                android:paddingVertical="4dp" />
+        </LinearLayout>
+ 
+        <HorizontalScrollView
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:scrollbars="none">
+ 
+            <LinearLayout
+                android:id="@+id/stickerGrid"
+                android:layout_width="wrap_content"
+                android:layout_height="match_parent"
+                android:orientation="horizontal"
+                android:gravity="center_vertical" />
+        </HorizontalScrollView>
+    </LinearLayout>
+
     <!-- ===== 底部输入栏（普通模式） ===== -->
     <LinearLayout
         android:id="@+id/inputBar"
@@ -136,6 +256,15 @@
             android:text="＋"
             android:textColor="#26FFFFFF"
             android:textSize="20sp" />
+                <!-- 表情包按钮 -->
+        <TextView
+            android:id="@+id/btnSticker"
+            android:layout_width="32dp"
+            android:layout_height="36dp"
+            android:gravity="center"
+            android:text="😊"
+            android:textColor="#26FFFFFF"
+            android:textSize="18sp" />
 
         <!-- 输入框 -->
         <EditText

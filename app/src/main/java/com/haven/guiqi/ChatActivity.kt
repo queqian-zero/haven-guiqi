@@ -817,6 +817,15 @@ class ChatActivity : AppCompatActivity() {
             showEditUserNameDialog()
         }
 
+        // 用户的自我描述
+        val userBioPrefs = getSharedPreferences("haven_user", MODE_PRIVATE)
+        val myBio = userBioPrefs.getString("my_bio", "") ?: ""
+        addProfileItem("我眼中的自己",
+            if (myBio.isNotEmpty()) myBio.take(20) + (if (myBio.length > 20) "..." else "") else "还没有写",
+            "你的自我描述，AI 好奇时可以翻看（不会主动塞给 AI）") {
+            showEditMyBioDialog()
+        }
+
         addProfileSectionTitle("数据管理")
 
         addProfileItem("导出数据", "", "把好友和聊天记录导出备份") {
@@ -854,6 +863,37 @@ class ChatActivity : AppCompatActivity() {
                 refreshProfile()
                 if (name.isNotEmpty()) {
                     Toast.makeText(this, "以后 AI 就叫你「$name」了 ♡", Toast.LENGTH_SHORT).show()
+                }
+            }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    // ===== 编辑用户自我描述 =====
+    private fun showEditMyBioDialog() {
+        val dp = { value: Int -> (value * resources.displayMetrics.density).toInt() }
+        val prefs = getSharedPreferences("haven_user", MODE_PRIVATE)
+        val currentBio = prefs.getString("my_bio", "") ?: ""
+
+        val input = EditText(this).apply {
+            setText(currentBio)
+            this.hint = "写写你眼中的自己吧...\n\nAI 不会每次都看到这些，只有它好奇的时候才会主动翻看"
+            setPadding(dp(16), dp(12), dp(16), dp(12))
+            textSize = 14f
+            minLines = 5
+            gravity = Gravity.TOP
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle("我眼中的自己")
+            .setView(input)
+            .setPositiveButton("保存") { _, _ ->
+                val bio = input.text.toString().trim()
+                prefs.edit().putString("my_bio", bio).apply()
+                refreshProfile()
+                if (bio.isNotEmpty()) {
+                    Toast.makeText(this, "已保存 ♡", Toast.LENGTH_SHORT).show()
                 }
             }
             .setNegativeButton("取消", null)

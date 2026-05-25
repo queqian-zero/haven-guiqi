@@ -1,0 +1,142 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/settings_bg"
+    android:orientation="vertical">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingHorizontal="14dp"
+        android:paddingTop="10dp"
+        android:paddingBottom="10dp">
+
+        <TextView
+            android:id="@+id/btnBack"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:gravity="center"
+            android:text="←"
+            android:textColor="#59FFFFFF"
+            android:textSize="18sp" />
+
+        <TextView
+            android:id="@+id/tvTitle"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:text="核心记忆"
+            android:textColor="#D9FFFFFF"
+            android:textSize="15sp" />
+
+        <View
+            android:layout_width="36dp"
+            android:layout_height="36dp" />
+    </LinearLayout>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="0.5dp"
+        android:background="#08FFFFFF" />
+
+    <!-- 文件夹标题栏 -->
+    <LinearLayout
+        android:id="@+id/folderHeader"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingHorizontal="14dp"
+        android:paddingVertical="8dp">
+
+        <View
+            android:id="@+id/colorBar"
+            android:layout_width="4dp"
+            android:layout_height="20dp"
+            android:layout_marginEnd="10dp" />
+
+        <TextView
+            android:id="@+id/tvFolderName"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="核心记忆"
+            android:textColor="#B3FFFFFF"
+            android:textSize="14sp" />
+
+        <TextView
+            android:id="@+id/tvPageInfo"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="共 0 条"
+            android:textColor="#4DFFFFFF"
+            android:textSize="11sp" />
+    </LinearLayout>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="0.5dp"
+        android:background="#08FFFFFF" />
+
+    <!-- 档案纸区域 -->
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:scrollbars="none">
+
+        <LinearLayout
+            android:id="@+id/pagesContainer"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingHorizontal="14dp"
+            android:paddingTop="10dp"
+            android:paddingBottom="20dp" />
+    </ScrollView>
+
+    <!-- 分页栏 -->
+    <LinearLayout
+        android:id="@+id/pagerBar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center"
+        android:orientation="horizontal"
+        android:paddingVertical="10dp"
+        android:background="#08FFFFFF">
+
+        <TextView
+            android:id="@+id/btnPrev"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="‹ 上一页"
+            android:textColor="#4DB3A0FF"
+            android:textSize="12sp"
+            android:paddingHorizontal="16dp"
+            android:paddingVertical="6dp" />
+
+        <TextView
+            android:id="@+id/tvPager"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="第 1 页 / 共 1 页"
+            android:textColor="#4DFFFFFF"
+            android:textSize="11sp"
+            android:paddingHorizontal="16dp" />
+
+        <TextView
+            android:id="@+id/btnNext"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="下一页 ›"
+            android:textColor="#4DB3A0FF"
+            android:textSize="12sp"
+            android:paddingHorizontal="16dp"
+            android:paddingVertical="6dp" />
+    </LinearLayout>
+
+</LinearLayout>

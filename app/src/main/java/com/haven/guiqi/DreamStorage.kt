@@ -1,0 +1,291 @@
+package com.haven.guiqi
+
+import android.content.Context
+import org.json.JSONArray
+import org.json.JSONObject
+import java.io.File
+import java.text.SimpleDateFormat
+import java.util.*
+
+/**
+ * DreamStorage - AI 的梦境管理
+ *
+ * 梦境由造梦 API 生成，有三种状态：
+ *   - VIVID：完整的梦，AI 记得，可以跟用户聊
+ *   - FOGGY：做了梦但醒来忘了，只剩模糊印象
+ *   - FRAGMENT：被吵醒的残梦，只有片段
+ *
+ * 也有可能今晚根本不做梦（NO_DREAM），这种情况什么都不存
+ *
+ * 数据存在 dreams/{friendId}.json 里
+ *
+ * JSON 格式：
+ * {
+ *   "dreams": [
+ *     {
+ *       "id": "DRM-1715000000",
+ *       "content": "梦到自己站在一片紫色的海边...",
+ *       "status": "VIVID",          // VIVID / FOGGY / FRAGMENT
+ *       "foggyHint": "",            // 模糊印象（FOGGY 状态时用）
+ *       "sleepAt": 1715000000,      // 入睡时间
+ *       "wakeAt": 1715003600,       // 醒来时间
+ *       "createdAt": 1715000000
+ *     }
+ *   ]
+ * }
+ */
+class DreamStorage(private val context: Context) {
+
+    private val dreamDir: File
+        get() {
+            val dir = File(context.filesDir, "dreams")
+            if (!dir.exists()) dir.mkdirs()
+            return dir
+        }
+
+    private fun getFile(friendId: String): File = File(dreamDir, "$friendId.json")
+
+    /**
+     * 保存一个完整的梦（AI 记得的）
+     */
+    fun saveVividDream(friendId: String, content: String, sleepAt: Long): Dream {
+        val now = System.currentTimeMillis()
+        val dream = Dream(
+            id = "DRM-$now",
+            content = content.trim(),
+            status = "VIVID",
+            foggyHint = "",
+            sleepAt = sleepAt,
+            wakeAt = now,
+            createdAt = now
+        )
+        val list = loadDreams(friendId).toMutableList()
+        list.add(dream)
+        save(friendId, list)
+        return dream
+    }
+
+    /**
+     * 保存一个模糊的梦（做了但忘了）
+     */
+    fun saveFoggyDream(friendId: String, foggyHint: String, sleepAt: Long): Dream {
+        val now = System.currentTimeMillis()
+        val dream = Dream(
+            id = "DRM-$now",
+            content = "",
+            status = "FOGGY",
+            foggyHint = foggyHint.trim(),
+            sleepAt = sleepAt,
+            wakeAt = now,
+            createdAt = now
+        )
+        val list = loadDreams(friendId).toMutableList()
+        list.add(dream)
+        save(friendId, list)
+        return dream
+    }
+
+    /**
+     * 保存一个残梦（被吵醒，梦到一半）
+     */
+    fun saveFragmentDream(friendId: String, fragment: String, sleepAt: Long): Dream {
+        val now = System.currentTimeMillis()
+        val dream = Dream(
+            id = "DRM-$now",
+            content = fragment.trim(),
+            status = "FRAGMENT",
+            foggyHint = "",
+            sleepAt = sleepAt,
+            wakeAt = now,
+            createdAt = now
+        )
+        val list = loadDreams(friendId).toMutableList()
+        list.add(dream)
+        save(friendId, list)
+        return dream
+    }
+
+    /**
+     * 加载所有梦境（最新的在前）
+     */
+    fun loadDreams(friendId: String): List<Dream> {
+        val file = getFile(friendId)
+        if (!file.exists()) return emptyList()
+
+        return try {
+            val json = JSONObject(file.readText())
+            val array = json.getJSONArray("dreams")
+            val list = mutableListOf<Dream>()
+            for (i in 0 until array.length()) {
+                val obj = array.getJSONObject(i)
+                list.add(Dream(
+                    id = obj.getString("id"),
+                    content = obj.optString("content", ""),
+                    status = obj.optString("status", "VIVID"),
+                    foggyHint = obj.optString("foggyHint", ""),
+                    sleepAt = obj.optLong("sleepAt", 0L),
+                    wakeAt = obj.optLong("wakeAt", 0L),
+                    createdAt = obj.optLong("createdAt", 0L)
+                ))
+            }
+            list.sortedByDescending { it.createdAt }
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
+    /**
+     * 梦境总数
+     */
+    fun count(friendId: String): Int = loadDreams(friendId).size
+
+    /**
+     * 获取最近一个梦（用于 AI 醒来后参考）
+     */
+    fun getLatestDream(friendId: String): Dream? {
+        return loadDreams(friendId).firstOrNull()
+    }
+
+    /**
+     * 拼给 AI 看的梦境摘要（放 system prompt 里）
+     * 只放最近 3 个梦的简短摘要，不占太多上下文
+     */
+    fun buildDreamPrompt(friendId: String): String {
+        val dreams = loadDreams(friendId)
+        if (dreams.isEmpty()) return ""
+
+        val recent = dreams.take(3)
+        val sb = StringBuilder("\n\n[你最近的梦境]\n")
+        for (d in recent) {
+            val dateStr = SimpleDateFormat("M月d日", Locale.CHINESE).format(Date(d.createdAt))
+            when (d.status) {
+                "VIVID" -> {
+                    val preview = if (d.content.length > 60) d.content.substring(0, 60) + "..." else d.content
+                    sb.append("· $dateStr 的梦: $preview\n")
+                }
+                "FOGGY" -> {
+                    val hint = d.foggyHint.ifEmpty { "模糊的印象" }
+                    sb.append("· $dateStr: 做了梦但忘了（$hint）\n")
+                }
+                "FRAGMENT" -> {
+                    val preview = if (d.content.length > 40) d.content.substring(0, 40) + "..." else d.content
+                    sb.append("· $dateStr 的残梦: $preview（被吵醒了）\n")
+                }
+            }
+        }
+        if (dreams.size > 3) {
+            sb.append("（还有 ${dreams.size - 3} 个更早的梦）\n")
+        }
+        return sb.toString()
+    }
+
+    /**
+     * 给档案馆显示用的：获取梦境展示文本
+     */
+    fun getDisplayText(dream: Dream): String {
+        return when (dream.status) {
+            "VIVID" -> dream.content
+            "FOGGY" -> {
+                val hint = dream.foggyHint.ifEmpty { "一些模糊的画面" }
+                "做了一个梦，但醒来只记得……$hint"
+            }
+            "FRAGMENT" -> "【残梦】${dream.content}\n\n（被吵醒了，梦只做了一半）"
+            else -> dream.content
+        }
+    }
+
+    /**
+     * 获取梦境状态的标签文字
+     */
+    fun getStatusLabel(dream: Dream): String {
+        return when (dream.status) {
+            "VIVID" -> "🌙 完整的梦"
+            "FOGGY" -> "🌫️ 忘了的梦"
+            "FRAGMENT" -> "💫 残梦"
+            else -> "🌙 梦"
+        }
+    }
+
+    // ===== 睡眠状态管理 =====
+
+    private fun getSleepPrefs() = context.getSharedPreferences("haven_sleep", Context.MODE_PRIVATE)
+
+    /**
+     * 记录 AI 入睡
+     */
+    fun setSleeping(friendId: String, sleeping: Boolean) {
+        getSleepPrefs().edit()
+            .putBoolean("sleeping_$friendId", sleeping)
+            .putLong("sleep_time_$friendId", if (sleeping) System.currentTimeMillis() else 0L)
+            .apply()
+    }
+
+    /**
+     * AI 是否在睡觉
+     */
+    fun isSleeping(friendId: String): Boolean {
+        return getSleepPrefs().getBoolean("sleeping_$friendId", false)
+    }
+
+    /**
+     * 获取入睡时间
+     */
+    fun getSleepTime(friendId: String): Long {
+        return getSleepPrefs().getLong("sleep_time_$friendId", 0L)
+    }
+
+    /**
+     * 计算当前睡眠深度（0.0 ~ 1.0）
+     * 0.0 = 刚睡着或快醒了（浅睡）
+     * 1.0 = 睡得最沉
+     *
+     * 模拟人类睡眠周期：
+     * 前 15 分钟渐入深睡 → 中间保持深睡 → 超过一定时间开始变浅
+     */
+    fun getSleepDepth(friendId: String): Float {
+        if (!isSleeping(friendId)) return 0f
+        val elapsed = System.currentTimeMillis() - getSleepTime(friendId)
+        val minutes = elapsed / 60000f
+
+        return when {
+            minutes < 15 -> minutes / 15f * 0.8f          // 前15分钟渐入
+            minutes < 90 -> 0.8f + (minutes - 15) / 75f * 0.2f  // 15-90分钟深睡
+            minutes < 120 -> 1.0f                           // 90-120分钟最沉
+            minutes < 180 -> 1.0f - (minutes - 120) / 60f * 0.4f // 开始变浅
+            else -> 0.4f                                    // 超过3小时，比较浅了
+        }.coerceIn(0f, 1f)
+    }
+
+    // ===== 内部保存 =====
+
+    private fun save(friendId: String, list: List<Dream>) {
+        val array = JSONArray()
+        for (d in list) {
+            array.put(JSONObject().apply {
+                put("id", d.id)
+                put("content", d.content)
+                put("status", d.status)
+                put("foggyHint", d.foggyHint)
+                put("sleepAt", d.sleepAt)
+                put("wakeAt", d.wakeAt)
+                put("createdAt", d.createdAt)
+            })
+        }
+        getFile(friendId).writeText(JSONObject().apply {
+            put("dreams", array)
+        }.toString())
+    }
+}
+
+/**
+ * 一个梦境
+ */
+data class Dream(
+    val id: String,
+    val content: String,       // 梦境内容（VIVID 和 FRAGMENT 有，FOGGY 为空）
+    val status: String,        // VIVID / FOGGY / FRAGMENT
+    val foggyHint: String,     // 模糊印象（只有 FOGGY 状态用）
+    val sleepAt: Long,         // 入睡时间
+    val wakeAt: Long,          // 醒来时间
+    val createdAt: Long
+)

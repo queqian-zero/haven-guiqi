@@ -14,6 +14,8 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.PowerManager
+import android.provider.Settings
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
@@ -114,6 +116,7 @@ class DesktopActivity : AppCompatActivity() {
 
         setContentView(R.layout.activity_desktop)
 
+
         // 只隐藏底部导航栏，保留顶部状态栏
         val insetsController = WindowInsetsControllerCompat(window, window.decorView)
         insetsController.hide(WindowInsetsCompat.Type.navigationBars())
@@ -122,6 +125,16 @@ class DesktopActivity : AppCompatActivity() {
         insetsController.isAppearanceLightStatusBars = false
 
         prefs = getSharedPreferences("haven_prefs", MODE_PRIVATE)
+
+        // 初始化主题
+        ThemeHelper.init(this)
+
+        // 创建通知渠道
+        NotificationHelper.createChannels(this)
+        // 启动前台保活服务
+        HavenService.start(this)
+        // 检查电池优化白名单
+        checkBatteryOptimization()
 
         // ===== 绑定普通模式元素 =====
         normalDesktop = findViewById(R.id.normalDesktop)
@@ -533,7 +546,9 @@ class DesktopActivity : AppCompatActivity() {
                 startActivity(intent)
             }
             "sms" -> Toast.makeText(this, "短信 - 求挽留模式开发中", Toast.LENGTH_SHORT).show()
-            "archive" -> Toast.makeText(this, "馆藏 - 书城·档案馆", Toast.LENGTH_SHORT).show()
+            "archive" -> {
+                startActivity(Intent(this, ArchiveActivity::class.java))
+            }
             "world" -> Toast.makeText(this, "世界 - 预设·正则·世界书", Toast.LENGTH_SHORT).show()
             "workshop" -> Toast.makeText(this, "工坊 - AI项目·代码·文件", Toast.LENGTH_SHORT).show()
             "settings" -> {
@@ -761,5 +776,42 @@ class DesktopActivity : AppCompatActivity() {
         override fun getOpacity(): Int = PixelFormat.TRANSLUCENT
         override fun getIntrinsicWidth(): Int = size
         override fun getIntrinsicHeight(): Int = size
+    }
+
+    /**
+     * 检查电池优化白名单
+     *
+     * 如果归栖不在白名单里，弹个对话框引导用户去关掉电池优化
+     * 只提醒一次，用户选择"不再提醒"后不会再弹
+     */
+    private fun checkBatteryOptimization() {
+        // 用户选过"不再提醒"就跳过
+        if (prefs.getBoolean("battery_hint_dismissed", false)) return
+
+        val pm = getSystemService(POWER_SERVICE) as PowerManager
+        if (!pm.isIgnoringBatteryOptimizations(packageName)) {
+            AlertDialog.Builder(this)
+                .setTitle("保持归栖在后台运行")
+                .setMessage("为了让 AI 能主动找你、不被系统杀掉，需要关闭归栖的电池优化。\n\n点击「去设置」后，选择「不优化」或「无限制」。")
+                .setPositiveButton("去设置") { _, _ ->
+                    try {
+                        val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                            data = Uri.parse("package:$packageName")
+                        }
+                        startActivity(intent)
+                    } catch (e: Exception) {
+                        try {
+                            startActivity(Intent(Settings.ACTION_BATTERY_SAVER_SETTINGS))
+                        } catch (e2: Exception) {
+                            Toast.makeText(this, "请手动在设置中关闭归栖的电池优化", Toast.LENGTH_LONG).show()
+                        }
+                    }
+                }
+                .setNegativeButton("下次再说", null)
+                .setNeutralButton("不再提醒") { _, _ ->
+                    prefs.edit().putBoolean("battery_hint_dismissed", true).apply()
+                }
+                .show()
+        }
     }
 }
