@@ -1,2 +1,51 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources></resources>
+<resources>
+    <!-- ===== 归栖配色 · 浅色模式（Claude 同款） ===== -->
+
+    <!-- 背景 -->
+    <color name="haven_background">#FAF9F7</color>
+    <color name="haven_background_secondary">#F5F3EF</color>
+    <color name="haven_card">#FFFFFF</color>
+    <color name="haven_input_bg">#08000000</color>
+
+    <!-- 文字 -->
+    <color name="haven_text_primary">#FF2D2B28</color>
+    <color name="haven_text_secondary">#FF6B6560</color>
+    <color name="haven_text_hint">#4D6B6560</color>
+    <color name="haven_text_on_card">#FF3D3730</color>
+
+    <!-- 强调色（暖棕色） -->
+    <color name="haven_accent">#FFB3845A</color>
+    <color name="haven_accent_strong">#FF8B6440</color>
+    <color name="haven_accent_bg">#1AB3845A</color>
+
+    <!-- 边框 -->
+    <color name="haven_border">#26B4A082</color>
+    <color name="haven_border_medium">#33B4A082</color>
+    <color name="haven_divider">#1AB4A082</color>
+
+    <!-- 设置页专用 -->
+    <color name="haven_settings_bg">#FAF9F7</color>
+    <color name="haven_settings_item_bg">#FFFFFF</color>
+    <color name="haven_settings_title">#FF2D2B28</color>
+    <color name="haven_settings_section">#996B6560</color>
+    <color name="haven_settings_label">#996B6560</color>
+    <color name="haven_settings_value">#FF3D3730</color>
+    <color name="haven_settings_input_text">#FF3D3730</color>
+    <color name="haven_settings_input_hint">#4D6B6560</color>
+    <color name="haven_settings_button">#996B6560</color>
+    <color name="haven_settings_back">#806B6560</color>
+    <color name="haven_settings_divider">#1AB4A082</color>
+    <color name="haven_settings_version">#4D6B6560</color>
+
+    <!-- 弹窗 -->
+    <color name="haven_dialog_bg">#FFFFFF</color>
+    <color name="haven_dialog_text">#FF2D2B28</color>
+    <color name="haven_dialog_text_secondary">#FF6B6560</color>
+    <color name="haven_dialog_accent">#FFB3845A</color>
+
+    <!-- 状态 -->
+    <color name="haven_success">#FF5A9A6E</color>
+    <color name="haven_error">#FFE24B4A</color>
+    <color name="haven_warning">#FF9A7A50</color>
+</resources>

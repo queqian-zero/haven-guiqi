@@ -6,6 +6,7 @@
 
   <style name="AppTheme" parent="Base.AppTheme" />
 
+  <!-- 深色模式弹窗 -->
   <style name="HavenDialogTheme" parent="ThemeOverlay.Material3.MaterialAlertDialog">
     <item name="android:windowBackground">@drawable/dialog_bg</item>
     <item name="android:textColor">#D9FFFFFF</item>

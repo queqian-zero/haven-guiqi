@@ -21,7 +21,7 @@
             android:layout_height="36dp"
             android:gravity="center"
             android:text="←"
-            android:textColor="#99FFFFFF"
+            android:textColor="@color/haven_settings_back"
             android:textSize="20sp"
             android:background="@drawable/icon_bg" />
 
@@ -31,7 +31,7 @@
             android:layout_weight="1"
             android:layout_marginStart="12dp"
             android:text="设置"
-            android:textColor="#E6FFFFFF"
+            android:textColor="@color/haven_settings_title"
             android:textSize="20sp" />
     </LinearLayout>
 
@@ -53,7 +53,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:text="API 预设"
-                android:textColor="#66FFFFFF"
+                android:textColor="@color/haven_settings_section"
                 android:textSize="12sp"
                 android:paddingHorizontal="4dp"
                 android:paddingTop="16dp"
@@ -71,7 +71,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:text="当前预设"
-                    android:textColor="#99FFFFFF"
+                    android:textColor="@color/haven_settings_back"
                     android:textSize="13sp"
                     android:paddingBottom="6dp" />
 
@@ -83,7 +83,7 @@
                     android:gravity="center_vertical"
                     android:paddingHorizontal="12dp"
                     android:text="默认"
-                    android:textColor="#CCFFFFFF"
+                    android:textColor="@color/haven_settings_value"
                     android:textSize="13sp" />
 
                 <!-- 保存/删除预设按钮 -->
@@ -101,7 +101,7 @@
                         android:background="@drawable/input_bg"
                         android:gravity="center"
                         android:text="保存为预设"
-                        android:textColor="#99FFFFFF"
+                        android:textColor="@color/haven_settings_back"
                         android:textSize="12sp"
                         android:layout_marginEnd="6dp" />
 
@@ -113,7 +113,7 @@
                         android:background="@drawable/input_bg"
                         android:gravity="center"
                         android:text="删除预设"
-                        android:textColor="#66FFFFFF"
+                        android:textColor="@color/haven_settings_section"
                         android:textSize="12sp"
                         android:layout_marginStart="6dp" />
                 </LinearLayout>
@@ -125,7 +125,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:text="API 配置"
-                android:textColor="#66FFFFFF"
+                android:textColor="@color/haven_settings_section"
                 android:textSize="12sp"
                 android:paddingHorizontal="4dp"
                 android:paddingTop="24dp"
@@ -143,7 +143,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:text="API 地址"
-                    android:textColor="#99FFFFFF"
+                    android:textColor="@color/haven_settings_back"
                     android:textSize="13sp"
                     android:paddingBottom="6dp" />
 
@@ -153,8 +153,8 @@
                     android:layout_height="42dp"
                     android:background="@drawable/input_bg"
                     android:hint="https://api.openai.com/v1"
-                    android:textColor="#CCFFFFFF"
-                    android:textColorHint="#33FFFFFF"
+                    android:textColor="@color/haven_settings_value"
+                    android:textColorHint="@color/haven_settings_input_hint"
                     android:textSize="13sp"
                     android:paddingHorizontal="12dp"
                     android:singleLine="true"
@@ -164,7 +164,7 @@
                 <View
                     android:layout_width="match_parent"
                     android:layout_height="1dp"
-                    android:background="#0AFFFFFF"
+                    android:background="@color/haven_settings_divider"
                     android:layout_marginVertical="14dp" />
 
                 <!-- API 密钥 -->
@@ -172,7 +172,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:text="API 密钥"
-                    android:textColor="#99FFFFFF"
+                    android:textColor="@color/haven_settings_back"
                     android:textSize="13sp"
                     android:paddingBottom="6dp" />
 
@@ -182,8 +182,8 @@
                     android:layout_height="42dp"
                     android:background="@drawable/input_bg"
                     android:hint="sk-..."
-                    android:textColor="#CCFFFFFF"
-                    android:textColorHint="#33FFFFFF"
+                    android:textColor="@color/haven_settings_value"
+                    android:textColorHint="@color/haven_settings_input_hint"
                     android:textSize="13sp"
                     android:paddingHorizontal="12dp"
                     android:singleLine="true"
@@ -193,7 +193,7 @@
                 <View
                     android:layout_width="match_parent"
                     android:layout_height="1dp"
-                    android:background="#0AFFFFFF"
+                    android:background="@color/haven_settings_divider"
                     android:layout_marginVertical="14dp" />
 
                 <!-- 模型名称 + 拉取按钮 -->
@@ -201,7 +201,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:text="模型名称"
-                    android:textColor="#99FFFFFF"
+                    android:textColor="@color/haven_settings_back"
                     android:textSize="13sp"
                     android:paddingBottom="6dp" />
 
@@ -217,8 +217,8 @@
                         android:layout_weight="1"
                         android:background="@drawable/input_bg"
                         android:hint="手动输入或点击拉取"
-                        android:textColor="#CCFFFFFF"
-                        android:textColorHint="#33FFFFFF"
+                        android:textColor="@color/haven_settings_value"
+                        android:textColorHint="@color/haven_settings_input_hint"
                         android:textSize="13sp"
                         android:paddingHorizontal="12dp"
                         android:singleLine="true"
@@ -233,7 +233,7 @@
                         android:background="@drawable/input_bg"
                         android:gravity="center"
                         android:text="拉取"
-                        android:textColor="#99FFFFFF"
+                        android:textColor="@color/haven_settings_back"
                         android:textSize="12sp" />
                 </LinearLayout>
 
@@ -246,7 +246,7 @@
                     android:background="@drawable/input_bg"
                     android:gravity="center"
                     android:text="测试连接"
-                    android:textColor="#99FFFFFF"
+                    android:textColor="@color/haven_settings_back"
                     android:textSize="13sp" />
 
                 <!-- 连接状态 -->
@@ -267,7 +267,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:text="外观"
-                android:textColor="#66FFFFFF"
+                android:textColor="@color/haven_settings_section"
                 android:textSize="12sp"
                 android:paddingHorizontal="4dp"
                 android:paddingTop="24dp"
@@ -284,7 +284,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:text="主题模式"
-                    android:textColor="#99FFFFFF"
+                    android:textColor="@color/haven_settings_back"
                     android:textSize="13sp"
                     android:paddingBottom="6dp" />
 
@@ -296,7 +296,7 @@
                     android:gravity="center_vertical"
                     android:paddingHorizontal="12dp"
                     android:text="跟随系统"
-                    android:textColor="#CCFFFFFF"
+                    android:textColor="@color/haven_settings_value"
                     android:textSize="13sp" />
             </LinearLayout>
             <!-- ===== 语言设置区 ===== -->
@@ -304,7 +304,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:text="系统语言"
-                android:textColor="#66FFFFFF"
+                android:textColor="@color/haven_settings_section"
                 android:textSize="12sp"
                 android:paddingHorizontal="4dp"
                 android:paddingTop="24dp"
@@ -321,7 +321,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:text="界面语言"
-                    android:textColor="#99FFFFFF"
+                    android:textColor="@color/haven_settings_back"
                     android:textSize="13sp"
                     android:paddingBottom="6dp" />
 
@@ -333,7 +333,7 @@
                     android:gravity="center_vertical"
                     android:paddingHorizontal="12dp"
                     android:text="简体中文"
-                    android:textColor="#CCFFFFFF"
+                    android:textColor="@color/haven_settings_value"
                     android:textSize="13sp" />
             </LinearLayout>
 
@@ -342,7 +342,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:text="数据管理"
-                android:textColor="#66FFFFFF"
+                android:textColor="@color/haven_settings_section"
                 android:textSize="12sp"
                 android:paddingHorizontal="4dp"
                 android:paddingTop="24dp"
@@ -363,13 +363,13 @@
                     android:gravity="center_vertical"
                     android:paddingHorizontal="12dp"
                     android:text="导出全部数据"
-                    android:textColor="#CCFFFFFF"
+                    android:textColor="@color/haven_settings_value"
                     android:textSize="13sp" />
 
                 <View
                     android:layout_width="match_parent"
                     android:layout_height="1dp"
-                    android:background="#0AFFFFFF"
+                    android:background="@color/haven_settings_divider"
                     android:layout_marginVertical="10dp" />
 
                 <TextView
@@ -380,7 +380,7 @@
                     android:gravity="center_vertical"
                     android:paddingHorizontal="12dp"
                     android:text="导入数据"
-                    android:textColor="#CCFFFFFF"
+                    android:textColor="@color/haven_settings_value"
                     android:textSize="13sp" />
             </LinearLayout>
 
@@ -393,7 +393,7 @@
                 android:background="@drawable/search_bar_bg"
                 android:gravity="center"
                 android:text="保存设置"
-                android:textColor="#CCFFFFFF"
+                android:textColor="@color/haven_settings_value"
                 android:textSize="15sp" />
 
             <TextView
@@ -402,7 +402,7 @@
                 android:gravity="center"
                 android:paddingTop="24dp"
                 android:text="归栖 Haven v0.1"
-                android:textColor="#26FFFFFF"
+                android:textColor="@color/haven_settings_version"
                 android:textSize="11sp" />
 
         </LinearLayout>
