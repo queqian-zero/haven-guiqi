@@ -36,6 +36,9 @@ class ArchiveActivity : AppCompatActivity() {
     private lateinit var archivePage: View
     private lateinit var cabinetContainer: LinearLayout
 
+    /** 当前主题色 */
+    private val c get() = ThemeHelper.getColors(this)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -53,7 +56,7 @@ class ArchiveActivity : AppCompatActivity() {
         insetsController.hide(WindowInsetsCompat.Type.navigationBars())
         insetsController.systemBarsBehavior =
             WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-        insetsController.isAppearanceLightStatusBars = false
+        insetsController.isAppearanceLightStatusBars = !ThemeHelper.isDark(this)
 
         val contentView = findViewById<View>(android.R.id.content)
         ViewCompat.setOnApplyWindowInsetsListener(contentView) { view, insets ->
@@ -83,14 +86,14 @@ class ArchiveActivity : AppCompatActivity() {
 
     private fun switchTab(isArchive: Boolean) {
         if (isArchive) {
-            tabArchive.setTextColor(0xD9FFFFFF.toInt())
-            tabLibrary.setTextColor(0x4DFFFFFF.toInt())
+            tabArchive.setTextColor(c.textPrimary)
+            tabLibrary.setTextColor(c.textHint)
             archivePage.visibility = View.VISIBLE
             libraryPage.visibility = View.GONE
             loadCabinets()
         } else {
-            tabLibrary.setTextColor(0xD9FFFFFF.toInt())
-            tabArchive.setTextColor(0x4DFFFFFF.toInt())
+            tabLibrary.setTextColor(c.textPrimary)
+            tabArchive.setTextColor(c.textHint)
             libraryPage.visibility = View.VISIBLE
             archivePage.visibility = View.GONE
         }
@@ -110,7 +113,7 @@ class ArchiveActivity : AppCompatActivity() {
             val tip = TextView(this).apply {
                 text = "还没有好友的档案\n先去聊天 App 里添加好友吧"
                 textSize = 13f
-                setTextColor(0x4DFFFFFF.toInt())
+                setTextColor(c.textHint)
                 gravity = Gravity.CENTER
                 setLineSpacing(0f, 1.4f)
                 setPadding(dp(20), dp(60), dp(20), dp(60))
@@ -130,22 +133,13 @@ class ArchiveActivity : AppCompatActivity() {
 
     /**
      * 构建一个档案柜（一个分组）
-     *
-     * 结构：
-     * ┌────────────────────┐ ← 柜顶（深色窄条）
-     * │ 分组名             │ ← 柜子标签
-     * ├────────────────────┤
-     * │ ■■  星河     ✨   │ ← 抽屉（拉手 + 名字 + 头像）
-     * ├────────────────────┤
-     * │ ■■  夜溪     🌙   │ ← 抽屉
-     * └────────────────────┘
      */
     private fun buildCabinet(group: String, friends: List<Friend>, dp: (Int) -> Int): LinearLayout {
         // 柜子外壳
         val cabinetBg = GradientDrawable().apply {
-            setColor(0xFF1A2A44.toInt())
+            setColor(c.cabinetBg)
             cornerRadius = dp(10).toFloat()
-            setStroke(dp(1), 0xFF243552.toInt())
+            setStroke(dp(1), c.cabinetBorder)
         }
 
         val cabinet = LinearLayout(this).apply {
@@ -163,7 +157,7 @@ class ArchiveActivity : AppCompatActivity() {
                 LinearLayout.LayoutParams.MATCH_PARENT, dp(8)
             )
             val topBg = GradientDrawable().apply {
-                setColor(0xFF1E3050.toInt())
+                setColor(c.cabinetTop)
                 cornerRadii = floatArrayOf(
                     dp(10).toFloat(), dp(10).toFloat(), // 左上
                     dp(10).toFloat(), dp(10).toFloat(), // 右上
@@ -178,7 +172,7 @@ class ArchiveActivity : AppCompatActivity() {
         val groupLabel = TextView(this).apply {
             text = group
             textSize = 11f
-            setTextColor(0x59FFFFFF.toInt())
+            setTextColor(c.textSecondary)
             setPadding(dp(14), dp(8), dp(14), dp(6))
             letterSpacing = 0.05f
         }
@@ -189,7 +183,7 @@ class ArchiveActivity : AppCompatActivity() {
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, dp(1)
             ).apply { marginStart = dp(12); marginEnd = dp(12) }
-            setBackgroundColor(0x0DFFFFFF.toInt())
+            setBackgroundColor(c.divider)
         }
         cabinet.addView(sep)
 
@@ -204,7 +198,7 @@ class ArchiveActivity : AppCompatActivity() {
                     layoutParams = LinearLayout.LayoutParams(
                         LinearLayout.LayoutParams.MATCH_PARENT, dp(1)
                     ).apply { marginStart = dp(52); marginEnd = dp(12) }
-                    setBackgroundColor(0x08FFFFFF.toInt())
+                    setBackgroundColor(c.border)
                 }
                 cabinet.addView(drawerSep)
             }
@@ -215,9 +209,6 @@ class ArchiveActivity : AppCompatActivity() {
 
     /**
      * 构建一个抽屉（一个好友）
-     *
-     * │ ■■  星河        ✨  │
-     * │     5条记忆 2篇日记  │
      */
     private fun buildDrawer(friend: Friend, dp: (Int) -> Int): LinearLayout {
         val memoryCount = MemoryStorage(this).count(friend.id)
@@ -252,9 +243,9 @@ class ArchiveActivity : AppCompatActivity() {
 
         // 拉手（小矩形，模拟抽屉把手）
         val handleBg = GradientDrawable().apply {
-            setColor(0xFF2A3D5C.toInt())
+            setColor(c.drawerHandle)
             cornerRadius = dp(3).toFloat()
-            setStroke(1, 0x1AFFFFFF.toInt())
+            setStroke(1, c.borderMedium)
         }
         val handle = View(this).apply {
             layoutParams = LinearLayout.LayoutParams(dp(28), dp(10)).apply {
@@ -271,12 +262,12 @@ class ArchiveActivity : AppCompatActivity() {
         val nameView = TextView(this).apply {
             text = friend.name
             textSize = 14f
-            setTextColor(0xCCFFFFFF.toInt())
+            setTextColor(c.textPrimary)
         }
         val statView = TextView(this).apply {
             text = statsText
             textSize = 10f
-            setTextColor(0x4DB3A0FF.toInt())
+            setTextColor(c.accent)
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT

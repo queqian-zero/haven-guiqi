@@ -47,6 +47,9 @@ class ArchiveFolderActivity : AppCompatActivity() {
     private var currentPage = 0
     private val pageSize = 5
 
+    /** 当前主题色 */
+    private val c get() = ThemeHelper.getColors(this)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -64,7 +67,7 @@ class ArchiveFolderActivity : AppCompatActivity() {
         insetsController.hide(WindowInsetsCompat.Type.navigationBars())
         insetsController.systemBarsBehavior =
             WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-        insetsController.isAppearanceLightStatusBars = false
+        insetsController.isAppearanceLightStatusBars = !ThemeHelper.isDark(this)
 
         val contentView = findViewById<View>(android.R.id.content)
         ViewCompat.setOnApplyWindowInsetsListener(contentView) { view, insets ->
@@ -93,27 +96,27 @@ class ArchiveFolderActivity : AppCompatActivity() {
             "memory" -> {
                 tvTitle.text = "$friendName / 核心记忆"
                 tvFolderName.text = "核心记忆"
-                setBarColor(0xFF78B48C.toInt())
+                setBarColor(c.folderMemory)
             }
             "diary" -> {
                 tvTitle.text = "$friendName / 日记"
                 tvFolderName.text = "日记"
-                setBarColor(0xFFB48C64.toInt())
+                setBarColor(c.folderDiary)
             }
             "dream" -> {
                 tvTitle.text = "$friendName / 梦境"
                 tvFolderName.text = "梦境"
-                setBarColor(0xFF8C78B4.toInt())
+                setBarColor(c.folderDream)
             }
             "summary" -> {
                 tvTitle.text = "$friendName / 聊天总结"
                 tvFolderName.text = "聊天总结"
-                setBarColor(0xFF6496B4.toInt())
+                setBarColor(c.folderSummary)
             }
             "trash" -> {
                 tvTitle.text = "$friendName / 废纸篓"
                 tvFolderName.text = "废纸篓"
-                setBarColor(0xFFA07878.toInt())
+                setBarColor(c.folderTrash)
             }
         }
 
@@ -272,8 +275,8 @@ class ArchiveFolderActivity : AppCompatActivity() {
         tvPager.text = "第 ${currentPage + 1} 页 / 共 ${totalPages} 页"
 
         // 分页按钮状态
-        btnPrev.setTextColor(if (currentPage > 0) 0x4DB3A0FF.toInt() else 0x26FFFFFF.toInt())
-        btnNext.setTextColor(if (currentPage < totalPages - 1) 0x4DB3A0FF.toInt() else 0x26FFFFFF.toInt())
+        btnPrev.setTextColor(if (currentPage > 0) c.accent else c.textHint)
+        btnNext.setTextColor(if (currentPage < totalPages - 1) c.accent else c.textHint)
 
         if (total == 0) {
             val empty = TextView(this).apply {
@@ -286,7 +289,7 @@ class ArchiveFolderActivity : AppCompatActivity() {
                     else -> "空的"
                 }
                 textSize = 13f
-                setTextColor(0x33FFFFFF.toInt())
+                setTextColor(c.textHint)
                 gravity = Gravity.CENTER
                 setPadding(dp(20), dp(60), dp(20), dp(60))
             }
@@ -307,23 +310,13 @@ class ArchiveFolderActivity : AppCompatActivity() {
 
     /**
      * 构建一张档案纸
-     *
-     * 视觉结构：
-     * ┌──────────────────────────┐
-     * │ ○                        │  ← 装订孔
-     * │ ○  MEM-001    2026/05/19 │  ← 编号 + 日期（虚线下方）
-     * │    ─ ─ ─ ─ ─ ─ ─ ─ ─ ─  │
-     * │    沈眠喜欢猫             │  ← 内容
-     * │                   Haven  │  ← 印章
-     * │ ○        1 / 5           │  ← 页码
-     * └──────────────────────────┘
      */
     private fun buildArchivePaper(item: ArchiveItem, total: Int, dp: (Int) -> Int): LinearLayout {
-        // 档案纸背景：暖色泛黄
+        // 档案纸背景
         val paperBg = GradientDrawable().apply {
-            setColor(0xFF1E1E16.toInt())
+            setColor(c.paperBg)
             cornerRadius = dp(3).toFloat()
-            setStroke(1, 0x26B4A078.toInt())
+            setStroke(1, c.paperBorder)
         }
 
         val paper = LinearLayout(this).apply {
@@ -359,7 +352,7 @@ class ArchiveFolderActivity : AppCompatActivity() {
             val holeBg = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
                 setColor(0x33000000.toInt())
-                setStroke(1, 0x26B4A078.toInt())
+                setStroke(1, c.paperBorder)
             }
             val hole = View(this).apply {
                 layoutParams = LinearLayout.LayoutParams(dp(6), dp(6)).apply {
@@ -390,7 +383,7 @@ class ArchiveFolderActivity : AppCompatActivity() {
         val numberView = TextView(this).apply {
             text = item.number
             textSize = 9f
-            setTextColor(0x66B4A078.toInt())
+            setTextColor(c.paperMeta)
             typeface = android.graphics.Typeface.MONOSPACE
             letterSpacing = 0.08f
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
@@ -398,7 +391,7 @@ class ArchiveFolderActivity : AppCompatActivity() {
         val dateView = TextView(this).apply {
             text = item.date
             textSize = 9f
-            setTextColor(0x59B4A078.toInt())
+            setTextColor(c.paperMeta)
             typeface = android.graphics.Typeface.MONOSPACE
         }
         headerRow.addView(numberView)
@@ -409,7 +402,7 @@ class ArchiveFolderActivity : AppCompatActivity() {
         val dashedLine = TextView(this).apply {
             text = "─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─"
             textSize = 6f
-            setTextColor(0x1AB4A078.toInt())
+            setTextColor(c.paperBorder)
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
@@ -421,7 +414,7 @@ class ArchiveFolderActivity : AppCompatActivity() {
         val contentView = TextView(this).apply {
             text = item.content
             textSize = 12f
-            setTextColor(0xB3E6DCC0.toInt())
+            setTextColor(c.paperText)
             setLineSpacing(0f, 1.5f)
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
@@ -444,7 +437,7 @@ class ArchiveFolderActivity : AppCompatActivity() {
         val pageNo = TextView(this).apply {
             text = "${item.globalIndex + 1} / $total"
             textSize = 8f
-            setTextColor(0x33B4A078.toInt())
+            setTextColor(c.paperBorder)
             gravity = Gravity.CENTER
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
@@ -453,12 +446,12 @@ class ArchiveFolderActivity : AppCompatActivity() {
         val stampBg = GradientDrawable().apply {
             setColor(0x00000000.toInt())
             cornerRadius = dp(2).toFloat()
-            setStroke(1, 0x1AB3A0FF.toInt())
+            setStroke(1, c.stampColor)
         }
         val stamp = TextView(this).apply {
             text = "Haven"
             textSize = 7f
-            setTextColor(0x33B3A0FF.toInt())
+            setTextColor(c.stampColor)
             background = stampBg
             setPadding(dp(5), dp(1), dp(5), dp(1))
             rotation = -3f
@@ -473,7 +466,7 @@ class ArchiveFolderActivity : AppCompatActivity() {
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, dp(2)
             )
-            setBackgroundColor(0x0DB4A078.toInt())
+            setBackgroundColor(c.paperBorder)
         }
 
         // 用一个外层包装，先放顶线再放内容

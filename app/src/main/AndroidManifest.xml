@@ -3,9 +3,11 @@
     xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-        <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
     <application 
         android:allowBackup="true" 
         android:icon="@mipmap/ic_launcher" 
@@ -31,14 +33,36 @@
         <activity android:name=".ArchiveActivity" />
         <activity android:name=".ArchiveDetailActivity" />
         <activity android:name=".ArchiveFolderActivity" />
-                <service
-            android:name=".HavenService"
-            android:enabled="true"
-            android:exported="false" />
-                <service
-            android:name=".HavenService"
-            android:enabled="true"
-            android:exported="false" />
         <activity android:name=".FriendDetailActivity" />
+        <activity android:name=".ClockActivity" />
+        <activity android:name=".ClockHistoryActivity" />
+        <service
+            android:name=".HavenService"
+            android:enabled="true"
+            android:exported="false" />
+        <receiver
+            android:name=".ReminderReceiver"
+            android:enabled="true"
+            android:exported="false" />
+        <receiver
+            android:name=".BootReceiver"
+            android:enabled="true"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
+        <service
+            android:name=".HavenAccessibilityService"
+            android:enabled="true"
+            android:exported="false"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/accessibility_service_config" />
+        </service>
     </application>
 </manifest>

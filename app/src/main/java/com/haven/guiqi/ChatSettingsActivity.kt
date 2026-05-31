@@ -22,6 +22,8 @@ import androidx.core.view.WindowInsetsControllerCompat
 
 class ChatSettingsActivity : AppCompatActivity() {
 
+    private val c get() = ThemeHelper.getColors(this)
+
     private lateinit var settingsContainer: LinearLayout
 
     private var friendId = ""
@@ -44,7 +46,7 @@ class ChatSettingsActivity : AppCompatActivity() {
         insetsController.hide(WindowInsetsCompat.Type.navigationBars())
         insetsController.systemBarsBehavior =
             WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-        insetsController.isAppearanceLightStatusBars = false
+        insetsController.isAppearanceLightStatusBars = !ThemeHelper.isDark(this)
 
         val contentView = findViewById<View>(android.R.id.content)
         ViewCompat.setOnApplyWindowInsetsListener(contentView) { view, insets ->
@@ -172,7 +174,7 @@ class ChatSettingsActivity : AppCompatActivity() {
             }
             this.text = title
             textSize = 12f
-            setTextColor(0x66B3A0FF.toInt())
+            setTextColor(c.accent)
             setPadding(dp(4), 0, 0, 0)
             letterSpacing = 0.1f
         }
@@ -196,14 +198,14 @@ class ChatSettingsActivity : AppCompatActivity() {
         val tvLabel = TextView(this).apply {
             this.text = label
             textSize = 13f
-            setTextColor(0x80FFFFFF.toInt())
+            setTextColor(c.textSecondary)
             layoutParams = LinearLayout.LayoutParams(dp(70), LinearLayout.LayoutParams.WRAP_CONTENT)
         }
 
         val tvValue = TextView(this).apply {
             this.text = value
             textSize = 13f
-            setTextColor(0xB3FFFFFF.toInt())
+            setTextColor(c.textOnAccent)
             layoutParams = LinearLayout.LayoutParams(
                 0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f
             )
@@ -234,13 +236,13 @@ class ChatSettingsActivity : AppCompatActivity() {
         val tvTitle = TextView(this).apply {
             this.text = title
             textSize = 14f
-            setTextColor(0xD9FFFFFF.toInt())
+            setTextColor(c.textPrimary)
         }
 
         val tvDesc = TextView(this).apply {
             this.text = description
             textSize = 11f
-            setTextColor(0x4DFFFFFF.toInt())
+            setTextColor(c.textHint)
             setLineSpacing(0f, 1.3f)
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
@@ -267,7 +269,7 @@ class ChatSettingsActivity : AppCompatActivity() {
         val hint = TextView(this).apply {
             this.text = "短记忆: 10~15 条\n中记忆: 25~35 条（推荐）\n长记忆: 50~80 条（费 token）"
             textSize = 12f
-            setTextColor(0xB3FFFFFF.toInt())
+            setTextColor(c.textOnAccent)
             setLineSpacing(0f, 1.4f)
             setPadding(0, 0, 0, dp(12))
         }
@@ -276,8 +278,8 @@ class ChatSettingsActivity : AppCompatActivity() {
         val input = EditText(this).apply {
             setText(current.toString())
             textSize = 16f
-            setTextColor(0xD9FFFFFF.toInt())
-            setHintTextColor(0x4DFFFFFF.toInt())
+            setTextColor(c.textPrimary)
+            setHintTextColor(c.textHint)
             this.hint = "输入条数"
             inputType = android.text.InputType.TYPE_CLASS_NUMBER
         }
@@ -334,7 +336,7 @@ class ChatSettingsActivity : AppCompatActivity() {
         val typeBtn = TextView(this).apply {
             this.text = "API 类型: ${typeNames[currentTypeIndex]}"
             textSize = 14f
-            setTextColor(0xD9FFFFFF.toInt())
+            setTextColor(c.textPrimary)
             setPadding(0, 0, 0, dp(12))
         }
         typeBtn.setOnClickListener {
@@ -351,7 +353,7 @@ class ChatSettingsActivity : AppCompatActivity() {
         val hint = TextView(this).apply {
             this.text = "留空则使用全局配置（设置页的配置）"
             textSize = 11f
-            setTextColor(0x80FFFFFF.toInt())
+            setTextColor(c.textSecondary)
             setPadding(0, 0, 0, dp(12))
         }
         layout.addView(hint)
@@ -360,8 +362,8 @@ class ChatSettingsActivity : AppCompatActivity() {
             this.hint = "API 地址"
             setText(friend.apiUrl)
             textSize = 14f
-            setTextColor(0xD9FFFFFF.toInt())
-            setHintTextColor(0x4DFFFFFF.toInt())
+            setTextColor(c.textPrimary)
+            setHintTextColor(c.textHint)
         }
         layout.addView(inputUrl)
 
@@ -369,8 +371,8 @@ class ChatSettingsActivity : AppCompatActivity() {
             this.hint = "API 密钥"
             setText(friend.apiKey)
             textSize = 14f
-            setTextColor(0xD9FFFFFF.toInt())
-            setHintTextColor(0x4DFFFFFF.toInt())
+            setTextColor(c.textPrimary)
+            setHintTextColor(c.textHint)
             inputType = android.text.InputType.TYPE_CLASS_TEXT or
                     android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
         }
@@ -380,8 +382,8 @@ class ChatSettingsActivity : AppCompatActivity() {
             this.hint = "模型名称"
             setText(friend.apiModel)
             textSize = 14f
-            setTextColor(0xD9FFFFFF.toInt())
-            setHintTextColor(0x4DFFFFFF.toInt())
+            setTextColor(c.textPrimary)
+            setHintTextColor(c.textHint)
         }
         layout.addView(inputModel)
 

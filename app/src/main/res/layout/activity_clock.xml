@@ -2,10 +2,9 @@
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@drawable/chat_bg"
+    android:background="@drawable/settings_bg"
     android:orientation="vertical">
 
-    <!-- 顶部栏 -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -29,14 +28,17 @@
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:gravity="center"
-            android:text="聊天设置"
+            android:text="时钟"
             android:textColor="@color/haven_text_primary"
-            android:textSize="15sp" />
+            android:textSize="16sp" />
 
-        <!-- 占位保持居中 -->
-        <View
+        <TextView
+            android:id="@+id/btnHistory"
             android:layout_width="36dp"
-            android:layout_height="36dp" />
+            android:layout_height="36dp"
+            android:gravity="center"
+            android:text="📋"
+            android:textSize="16sp" />
     </LinearLayout>
 
     <View
@@ -50,13 +52,12 @@
         android:scrollbars="none">
 
         <LinearLayout
-            android:id="@+id/settingsContainer"
+            android:id="@+id/clockContainer"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:paddingHorizontal="16dp"
+            android:paddingHorizontal="14dp"
             android:paddingTop="16dp"
             android:paddingBottom="40dp" />
     </ScrollView>
-
 </LinearLayout>

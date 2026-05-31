@@ -23,6 +23,7 @@ import android.view.WindowManager
 import android.view.animation.DecelerateInterpolator
 import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -122,7 +123,7 @@ class DesktopActivity : AppCompatActivity() {
         insetsController.hide(WindowInsetsCompat.Type.navigationBars())
         insetsController.systemBarsBehavior =
             WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-        insetsController.isAppearanceLightStatusBars = false
+        insetsController.isAppearanceLightStatusBars = !ThemeHelper.isDark(this)
 
         prefs = getSharedPreferences("haven_prefs", MODE_PRIVATE)
 
@@ -135,6 +136,7 @@ class DesktopActivity : AppCompatActivity() {
         HavenService.start(this)
         // 检查电池优化白名单
         checkBatteryOptimization()
+        checkAccessibilityService()
 
         // ===== 绑定普通模式元素 =====
         normalDesktop = findViewById(R.id.normalDesktop)
@@ -460,7 +462,7 @@ class DesktopActivity : AppCompatActivity() {
                 ).apply { topMargin = dpToPx(3) }
                 text = icon.label
                 textSize = 9f
-                setTextColor(Color.parseColor("#66FFFFFF"))
+                setTextColor(ContextCompat.getColor(this@DesktopActivity, R.color.haven_desktop_icon_label))
                 gravity = Gravity.CENTER
             }
 
@@ -556,6 +558,9 @@ class DesktopActivity : AppCompatActivity() {
     startActivity(intent)
 }
             "beautify" -> Toast.makeText(this, "美化 - 主题·图标·名字", Toast.LENGTH_SHORT).show()
+            "clock" -> {
+                startActivity(Intent(this, ClockActivity::class.java))
+            }
             else -> Toast.makeText(this, "${icon.label} - 开发中", Toast.LENGTH_SHORT).show()
         }
     }
@@ -574,7 +579,7 @@ class DesktopActivity : AppCompatActivity() {
             }
             val shape = android.graphics.drawable.GradientDrawable().apply {
                 shape = android.graphics.drawable.GradientDrawable.OVAL
-                setColor(if (isActive) Color.WHITE else Color.parseColor("#40FFFFFF"))
+                setColor(if (isActive) ContextCompat.getColor(this@DesktopActivity, R.color.haven_desktop_dot_active) else ContextCompat.getColor(this@DesktopActivity, R.color.haven_desktop_dot_inactive))
             }
             dot.background = shape
             pageDots.addView(dot)
@@ -586,8 +591,8 @@ class DesktopActivity : AppCompatActivity() {
         return android.graphics.drawable.GradientDrawable().apply {
             shape = android.graphics.drawable.GradientDrawable.RECTANGLE
             cornerRadius = dpToPx(13).toFloat()
-            setColor(Color.parseColor("#14FFFFFF"))
-            setStroke(dpToPx(1), Color.parseColor("#26FFFFFF"))
+            setColor(ContextCompat.getColor(this@DesktopActivity, R.color.haven_desktop_icon_bg))
+            setStroke(dpToPx(1), ContextCompat.getColor(this@DesktopActivity, R.color.haven_desktop_icon_border))
         }
     }
 
@@ -596,8 +601,8 @@ class DesktopActivity : AppCompatActivity() {
         return android.graphics.drawable.GradientDrawable().apply {
             shape = android.graphics.drawable.GradientDrawable.RECTANGLE
             cornerRadius = dpToPx(13).toFloat()
-            setColor(Color.parseColor("#33FFFFFF"))
-            setStroke(dpToPx(2), Color.parseColor("#99FFFFFF"))
+            setColor(ContextCompat.getColor(this@DesktopActivity, R.color.haven_desktop_icon_selected_bg))
+            setStroke(dpToPx(2), ContextCompat.getColor(this@DesktopActivity, R.color.haven_desktop_icon_selected_border))
         }
     }
 
@@ -612,7 +617,8 @@ class DesktopActivity : AppCompatActivity() {
     // =======================================================
     inner class LineIconDrawable(
         private val type: String,
-        private val size: Int
+        private val size: Int,
+        private val iconColor: Int = ContextCompat.getColor(this@DesktopActivity, R.color.haven_desktop_icon_color)
     ) : Drawable() {
 
         private val paint = Paint().apply {
@@ -621,13 +627,13 @@ class DesktopActivity : AppCompatActivity() {
             strokeWidth = size * 0.08f
             strokeCap = Paint.Cap.ROUND
             strokeJoin = Paint.Join.ROUND
-            color = Color.parseColor("#99FFFFFF")
+            color = iconColor
         }
 
         private val fillPaint = Paint().apply {
             isAntiAlias = true
             style = Paint.Style.FILL
-            color = Color.parseColor("#99FFFFFF")
+            color = iconColor
         }
 
         override fun draw(canvas: Canvas) {
@@ -813,5 +819,37 @@ class DesktopActivity : AppCompatActivity() {
                 }
                 .show()
         }
+    }
+
+    /**
+     * 检查无障碍服务是否已开启
+     *
+     * 如果没开启，弹个对话框引导用户去开。
+     * 这是保活第三层——Vivo 等厂商即使开了电池白名单也可能杀后台，
+     * 无障碍服务不容易被杀，能守护 HavenService。
+     * 只在电池白名单搞定之后才提醒，避免一次弹两个弹窗。
+     */
+    private fun checkAccessibilityService() {
+        // 电池白名单还没搞定的话先不提醒这个
+        val pm = getSystemService(POWER_SERVICE) as PowerManager
+        if (!pm.isIgnoringBatteryOptimizations(packageName)) return
+
+        // 用户选过"不再提醒"就跳过
+        if (prefs.getBoolean("a11y_hint_dismissed", false)) return
+
+        // 已经开了就不用提醒
+        if (HavenAccessibilityService.isEnabled(this)) return
+
+        AlertDialog.Builder(this)
+            .setTitle("让 AI 更稳定地陪着你")
+            .setMessage("Vivo 有时候会强制关闭后台应用。开启归栖的无障碍服务后，AI 的闹钟和主动消息不容易被系统杀掉。\n\n这个服务不会读取你的屏幕内容，只是用来保持归栖运行。\n\n点击「去开启」→ 找到「归栖」→ 打开开关。")
+            .setPositiveButton("去开启") { _, _ ->
+                HavenAccessibilityService.openSettings(this)
+            }
+            .setNegativeButton("下次再说", null)
+            .setNeutralButton("不再提醒") { _, _ ->
+                prefs.edit().putBoolean("a11y_hint_dismissed", true).apply()
+            }
+            .show()
     }
 }

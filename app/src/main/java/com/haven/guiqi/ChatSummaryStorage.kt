@@ -142,7 +142,7 @@ class ChatSummaryStorage(private val context: Context) {
         if (clear.isNotEmpty()) {
             sb.append("最近的对话总结：\n")
             for (s in clear.takeLast(5)) {
-                val dateStr = SimpleDateFormat("M月d日", Locale.CHINESE).format(Date(s.createdAt))
+                val dateStr = SimpleDateFormat("M月d日(E) HH:mm", Locale.CHINESE).format(Date(s.createdAt))
                 sb.append("· $dateStr: ${s.content}\n")
             }
         }
@@ -150,7 +150,7 @@ class ChatSummaryStorage(private val context: Context) {
         if (fuzzy.isNotEmpty()) {
             sb.append("更早的对话（有点模糊了）：\n")
             for (s in fuzzy.takeLast(5)) {
-                val dateStr = SimpleDateFormat("M月d日", Locale.CHINESE).format(Date(s.createdAt))
+                val dateStr = SimpleDateFormat("M月d日(E)", Locale.CHINESE).format(Date(s.createdAt))
                 sb.append("· $dateStr: 关键词: ${s.keywords}\n")
             }
         }
@@ -174,6 +174,7 @@ class ChatSummaryStorage(private val context: Context) {
 2. 抓住关键信息：聊了什么话题、做了什么决定、有什么重要的情感交流
 3. 不要流水账，提炼核心内容
 4. 用第三人称叙述（"用户和AI聊了..."）
+5. 保留时间信息——在总结开头注明这段对话发生在什么日期、星期几、大概什么时间段
 
 你必须用以下格式回复（不要加任何其他内容）：
 [SUMMARY]总结内容

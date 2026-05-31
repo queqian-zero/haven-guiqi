@@ -166,7 +166,8 @@ object ThemeHelper {
         folderDiary = 0xFFB48C64.toInt(),
         folderDream = 0xFF8C78B4.toInt(),
         folderSummary = 0xFF6496B4.toInt(),
-        folderTrash = 0xFFA07878.toInt()
+        folderTrash = 0xFFA07878.toInt(),
+        warning = 0x59FFB066.toInt()
     )
 
     // ===== 浅色模式配色（Claude 同款） =====
@@ -234,7 +235,8 @@ object ThemeHelper {
         folderDiary = 0xFF9A7A50.toInt(),
         folderDream = 0xFF7A68A0.toInt(),
         folderSummary = 0xFF5080A0.toInt(),
-        folderTrash = 0xFF8A6060.toInt()
+        folderTrash = 0xFF8A6060.toInt(),
+        warning = 0xFF9A7A50.toInt()
     )
 }
 
@@ -293,5 +295,6 @@ data class HavenColors(
     val folderDiary: Int,
     val folderDream: Int,
     val folderSummary: Int,
-    val folderTrash: Int
+    val folderTrash: Int,
+    val warning: Int
 )

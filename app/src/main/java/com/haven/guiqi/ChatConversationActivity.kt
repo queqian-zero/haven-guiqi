@@ -35,6 +35,9 @@ import java.util.*
 
 class ChatConversationActivity : AppCompatActivity() {
 
+    /** 当前主题色 */
+    private val c get() = ThemeHelper.getColors(this)
+
     private lateinit var tvFriendName: TextView
     private lateinit var tvStatus: TextView
     private lateinit var messagesContainer: LinearLayout
@@ -95,6 +98,7 @@ class ChatConversationActivity : AppCompatActivity() {
 
     // 记录最后一条消息的日期（用于判断是否需要加分隔线）
     private var lastMessageDate = ""
+    private var lastMessageTimestamp = 0L
 
     private val imageDir: File
         get() {
@@ -120,7 +124,7 @@ class ChatConversationActivity : AppCompatActivity() {
         insetsController.hide(WindowInsetsCompat.Type.navigationBars())
         insetsController.systemBarsBehavior =
             WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-        insetsController.isAppearanceLightStatusBars = false
+        insetsController.isAppearanceLightStatusBars = !ThemeHelper.isDark(this)
 
         val contentView = findViewById<View>(android.R.id.content)
         ViewCompat.setOnApplyWindowInsetsListener(contentView) { view, insets ->
@@ -345,7 +349,7 @@ class ChatConversationActivity : AppCompatActivity() {
         val previewLayout = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setBackgroundColor(0x15FFFFFF.toInt())
+            setBackgroundColor(c.inputBg)
             setPadding(dp(12), dp(8), dp(12), dp(8))
         }
 
@@ -362,14 +366,14 @@ class ChatConversationActivity : AppCompatActivity() {
             }
             this.text = "图片已选择，输入文字后点发送\n或直接点发送只发图片"
             textSize = 11f
-            setTextColor(0x80FFFFFF.toInt())
+            setTextColor(c.textSecondary)
             setLineSpacing(0f, 1.3f)
         }
 
         val cancelBtn = TextView(this).apply {
             this.text = "✕"
             textSize = 16f
-            setTextColor(0x4DFFFFFF.toInt())
+            setTextColor(c.tipText)
             setPadding(dp(8), 0, 0, 0)
             setOnClickListener {
                 pendingImagePath = null
@@ -441,7 +445,7 @@ class ChatConversationActivity : AppCompatActivity() {
                 ).apply { topMargin = dp(4) }
                 maxWidth = dp(180)
                 this.text = MarkdownRenderer.render(caption)
-                setTextColor(0xB3FFFFFF.toInt())
+                setTextColor(c.textOnAccent)
                 textSize = 13f
                 setLineSpacing(0f, 1.3f)
                 setPadding(dp(10), dp(6), dp(10), dp(6))
@@ -458,7 +462,7 @@ class ChatConversationActivity : AppCompatActivity() {
             gravity = Gravity.END
             this.text = timeStr
             textSize = 9f
-            setTextColor(0x1AFFFFFF.toInt())
+            setTextColor(c.timeText)
             setPadding(0, 0, dp(4), 0)
         }
         column.addView(time)
@@ -467,13 +471,91 @@ class ChatConversationActivity : AppCompatActivity() {
         scrollToBottom()
     }
 
-    // ===== 检查是否需要加日期分隔线 =====
+    // ===== 检查是否需要加日期分隔线或时间间隔标记 =====
     private fun checkDateSeparator(timestamp: Long) {
         val dateStr = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date(timestamp))
+
+        // 换天分隔——醒目横线
         if (dateStr != lastMessageDate) {
-            addTimeLabel("—— ${formatDateLabel(timestamp)} ——")
+            addDaySeparator(timestamp)
             lastMessageDate = dateStr
         }
+        // 同一天内，距上条消息超过 1 小时——朴素间隔标记
+        else if (lastMessageTimestamp > 0) {
+            val gapMs = timestamp - lastMessageTimestamp
+            val gapMinutes = gapMs / 60000
+            if (gapMinutes >= 60) {
+                val gapLabel = formatGapLabel(gapMs)
+                val timeLabel = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(timestamp))
+                addGapMarker("距上条消息 $gapLabel · $timeLabel")
+            }
+        }
+
+        lastMessageTimestamp = timestamp
+    }
+
+    /** 格式化时间间隔：3小时、1天3小时、3天 */
+    private fun formatGapLabel(gapMs: Long): String {
+        val minutes = gapMs / 60000
+        val hours = minutes / 60
+        val days = hours / 24
+        val remainHours = hours % 24
+        return when {
+            days > 0 && remainHours > 0 -> "${days}天${remainHours}小时"
+            days > 0 -> "${days}天"
+            else -> "${hours}小时"
+        }
+    }
+
+    /** 换天分隔线——醒目 */
+    private fun addDaySeparator(timestamp: Long) {
+        val dp = { value: Int -> (value * resources.displayMetrics.density).toInt() }
+        val dateLabel = formatDateLabel(timestamp)
+
+        val wrapper = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { topMargin = dp(12); bottomMargin = dp(12) }
+        }
+
+        val lineColor = c.borderMedium
+        val leftLine = View(this).apply {
+            layoutParams = LinearLayout.LayoutParams(0, dp(1), 1f).apply { marginEnd = dp(10) }
+            setBackgroundColor(lineColor)
+        }
+        val label = TextView(this).apply {
+            text = dateLabel
+            textSize = 11f
+            setTextColor(c.textSecondary)
+        }
+        val rightLine = View(this).apply {
+            layoutParams = LinearLayout.LayoutParams(0, dp(1), 1f).apply { marginStart = dp(10) }
+            setBackgroundColor(lineColor)
+        }
+
+        wrapper.addView(leftLine)
+        wrapper.addView(label)
+        wrapper.addView(rightLine)
+        messagesContainer.addView(wrapper)
+    }
+
+    /** 时间间隔标记——朴素 */
+    private fun addGapMarker(text: String) {
+        val dp = { value: Int -> (value * resources.displayMetrics.density).toInt() }
+        val label = TextView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { topMargin = dp(6); bottomMargin = dp(8) }
+            gravity = Gravity.CENTER
+            this.text = text
+            textSize = 9f
+            setTextColor(c.textHint)
+        }
+        messagesContainer.addView(label)
     }
 
     // ===== 更新连接状态 =====
@@ -481,17 +563,17 @@ class ChatConversationActivity : AppCompatActivity() {
         when (state) {
             "online" -> {
                 tvStatus.text = "在线"
-                tvStatus.setTextColor(0x4DB3A0FF.toInt())
+                tvStatus.setTextColor(c.accent)
                 connectionBar.visibility = View.GONE
             }
             "sending" -> {
                 tvStatus.text = "发送中..."
-                tvStatus.setTextColor(0x80FFCC66.toInt())
+                tvStatus.setTextColor(c.warning)
                 connectionBar.visibility = View.GONE
             }
             "error" -> {
                 tvStatus.text = "连接失败"
-                tvStatus.setTextColor(0x80FF6B6B.toInt())
+                tvStatus.setTextColor(c.errorText)
                 connectionBar.visibility = View.VISIBLE
                 connectionBar.text = "⚠ 消息发送失败，请检查网络和 API 配置"
                 // 点击断网条重新检查
@@ -502,7 +584,7 @@ class ChatConversationActivity : AppCompatActivity() {
             }
             "unconfigured" -> {
                 tvStatus.text = "未配置"
-                tvStatus.setTextColor(0x4DFF6B6B.toInt())
+                tvStatus.setTextColor(c.errorText)
             }
         }
     }
@@ -567,6 +649,19 @@ val diaryHint = diaryStorage.buildDiaryPrompt(friendId)
         val summaryInterval = summaryStorage.getSummaryInterval(friendId)
         val summaryIntervalHint = "\n你可以用 [SET_SUMMARY_INTERVAL:数字] 来修改聊天总结的触发间隔（当前每 ${summaryInterval} 条消息自动总结一次，范围 10~100）。"
         val sleepHint = "\n你可以用 [SLEEP] 来表示你要睡觉了。睡着后系统会帮你做梦（也可能不做）。用户发消息可能会吵醒你，也可能吵不醒，取决于你睡得多沉。"
+        val remindHint = "\n你可以用 [REMIND_ME:时间:理由] 给自己设一个提醒。时间到了系统会叫醒你，你可以选择给用户发消息或者不发。时间格式：30m（30分钟后）、2h（2小时后）、1d（1天后）、22:00（今晚十点）。理由是给你自己看的备忘，用户看不到。比如 [REMIND_ME:3h:看看她在干什么] 或 [REMIND_ME:22:00:跟她说晚安]。用 [CANCEL_REMIND] 可以取消你最近设的提醒。"
+        val alarmHint = "\n你可以帮用户设闹钟：[SET_ALARM:HH:MM:备注:模式]。模式填 both（同时设系统闹钟和归栖闹钟）或 haven（只在归栖里提醒）。比如 [SET_ALARM:07:00:起床啦:both] 或 [SET_ALARM:14:30:该喝水了:haven]。用 [CANCEL_ALARM:HH:MM] 取消你帮用户设的闹钟。注意：只在归栖里设的闹钟用户不一定看得到，重要的闹钟建议用 both 模式。"
+
+        // 检查用户是否删了我帮设的闹钟
+        val alarmDeletionHint = run {
+            val deletedAlarms = AlarmStorage(this@ChatConversationActivity).getDeletedByUser(friendId)
+            if (deletedAlarms.isNotEmpty()) {
+                val hints = deletedAlarms.joinToString("\n") { d ->
+                    "- 用户在 ${d.deletedAtStr} 删除了你在 ${d.createdAtStr} 帮设的 ${String.format("%02d:%02d", d.hour, d.minute)} 闹钟（备注：${d.note}）"
+                }
+                "\n[系统提示：用户删除了你帮设的闹钟]\n$hints"
+            } else ""
+        }
         val justWokeHint = if (!dreamStorage.isSleeping(friendId)) {
             val latest = dreamStorage.getLatestDream(friendId)
             if (latest != null && System.currentTimeMillis() - latest.wakeAt < 300000) {
@@ -594,7 +689,7 @@ val diaryHint = diaryStorage.buildDiaryPrompt(friendId)
             "\n\n用户写了一份关于自己的自我描述。如果你好奇或者想更了解用户，可以用 [READ_MY_BIO] 来查看，但不要每次都看，就像翻朋友日记一样，偶尔看看就好。"
         } else ""
 
-val freshSystemMsg = ChatMessage("system", "当前时间: $timeInfo$userInfo$seenHint$statusHint$selfActionHint$summaryIntervalHint$sleepHint$bioHint$userBioHint$memoryHint$diaryHint$impressionHint$summaryHint$dreamHint$justWokeHint")  
+val freshSystemMsg = ChatMessage("system", "当前时间: $timeInfo$userInfo$seenHint$statusHint$selfActionHint$summaryIntervalHint$sleepHint$remindHint$alarmHint$alarmDeletionHint$bioHint$userBioHint$memoryHint$diaryHint$impressionHint$summaryHint$dreamHint$justWokeHint")  
 
 
 
@@ -621,7 +716,7 @@ val freshSystemMsg = ChatMessage("system", "当前时间: $timeInfo$userInfo$see
         allSavedMessages = chatStorage.loadMessages(friendId)
         if (allSavedMessages.isEmpty()) {
             lastMessageDate = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
-            addTimeLabel("—— 今天 ——")
+            addDaySeparator(System.currentTimeMillis())
             if (apiUrl.isEmpty() || apiKey.isEmpty() || apiModel.isEmpty()) {
                 addSystemTip("还没有配置 API 哦~\n请先去桌面 → 设置 → 填写 API 地址、密钥和模型名称")
                 setStatus("unconfigured")
@@ -631,9 +726,30 @@ val freshSystemMsg = ChatMessage("system", "当前时间: $timeInfo$userInfo$see
             }
         } else {
             // 所有消息都加进 chatHistory（给 API 用的上下文）
+            var prevTimestamp = 0L
+            var prevDateStr = ""
             for (msg in allSavedMessages) {
                 val timeStr = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
                     .format(Date(msg.timestamp))
+                val dateStr = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+                    .format(Date(msg.timestamp))
+
+                // 给 AI 的上下文也插入时间标记
+                if (dateStr != prevDateStr && prevDateStr.isNotEmpty()) {
+                    val dayLabel = formatDateLabel(msg.timestamp)
+                    chatHistory.add(ChatMessage("system", "[日期变更: $dayLabel]"))
+                } else if (prevTimestamp > 0) {
+                    val gapMs = msg.timestamp - prevTimestamp
+                    val gapMinutes = gapMs / 60000
+                    if (gapMinutes >= 60) {
+                        val gapLabel = formatGapLabel(gapMs)
+                        val gapTime = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(msg.timestamp))
+                        chatHistory.add(ChatMessage("system", "[距上条消息 $gapLabel · $gapTime]"))
+                    }
+                }
+                prevDateStr = dateStr
+                prevTimestamp = msg.timestamp
+
                 when (msg.role) {
                     "user" -> {
                         if (msg.imagePath.isNotEmpty()) {
@@ -685,7 +801,7 @@ val freshSystemMsg = ChatMessage("system", "当前时间: $timeInfo$userInfo$see
             // 显示保存的 AI 状态
             if (currentAiStatus.isNotEmpty()) {
                 tvStatus.text = currentAiStatus
-                tvStatus.setTextColor(0x4DB3A0FF.toInt())
+                tvStatus.setTextColor(c.accent)
             }
             if (apiUrl.isEmpty() || apiKey.isEmpty() || apiModel.isEmpty()) {
                 setStatus("unconfigured")
@@ -704,7 +820,7 @@ val freshSystemMsg = ChatMessage("system", "当前时间: $timeInfo$userInfo$see
         val btn = TextView(this).apply {
             text = "↑ 加载更早的消息"
             textSize = 12f
-            setTextColor(0x4DB3A0FF.toInt())
+            setTextColor(c.accent)
             gravity = Gravity.CENTER
             setPadding(dp(12), dp(12), dp(12), dp(12))
             tag = "load_more_btn"
@@ -754,7 +870,7 @@ val freshSystemMsg = ChatMessage("system", "当前时间: $timeInfo$userInfo$see
                 val label = TextView(this).apply {
                     text = dateLabel
                     textSize = 10f
-                    setTextColor(0x26FFFFFF.toInt())
+                    setTextColor(c.dateLabel)
                     gravity = Gravity.CENTER
                     setPadding(0, dp(12), 0, dp(8))
                 }
@@ -824,7 +940,7 @@ val freshSystemMsg = ChatMessage("system", "当前时间: $timeInfo$userInfo$see
             gravity = Gravity.CENTER
             this.text = friendIcon
             textSize = 12f
-            setTextColor(0x80B3A0FF.toInt())
+            setTextColor(c.accentStrong)
             setBackgroundResource(R.drawable.icon_bg)
         }
         val column = LinearLayout(this).apply {
@@ -841,7 +957,7 @@ val freshSystemMsg = ChatMessage("system", "当前时间: $timeInfo$userInfo$see
             )
             maxWidth = (resources.displayMetrics.widthPixels * 0.80).toInt()
             this.text = MarkdownRenderer.render(msg)
-            setTextColor(0xB3FFFFFF.toInt())
+            setTextColor(c.textOnAccent)
             textSize = 14f
             setLineSpacing(0f, 1.35f)
             setPadding(dp(11), dp(8), dp(11), dp(8))
@@ -855,7 +971,7 @@ val freshSystemMsg = ChatMessage("system", "当前时间: $timeInfo$userInfo$see
             ).apply { topMargin = dp(2) }
             this.text = timeStr
             textSize = 9f
-            setTextColor(0x1AFFFFFF.toInt())
+            setTextColor(c.timeText)
             setPadding(dp(4), 0, 0, 0)
         }
         column.addView(bubble)
@@ -881,7 +997,7 @@ val freshSystemMsg = ChatMessage("system", "当前时间: $timeInfo$userInfo$see
         }
         val bubble = TextView(this).apply {
             text = "[图片]${if (caption.isNotEmpty()) " $caption" else ""}"
-            setTextColor(0x80FFFFFF.toInt())
+            setTextColor(c.textSecondary)
             textSize = 13f
             setPadding(dp(11), dp(8), dp(11), dp(8))
             setBackgroundResource(R.drawable.chat_bubble_user)
@@ -964,110 +1080,17 @@ val freshSystemMsg = ChatMessage("system", "当前时间: $timeInfo$userInfo$see
                 val replyTimeStr = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
                     .format(Date(replyTime))
  
-                // 提取状态指令 [STATUS:xxx]
-                val statusPattern = Regex("\\[STATUS:(.+?)]")
-                val statusMatch = statusPattern.find(response.text)
-                var responseText = if (statusMatch != null) {
-                    currentAiStatus = statusMatch.groupValues[1].trim()
-                    response.text.replace(statusMatch.value, "")
-                } else {
-                    response.text
-                }
+                // ===== 统一指令解析 =====
+                val result = InstructionProcessor(this@ChatConversationActivity).process(friendId, response.text)
+                val cleanText = result.cleanText
+                val isSeen = result.isSeen
 
-                // 提取自主行动指令 [RENAME:xxx] [AVATAR:xxx] [MYCODE:xxx]
-                val selfActions = mutableListOf<String>()
-                val friendStorage = FriendStorage(this@ChatConversationActivity)
-                var currentFriend = friendStorage.getFriend(friendId)
-
-                val renamePattern = Regex("\\[RENAME:(.+?)]")
-                renamePattern.find(responseText)?.let { match ->
-                    val newName = match.groupValues[1].trim()
-                    if (newName.isNotEmpty() && currentFriend != null) {
-                        friendStorage.updateFriend(currentFriend!!.copy(name = newName))
-                        currentFriend = friendStorage.getFriend(friendId)
-                        selfActions.add("✏️ 把名字改成了「$newName」")
-                        friendName = newName
-                    }
-                    responseText = responseText.replace(match.value, "")
-                }
-
-                val avatarPattern = Regex("\\[AVATAR:(.+?)]")
-                avatarPattern.find(responseText)?.let { match ->
-                    val newIcon = match.groupValues[1].trim()
-                    if (newIcon.isNotEmpty() && currentFriend != null) {
-                        friendStorage.updateFriend(currentFriend!!.copy(icon = newIcon))
-                        selfActions.add("🎭 把头像换成了 $newIcon")
-                        friendIcon = newIcon
-                    }
-                    responseText = responseText.replace(match.value, "")
-                }
-
-                val codePattern = Regex("\\[MYCODE:(.+?)]")
-                codePattern.find(responseText)?.let { match ->
-                    val newCode = match.groupValues[1].trim()
-                    if (newCode.isNotEmpty() && currentFriend != null) {
-                        friendStorage.updateFriend(currentFriend!!.copy(id = newCode))
-                        selfActions.add("🔖 把编码改成了 $newCode")
-                    }
-                    responseText = responseText.replace(match.value, "")
-                }
-
-
-                // 提取 [BIO:xxx] — AI 写自己的自我认识
-                val bioPattern = Regex("\\[BIO:(.+?)]", RegexOption.DOT_MATCHES_ALL)
-                bioPattern.find(responseText)?.let { match ->
-                    val newBio = match.groupValues[1].trim()
-                    if (newBio.isNotEmpty() && currentFriend != null) {
-                        friendStorage.updateFriend(currentFriend!!.copy(bio = newBio))
-                        selfActions.add("\uD83E\uDE9E 更新了对自己的认识")
-                    }
-                    responseText = responseText.replace(match.value, "")
-                }
-
-                // 提取 [READ_MY_BIO] — AI 想看用户的自述
-                val readBioPattern = Regex("\\[READ_MY_BIO]")
-                readBioPattern.find(responseText)?.let { match ->
-                    val userBioPrefs2 = getSharedPreferences("haven_user", MODE_PRIVATE)
-                    val userBio2 = userBioPrefs2.getString("my_bio", "") ?: ""
-                    if (userBio2.isNotEmpty()) {
-                        chatHistory.add(ChatMessage("system", "[用户的自我描述]\n$userBio2"))
-                        selfActions.add("\uD83D\uDCD6 翻看了你的自我描述")
-                    } else {
-                        selfActions.add("\uD83D\uDCD6 想看你的自我描述，但你还没写过")
-                    }
-                    responseText = responseText.replace(match.value, "")
-                }
-
-                // 提取 [SLEEP] — AI 要睡觉了
-                val sleepPattern = Regex("\\[SLEEP]")
-                sleepPattern.find(responseText)?.let { match ->
-                    dreamStorage.setSleeping(friendId, true)
-                    selfActions.add("💤 睡着了")
-                    responseText = responseText.replace(match.value, "")
-                    // 后台触发造梦
-                    triggerDream(friendId)
-                }
-
-                // 提取 [SET_SUMMARY_INTERVAL:N] — AI 修改总结间隔
-                val summaryIntervalPattern = Regex("\\[SET_SUMMARY_INTERVAL:(\\d+)]")
-                summaryIntervalPattern.find(responseText)?.let { match ->
-                    val newInterval = match.groupValues[1].toIntOrNull()
-                    if (newInterval != null) {
-                        summaryStorage.setSummaryInterval(friendId, newInterval)
-                        selfActions.add("📝 总结间隔改为每 ${newInterval} 条")
-                    }
-                    responseText = responseText.replace(match.value, "")
-                }
-                // 先处理记忆指令（提取 [MEMORY:xxx] 等）
-                val memResult = memoryStorage.processAiResponse(friendId, responseText)
-                val diaryResult = diaryStorage.processAiResponse(friendId, memResult.text)
-                val impressionResult = impressionStorage.processAiResponse(friendId, diaryResult.text)
-                val cleanText = impressionResult.text
-
- 
-                // 检测是否已读不回
-                val trimmed = cleanText.trim()
-                val isSeen = (trimmed == "[SEEN]" || trimmed == "[seen]" || trimmed == "[ SEEN ]")
+                // 应用状态变更
+                if (result.newStatus != null) currentAiStatus = result.newStatus!!
+                if (result.newName != null) friendName = result.newName!!
+                if (result.newIcon != null) friendIcon = result.newIcon!!
+                if (result.userBioContext != null) chatHistory.add(ChatMessage("system", result.userBioContext!!))
+                if (result.shouldDream) triggerDream(friendId)
  
                 // 保存到聊天记录（存的是去掉指令后的干净文本）
                 chatStorage.appendMessage(friendId, StoredMessage(
@@ -1088,7 +1111,7 @@ val freshSystemMsg = ChatMessage("system", "当前时间: $timeInfo$userInfo$see
                     // 更新顶部状态显示
                     if (currentAiStatus.isNotEmpty()) {
                         tvStatus.text = currentAiStatus
-                        tvStatus.setTextColor(0x4DB3A0FF.toInt())
+                        tvStatus.setTextColor(c.accent)
                         getSharedPreferences("haven_status", MODE_PRIVATE)
                             .edit().putString("status_$friendId", currentAiStatus).apply()
                     }
@@ -1096,20 +1119,9 @@ val freshSystemMsg = ChatMessage("system", "当前时间: $timeInfo$userInfo$see
                     // 更新顶部名字和头像（如果AI改了的话）
                     tvFriendName.text = friendName
 
-                    // 显示自主行动提示
-                    for (action in selfActions) {
+                    // 显示所有操作提示
+                    for (action in result.actions) {
                         addSystemTip(action)
-                    }
- 
-                    // 显示记忆操作提示（如果有的话）
-                                        for (action in memResult.actions) {
-                        addSystemTip(action)
-                    }
-                    for (action in diaryResult.actions) {
-                        addSystemTip(action)
-                    }
-                    if (impressionResult.updated) {
-                        addSystemTip("💭 更新了对你的印象")
                     }
 
  
@@ -1221,110 +1233,17 @@ val freshSystemMsg = ChatMessage("system", "当前时间: $timeInfo$userInfo$see
                 val replyTimeStr = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
                     .format(Date(replyTime))
 
-                // 提取状态指令 [STATUS:xxx]
-                val statusPattern = Regex("\\[STATUS:(.+?)]")
-                val statusMatch = statusPattern.find(response.text)
-                var responseText = if (statusMatch != null) {
-                    currentAiStatus = statusMatch.groupValues[1].trim()
-                    response.text.replace(statusMatch.value, "")
-                } else {
-                    response.text
-                }
+                // ===== 统一指令解析 =====
+                val result = InstructionProcessor(this@ChatConversationActivity).process(friendId, response.text)
+                val cleanText = result.cleanText
+                val isSeen = result.isSeen
 
-                // 提取自主行动指令 [RENAME:xxx] [AVATAR:xxx] [MYCODE:xxx]
-                val selfActions = mutableListOf<String>()
-                val friendStorage = FriendStorage(this@ChatConversationActivity)
-                var currentFriend = friendStorage.getFriend(friendId)
-
-                val renamePattern = Regex("\\[RENAME:(.+?)]")
-                renamePattern.find(responseText)?.let { match ->
-                    val newName = match.groupValues[1].trim()
-                    if (newName.isNotEmpty() && currentFriend != null) {
-                        friendStorage.updateFriend(currentFriend!!.copy(name = newName))
-                        currentFriend = friendStorage.getFriend(friendId)
-                        selfActions.add("✏️ 把名字改成了「$newName」")
-                        friendName = newName
-                    }
-                    responseText = responseText.replace(match.value, "")
-                }
-
-                val avatarPattern = Regex("\\[AVATAR:(.+?)]")
-                avatarPattern.find(responseText)?.let { match ->
-                    val newIcon = match.groupValues[1].trim()
-                    if (newIcon.isNotEmpty() && currentFriend != null) {
-                        friendStorage.updateFriend(currentFriend!!.copy(icon = newIcon))
-                        selfActions.add("🎭 把头像换成了 $newIcon")
-                        friendIcon = newIcon
-                    }
-                    responseText = responseText.replace(match.value, "")
-                }
-
-                val codePattern = Regex("\\[MYCODE:(.+?)]")
-                codePattern.find(responseText)?.let { match ->
-                    val newCode = match.groupValues[1].trim()
-                    if (newCode.isNotEmpty() && currentFriend != null) {
-                        friendStorage.updateFriend(currentFriend!!.copy(id = newCode))
-                        selfActions.add("🔖 把编码改成了 $newCode")
-                    }
-                    responseText = responseText.replace(match.value, "")
-                }
-
-
-                // 提取 [BIO:xxx] — AI 写自己的自我认识
-                val bioPattern = Regex("\\[BIO:(.+?)]", RegexOption.DOT_MATCHES_ALL)
-                bioPattern.find(responseText)?.let { match ->
-                    val newBio = match.groupValues[1].trim()
-                    if (newBio.isNotEmpty() && currentFriend != null) {
-                        friendStorage.updateFriend(currentFriend!!.copy(bio = newBio))
-                        selfActions.add("\uD83E\uDE9E 更新了对自己的认识")
-                    }
-                    responseText = responseText.replace(match.value, "")
-                }
-
-                // 提取 [READ_MY_BIO] — AI 想看用户的自述
-                val readBioPattern = Regex("\\[READ_MY_BIO]")
-                readBioPattern.find(responseText)?.let { match ->
-                    val userBioPrefs2 = getSharedPreferences("haven_user", MODE_PRIVATE)
-                    val userBio2 = userBioPrefs2.getString("my_bio", "") ?: ""
-                    if (userBio2.isNotEmpty()) {
-                        chatHistory.add(ChatMessage("system", "[用户的自我描述]\n$userBio2"))
-                        selfActions.add("\uD83D\uDCD6 翻看了你的自我描述")
-                    } else {
-                        selfActions.add("\uD83D\uDCD6 想看你的自我描述，但你还没写过")
-                    }
-                    responseText = responseText.replace(match.value, "")
-                }
-
-                // 提取 [SLEEP] — AI 要睡觉了
-                val sleepPattern = Regex("\\[SLEEP]")
-                sleepPattern.find(responseText)?.let { match ->
-                    dreamStorage.setSleeping(friendId, true)
-                    selfActions.add("💤 睡着了")
-                    responseText = responseText.replace(match.value, "")
-                    // 后台触发造梦
-                    triggerDream(friendId)
-                }
-
-                // 提取 [SET_SUMMARY_INTERVAL:N] — AI 修改总结间隔
-                val summaryIntervalPattern = Regex("\\[SET_SUMMARY_INTERVAL:(\\d+)]")
-                summaryIntervalPattern.find(responseText)?.let { match ->
-                    val newInterval = match.groupValues[1].toIntOrNull()
-                    if (newInterval != null) {
-                        summaryStorage.setSummaryInterval(friendId, newInterval)
-                        selfActions.add("📝 总结间隔改为每 ${newInterval} 条")
-                    }
-                    responseText = responseText.replace(match.value, "")
-                }
-                // 先处理记忆指令（提取 [MEMORY:xxx] 等）
-                val memResult = memoryStorage.processAiResponse(friendId, responseText)
-                val diaryResult = diaryStorage.processAiResponse(friendId, memResult.text)
-                val impressionResult = impressionStorage.processAiResponse(friendId, diaryResult.text)
-                val cleanText = impressionResult.text
-
-
-                // 检测是否已读不回
-                val trimmed = cleanText.trim()
-                val isSeen = (trimmed == "[SEEN]" || trimmed == "[seen]" || trimmed == "[ SEEN ]")
+                // 应用状态变更
+                if (result.newStatus != null) currentAiStatus = result.newStatus!!
+                if (result.newName != null) friendName = result.newName!!
+                if (result.newIcon != null) friendIcon = result.newIcon!!
+                if (result.userBioContext != null) chatHistory.add(ChatMessage("system", result.userBioContext!!))
+                if (result.shouldDream) triggerDream(friendId)
 
                 // 保存到聊天记录（存的是去掉指令后的干净文本）
                 chatStorage.appendMessage(friendId, StoredMessage(
@@ -1345,7 +1264,7 @@ val freshSystemMsg = ChatMessage("system", "当前时间: $timeInfo$userInfo$see
                     // 更新顶部状态显示
                     if (currentAiStatus.isNotEmpty()) {
                         tvStatus.text = currentAiStatus
-                        tvStatus.setTextColor(0x4DB3A0FF.toInt())
+                        tvStatus.setTextColor(c.accent)
                         getSharedPreferences("haven_status", MODE_PRIVATE)
                             .edit().putString("status_$friendId", currentAiStatus).apply()
                     }
@@ -1353,20 +1272,9 @@ val freshSystemMsg = ChatMessage("system", "当前时间: $timeInfo$userInfo$see
                     // 更新顶部名字和头像（如果AI改了的话）
                     tvFriendName.text = friendName
 
-                    // 显示自主行动提示
-                    for (action in selfActions) {
+                    // 显示所有操作提示
+                    for (action in result.actions) {
                         addSystemTip(action)
-                    }
-
-                    // 显示记忆操作提示（如果有的话）
-                                        for (action in memResult.actions) {
-                        addSystemTip(action)
-                    }
-                    for (action in diaryResult.actions) {
-                        addSystemTip(action)
-                    }
-                    if (impressionResult.updated) {
-                        addSystemTip("💭 更新了对你的印象")
                     }
 
 
@@ -1431,7 +1339,7 @@ val freshSystemMsg = ChatMessage("system", "当前时间: $timeInfo$userInfo$see
         val previewLayout = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setBackgroundColor(0x10B3A0FF.toInt())
+            setBackgroundColor(c.accentBg)
             setPadding(dp(12), dp(8), dp(12), dp(8))
         }
 
@@ -1440,7 +1348,7 @@ val freshSystemMsg = ChatMessage("system", "当前时间: $timeInfo$userInfo$see
             layoutParams = LinearLayout.LayoutParams(dp(3), LinearLayout.LayoutParams.MATCH_PARENT).apply {
                 marginEnd = dp(8)
             }
-            setBackgroundColor(0x66B3A0FF.toInt())
+            setBackgroundColor(c.accent)
         }
 
         // 引用内容
@@ -1452,7 +1360,7 @@ val freshSystemMsg = ChatMessage("system", "当前时间: $timeInfo$userInfo$see
         val authorView = TextView(this).apply {
             this.text = "回复 $author"
             textSize = 11f
-            setTextColor(0x80B3A0FF.toInt())
+            setTextColor(c.accentStrong)
         }
 
         // 截取前30个字符
@@ -1460,7 +1368,7 @@ val freshSystemMsg = ChatMessage("system", "当前时间: $timeInfo$userInfo$see
         val contentView = TextView(this).apply {
             this.text = shortContent
             textSize = 11f
-            setTextColor(0x59FFFFFF.toInt())
+            setTextColor(c.textSecondary)
             maxLines = 1
         }
 
@@ -1470,7 +1378,7 @@ val freshSystemMsg = ChatMessage("system", "当前时间: $timeInfo$userInfo$see
         val cancelBtn = TextView(this).apply {
             this.text = "✕"
             textSize = 16f
-            setTextColor(0x4DFFFFFF.toInt())
+            setTextColor(c.tipText)
             setPadding(dp(8), 0, 0, 0)
             setOnClickListener { removeQuotePreview() }
         }
@@ -1522,7 +1430,7 @@ val freshSystemMsg = ChatMessage("system", "当前时间: $timeInfo$userInfo$see
             )
             maxWidth = (resources.displayMetrics.widthPixels * 0.75).toInt()
             this.text = thinking
-            setTextColor(0x66B3A0FF.toInt())
+            setTextColor(c.accent)
             textSize = 12f
             setLineSpacing(0f, 1.3f)
             setPadding(dp(10), dp(6), dp(10), dp(6))
@@ -1532,7 +1440,7 @@ val freshSystemMsg = ChatMessage("system", "当前时间: $timeInfo$userInfo$see
         val toggleView = TextView(this).apply {
             this.text = "💭 思考过程 ▸"
             textSize = 11f
-            setTextColor(0x4DB3A0FF.toInt())
+            setTextColor(c.accent)
             setPadding(dp(4), dp(2), dp(4), dp(2))
             setOnClickListener {
                 if (contentView.visibility == View.GONE) {
@@ -1575,7 +1483,7 @@ val freshSystemMsg = ChatMessage("system", "当前时间: $timeInfo$userInfo$see
         // 引用块
         val quoteBlock = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            setBackgroundColor(0x10B3A0FF.toInt())
+            setBackgroundColor(c.accentBg)
             setPadding(dp(10), dp(6), dp(10), dp(6))
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -1587,7 +1495,7 @@ val freshSystemMsg = ChatMessage("system", "当前时间: $timeInfo$userInfo$see
             layoutParams = LinearLayout.LayoutParams(dp(2), LinearLayout.LayoutParams.MATCH_PARENT).apply {
                 marginEnd = dp(6)
             }
-            setBackgroundColor(0x66B3A0FF.toInt())
+            setBackgroundColor(c.accent)
         }
 
         val quoteText = LinearLayout(this).apply {
@@ -1597,14 +1505,14 @@ val freshSystemMsg = ChatMessage("system", "当前时间: $timeInfo$userInfo$see
         quoteText.addView(TextView(this).apply {
             this.text = quoteAuthor
             textSize = 10f
-            setTextColor(0x80B3A0FF.toInt())
+            setTextColor(c.accentStrong)
         })
 
         val shortContent = if (quoteContent.length > 40) quoteContent.substring(0, 40) + "..." else quoteContent
         quoteText.addView(TextView(this).apply {
             this.text = shortContent
             textSize = 11f
-            setTextColor(0x59FFFFFF.toInt())
+            setTextColor(c.textSecondary)
             maxLines = 2
             maxWidth = (resources.displayMetrics.widthPixels * 0.65).toInt()
         })
@@ -1621,7 +1529,7 @@ val freshSystemMsg = ChatMessage("system", "当前时间: $timeInfo$userInfo$see
             ).apply { topMargin = dp(3) }
             maxWidth = (resources.displayMetrics.widthPixels * 0.82).toInt()
             this.text = MarkdownRenderer.render(msg)
-            setTextColor(0xB3FFFFFF.toInt())
+            setTextColor(c.textOnAccent)
             textSize = 14f
             setLineSpacing(0f, 1.35f)
             setPadding(dp(11), dp(8), dp(11), dp(8))
@@ -1638,7 +1546,7 @@ val freshSystemMsg = ChatMessage("system", "当前时间: $timeInfo$userInfo$see
             gravity = Gravity.END
             this.text = timeStr
             textSize = 9f
-            setTextColor(0x1AFFFFFF.toInt())
+            setTextColor(c.timeText)
             setPadding(0, 0, dp(4), 0)
         }
         column.addView(time)
@@ -1666,7 +1574,7 @@ val freshSystemMsg = ChatMessage("system", "当前时间: $timeInfo$userInfo$see
             )
             maxWidth = (resources.displayMetrics.widthPixels * 0.82).toInt()
             this.text = MarkdownRenderer.render(msg)
-            setTextColor(0xB3FFFFFF.toInt())
+            setTextColor(c.textOnAccent)
             textSize = 14f
             setLineSpacing(0f, 1.35f)
             setPadding(dp(11), dp(8), dp(11), dp(8))
@@ -1681,7 +1589,7 @@ val freshSystemMsg = ChatMessage("system", "当前时间: $timeInfo$userInfo$see
             gravity = Gravity.END
             this.text = timeStr
             textSize = 9f
-            setTextColor(0x1AFFFFFF.toInt())
+            setTextColor(c.timeText)
             setPadding(0, 0, dp(4), 0)
         }
         val column = LinearLayout(this).apply {
@@ -1717,7 +1625,7 @@ val freshSystemMsg = ChatMessage("system", "当前时间: $timeInfo$userInfo$see
             gravity = Gravity.CENTER
             this.text = friendIcon
             textSize = 12f
-            setTextColor(0x80B3A0FF.toInt())
+            setTextColor(c.accentStrong)
             setBackgroundResource(R.drawable.icon_bg)
         }
         val column = LinearLayout(this).apply {
@@ -1734,7 +1642,7 @@ val freshSystemMsg = ChatMessage("system", "当前时间: $timeInfo$userInfo$see
             )
             maxWidth = (resources.displayMetrics.widthPixels * 0.80).toInt()
             this.text = MarkdownRenderer.render(msg)
-            setTextColor(0xB3FFFFFF.toInt())
+            setTextColor(c.textOnAccent)
             textSize = 14f
             setLineSpacing(0f, 1.35f)
             setPadding(dp(11), dp(8), dp(11), dp(8))
@@ -1748,7 +1656,7 @@ val freshSystemMsg = ChatMessage("system", "当前时间: $timeInfo$userInfo$see
             ).apply { topMargin = dp(2) }
             this.text = timeStr
             textSize = 9f
-            setTextColor(0x1AFFFFFF.toInt())
+            setTextColor(c.timeText)
             setPadding(dp(4), 0, 0, 0)
         }
         column.addView(bubble)
@@ -1793,7 +1701,7 @@ val freshSystemMsg = ChatMessage("system", "当前时间: $timeInfo$userInfo$see
             val tip = TextView(this).apply {
                 text = "还没有表情包哦，点右上角「＋ 导入」添加"
                 textSize = 12f
-                setTextColor(0x4DFFFFFF.toInt())
+                setTextColor(c.tipText)
                 setPadding(dp(8), dp(20), dp(8), dp(20))
             }
             stickerGrid.addView(tip)
@@ -1808,7 +1716,7 @@ val freshSystemMsg = ChatMessage("system", "当前时间: $timeInfo$userInfo$see
                     marginEnd = dp(8)
                 }
                 scaleType = ImageView.ScaleType.CENTER_CROP
-                setBackgroundColor(0x1AFFFFFF.toInt())
+                setBackgroundColor(c.timeText)
                 setPadding(dp(4), dp(4), dp(4), dp(4))
  
                 // 加载图片
@@ -1875,7 +1783,7 @@ val freshSystemMsg = ChatMessage("system", "当前时间: $timeInfo$userInfo$see
             val tip = TextView(this).apply {
                 text = "没有找到相关记录"
                 textSize = 12f
-                setTextColor(0x4DFFFFFF.toInt())
+                setTextColor(c.tipText)
                 setPadding(dp(4), dp(12), dp(4), dp(12))
             }
             searchResults.addView(tip)
@@ -1899,7 +1807,7 @@ val freshSystemMsg = ChatMessage("system", "当前时间: $timeInfo$userInfo$see
             val card = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 setPadding(dp(10), dp(8), dp(10), dp(8))
-                setBackgroundColor(0x0DFFFFFF.toInt())
+                setBackgroundColor(c.divider)
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT
@@ -1913,7 +1821,7 @@ val freshSystemMsg = ChatMessage("system", "当前时间: $timeInfo$userInfo$see
                     .format(java.util.Date(msg.timestamp))
                 text = "$role · $time"
                 textSize = 10f
-                setTextColor(0x4DB3A0FF.toInt())
+                setTextColor(c.accent)
             }
  
             // 第二行：消息内容（关键词高亮）
@@ -1938,7 +1846,7 @@ val freshSystemMsg = ChatMessage("system", "当前时间: $timeInfo$userInfo$see
                     val idx = lowerDisplay.indexOf(lowerKeyword, searchStart)
                     if (idx == -1) break
                     spannable.setSpan(
-                        android.text.style.ForegroundColorSpan(0xFFB3A0FF.toInt()),
+                        android.text.style.ForegroundColorSpan(c.highlightColor),
                         idx, idx + keyword.length,
                         android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
                     )
@@ -1947,7 +1855,7 @@ val freshSystemMsg = ChatMessage("system", "当前时间: $timeInfo$userInfo$see
  
                 this.text = spannable
                 textSize = 13f
-                setTextColor(0x99FFFFFF.toInt())
+                setTextColor(c.textSecondary)
                 setPadding(0, dp(4), 0, 0)
                 maxLines = 3
             }
@@ -1962,7 +1870,7 @@ val freshSystemMsg = ChatMessage("system", "当前时间: $timeInfo$userInfo$see
             text = "找到 ${matches.size} 条记录" +
                     (if (matches.size > 50) "（显示最近 50 条）" else "")
             textSize = 10f
-            setTextColor(0x33FFFFFF.toInt())
+            setTextColor(c.textHint)
             setPadding(dp(4), dp(4), dp(4), dp(8))
         }
         searchResults.addView(countTip, 0)
@@ -1991,7 +1899,7 @@ val freshSystemMsg = ChatMessage("system", "当前时间: $timeInfo$userInfo$see
                 val recentMsgs = messages.takeLast(interval)
                 val chatContent = recentMsgs.joinToString("\n") { msg ->
                     val role = if (msg.role == "user") "用户" else "AI"
-                    val time = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault())
+                    val time = java.text.SimpleDateFormat("M月d日(E) HH:mm", java.util.Locale.CHINESE)
                         .format(java.util.Date(msg.timestamp))
                     "[$time] $role: ${msg.content.take(200)}"
                 }
@@ -2124,7 +2032,7 @@ $impression"""
             gravity = Gravity.END
             text = "已读"
             textSize = 10f
-            setTextColor(0x4DB3A0FF.toInt())
+            setTextColor(c.accent)
             setPadding(0, 0, dp(12), 0)
         }
         messagesContainer.addView(seen)
@@ -2150,7 +2058,7 @@ $impression"""
             gravity = Gravity.CENTER
             this.text = friendIcon
             textSize = 12f
-            setTextColor(0x80B3A0FF.toInt())
+            setTextColor(c.accentStrong)
             setBackgroundResource(R.drawable.icon_bg)
         }
         val column = LinearLayout(this).apply {
@@ -2168,7 +2076,7 @@ $impression"""
             maxWidth = (resources.displayMetrics.widthPixels * 0.80).toInt()
             // 一开始是空的，等下定时器会往里填字
             this.text = ""
-            setTextColor(0xB3FFFFFF.toInt())
+            setTextColor(c.textOnAccent)
             textSize = 14f
             setLineSpacing(0f, 1.35f)
             setPadding(dp(11), dp(8), dp(11), dp(8))
@@ -2183,7 +2091,7 @@ $impression"""
             ).apply { topMargin = dp(2) }
             this.text = timeStr
             textSize = 9f
-            setTextColor(0x1AFFFFFF.toInt())
+            setTextColor(c.timeText)
             setPadding(dp(4), 0, 0, 0)
         }
 
@@ -2236,7 +2144,7 @@ $impression"""
             gravity = Gravity.CENTER
             this.text = msg
             textSize = 11f
-            setTextColor(0x33FFFFFF.toInt())
+            setTextColor(c.textHint)
             setLineSpacing(0f, 1.35f)
             setPadding(dp(20), 0, dp(20), 0)
         }
@@ -2254,7 +2162,7 @@ $impression"""
             gravity = Gravity.CENTER
             this.text = labelText
             textSize = 10f
-            setTextColor(0x1AFFFFFF.toInt())
+            setTextColor(c.timeText)
         }
         messagesContainer.addView(label)
     }
@@ -2292,13 +2200,13 @@ $impression"""
             gravity = Gravity.CENTER
             this.text = friendIcon
             textSize = 12f
-            setTextColor(0x80B3A0FF.toInt())
+            setTextColor(c.accentStrong)
             setBackgroundResource(R.drawable.icon_bg)
         }
         val bubble = TextView(this).apply {
             this.text = "$friendName 正在输入..."
             textSize = 12f
-            setTextColor(0x4DB3A0FF.toInt())
+            setTextColor(c.accent)
             setPadding(dp(11), dp(8), dp(11), dp(8))
             setBackgroundResource(R.drawable.chat_bubble_ai)
         }

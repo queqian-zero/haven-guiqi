@@ -21,7 +21,7 @@
             android:layout_height="36dp"
             android:gravity="center"
             android:text="←"
-            android:textColor="#59FFFFFF"
+            android:textColor="@color/haven_settings_back"
             android:textSize="18sp" />
 
         <TextView
@@ -30,7 +30,7 @@
             android:layout_weight="1"
             android:gravity="center"
             android:text="馆藏"
-            android:textColor="#D9FFFFFF"
+            android:textColor="@color/haven_text_primary"
             android:textSize="16sp" />
 
         <View
@@ -41,7 +41,7 @@
     <View
         android:layout_width="match_parent"
         android:layout_height="0.5dp"
-        android:background="#08FFFFFF" />
+        android:background="@color/haven_divider" />
 
     <!-- ===== 两个标签 ===== -->
     <LinearLayout
@@ -59,7 +59,7 @@
             android:layout_weight="1"
             android:gravity="center"
             android:text="书城"
-            android:textColor="#4DFFFFFF"
+            android:textColor="@color/haven_text_hint"
             android:textSize="14sp" />
 
         <TextView
@@ -69,14 +69,14 @@
             android:layout_weight="1"
             android:gravity="center"
             android:text="档案馆"
-            android:textColor="#D9FFFFFF"
+            android:textColor="@color/haven_text_primary"
             android:textSize="14sp" />
     </LinearLayout>
 
     <View
         android:layout_width="match_parent"
         android:layout_height="0.5dp"
-        android:background="#08FFFFFF" />
+        android:background="@color/haven_divider" />
 
     <!-- ===== 书城占位 ===== -->
     <LinearLayout
@@ -98,7 +98,7 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="12dp"
             android:text="书城正在建设中..."
-            android:textColor="#4DFFFFFF"
+            android:textColor="@color/haven_text_hint"
             android:textSize="14sp" />
     </LinearLayout>
 

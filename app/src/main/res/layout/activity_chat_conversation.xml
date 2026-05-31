@@ -22,7 +22,7 @@
             android:layout_height="36dp"
             android:gravity="center"
             android:text="←"
-            android:textColor="#59FFFFFF"
+            android:textColor="@color/haven_settings_back"
             android:textSize="18sp" />
 
         <!-- 中间：名字 + 状态 -->
@@ -38,7 +38,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="星河"
-                android:textColor="#D9FFFFFF"
+                android:textColor="@color/haven_text_primary"
                 android:textSize="15sp" />
 
             <TextView
@@ -46,7 +46,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="在线"
-                android:textColor="#4DB3A0FF"
+                android:textColor="@color/haven_accent"
                 android:textSize="9sp"
                 android:letterSpacing="0.1" />
         </LinearLayout>
@@ -58,7 +58,7 @@
             android:layout_height="36dp"
             android:gravity="center"
             android:text="🔍"
-            android:textColor="#33FFFFFF"
+            android:textColor="@color/haven_text_hint"
             android:textSize="14sp" />
 
         <!-- 右侧菜单按钮 -->
@@ -68,7 +68,7 @@
             android:layout_height="36dp"
             android:gravity="center"
             android:text="⋮"
-            android:textColor="#33FFFFFF"
+            android:textColor="@color/haven_text_hint"
             android:textSize="18sp" />
     </LinearLayout>
 
@@ -76,14 +76,14 @@
     <View
         android:layout_width="match_parent"
         android:layout_height="0.5dp"
-        android:background="#08FFFFFF" />
+        android:background="@color/haven_divider" />
     <!-- ===== 搜索面板 ===== -->
     <LinearLayout
         android:id="@+id/searchPanel"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:background="#0D1B2A"
+        android:background="@color/haven_background_secondary"
         android:visibility="gone">
  
         <!-- 搜索输入栏 -->
@@ -102,8 +102,8 @@
                 android:layout_weight="1"
                 android:background="@drawable/input_bg"
                 android:hint="搜索聊天记录..."
-                android:textColorHint="#26FFFFFF"
-                android:textColor="#B3FFFFFF"
+                android:textColorHint="@color/haven_date_label"
+                android:textColor="@color/haven_text_on_card"
                 android:textSize="13sp"
                 android:singleLine="true"
                 android:paddingHorizontal="12dp"
@@ -116,7 +116,7 @@
                 android:layout_height="36dp"
                 android:gravity="center"
                 android:text="取消"
-                android:textColor="#4DB3A0FF"
+                android:textColor="@color/haven_accent"
                 android:textSize="13sp"
                 android:paddingStart="12dp" />
         </LinearLayout>
@@ -142,11 +142,11 @@
         android:id="@+id/connectionBar"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:background="#33FF6B6B"
+        android:background="@color/haven_error_bg"
         android:gravity="center"
         android:paddingVertical="6dp"
         android:text="网络连接失败，请检查网络"
-        android:textColor="#CCFF6B6B"
+        android:textColor="@color/haven_error_text"
         android:textSize="11sp"
         android:visibility="gone" />
 
@@ -191,7 +191,7 @@
         android:layout_width="match_parent"
         android:layout_height="180dp"
         android:orientation="vertical"
-        android:background="#0D1B2A"
+        android:background="@color/haven_background_secondary"
         android:visibility="gone"
         android:paddingHorizontal="12dp"
         android:paddingVertical="8dp">
@@ -208,7 +208,7 @@
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:text="我的表情包"
-                android:textColor="#80FFFFFF"
+                android:textColor="@color/haven_text_secondary"
                 android:textSize="12sp" />
  
             <TextView
@@ -216,7 +216,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="＋ 导入"
-                android:textColor="#4DB3A0FF"
+                android:textColor="@color/haven_accent"
                 android:textSize="12sp"
                 android:paddingHorizontal="8dp"
                 android:paddingVertical="4dp" />
@@ -245,7 +245,7 @@
         android:orientation="horizontal"
         android:paddingHorizontal="12dp"
         android:paddingVertical="8dp"
-        android:background="#08FFFFFF">
+        android:background="@color/haven_divider">
 
         <!-- 加号按钮 -->
         <TextView
@@ -254,7 +254,7 @@
             android:layout_height="36dp"
             android:gravity="center"
             android:text="＋"
-            android:textColor="#26FFFFFF"
+            android:textColor="@color/haven_date_label"
             android:textSize="20sp" />
                 <!-- 表情包按钮 -->
         <TextView
@@ -263,7 +263,7 @@
             android:layout_height="36dp"
             android:gravity="center"
             android:text="😊"
-            android:textColor="#26FFFFFF"
+            android:textColor="@color/haven_date_label"
             android:textSize="18sp" />
 
         <!-- 输入框 -->
@@ -279,8 +279,8 @@
             android:paddingHorizontal="14dp"
             android:paddingVertical="8dp"
             android:hint="说点什么..."
-            android:textColor="#B3FFFFFF"
-            android:textColorHint="#26FFFFFF"
+            android:textColor="@color/haven_text_on_card"
+            android:textColorHint="@color/haven_date_label"
             android:textSize="14sp"
             android:inputType="textMultiLine"
             android:imeOptions="actionNone" />
@@ -292,7 +292,7 @@
             android:layout_height="36dp"
             android:gravity="center"
             android:text="↕"
-            android:textColor="#26FFFFFF"
+            android:textColor="@color/haven_date_label"
             android:textSize="16sp" />
 
         <!-- 发送按钮 -->
@@ -302,7 +302,7 @@
             android:layout_height="36dp"
             android:gravity="center"
             android:text="➤"
-            android:textColor="#4DB3A0FF"
+            android:textColor="@color/haven_accent"
             android:textSize="20sp" />
     </LinearLayout>
 
@@ -313,7 +313,7 @@
         android:layout_height="0dp"
         android:layout_weight="1"
         android:orientation="vertical"
-        android:background="#0D1B2A"
+        android:background="@color/haven_background_secondary"
         android:visibility="gone">
 
         <!-- 展开模式顶栏 -->
@@ -324,14 +324,14 @@
             android:gravity="center_vertical"
             android:paddingHorizontal="14dp"
             android:paddingVertical="8dp"
-            android:background="#08FFFFFF">
+            android:background="@color/haven_divider">
 
             <TextView
                 android:id="@+id/btnCollapse"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="↕ 收起"
-                android:textColor="#4DB3A0FF"
+                android:textColor="@color/haven_accent"
                 android:textSize="13sp"
                 android:paddingHorizontal="4dp" />
 
@@ -345,7 +345,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="发送 ➤"
-                android:textColor="#4DB3A0FF"
+                android:textColor="@color/haven_accent"
                 android:textSize="13sp"
                 android:paddingHorizontal="4dp" />
         </LinearLayout>
@@ -359,8 +359,8 @@
             android:paddingHorizontal="16dp"
             android:paddingTop="12dp"
             android:hint="展开模式：回车就是换行，不会发送\n写完点右上角「发送」"
-            android:textColor="#B3FFFFFF"
-            android:textColorHint="#26FFFFFF"
+            android:textColor="@color/haven_text_on_card"
+            android:textColorHint="@color/haven_date_label"
             android:textSize="14sp"
             android:inputType="textMultiLine"
             android:gravity="top"

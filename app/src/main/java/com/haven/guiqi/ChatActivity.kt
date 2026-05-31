@@ -24,6 +24,9 @@ import java.util.*
 
 class ChatActivity : AppCompatActivity() {
 
+    /** 当前主题色 */
+    private val c get() = ThemeHelper.getColors(this)
+
     // 文件操作请求码
     private val EXPORT_REQUEST = 2001
     private val IMPORT_REQUEST = 2002
@@ -80,7 +83,7 @@ class ChatActivity : AppCompatActivity() {
         insetsController.hide(WindowInsetsCompat.Type.navigationBars())
         insetsController.systemBarsBehavior =
             WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-        insetsController.isAppearanceLightStatusBars = false
+        insetsController.isAppearanceLightStatusBars = !ThemeHelper.isDark(this)
 
         val contentView = findViewById<View>(android.R.id.content)
         ViewCompat.setOnApplyWindowInsetsListener(contentView) { view, insets ->
@@ -152,7 +155,7 @@ class ChatActivity : AppCompatActivity() {
         tabFootprints.visibility = View.GONE
         tabProfile.visibility = View.GONE
 
-        val dimColor = 0x33FFFFFF.toInt()
+        val dimColor = c.textHint
         iconTabMessages.setTextColor(dimColor)
         labelTabMessages.setTextColor(dimColor)
         iconTabFriends.setTextColor(dimColor)
@@ -162,7 +165,7 @@ class ChatActivity : AppCompatActivity() {
         iconTabProfile.setTextColor(dimColor)
         labelTabProfile.setTextColor(dimColor)
 
-        val activeColor = 0xFFB3A0FF.toInt()
+        val activeColor = c.highlightColor
         when (index) {
             0 -> {
                 tabMessages.visibility = View.VISIBLE
@@ -232,7 +235,7 @@ class ChatActivity : AppCompatActivity() {
             val groupTitle = TextView(this).apply {
                 this.text = "- $groupName -"
                 textSize = 10f
-                setTextColor(0x26FFFFFF.toInt())
+                setTextColor(c.dateLabel)
                 setPadding(dp(4), dp(8), dp(4), dp(8))
                 letterSpacing = 0.2f
             }
@@ -258,7 +261,7 @@ class ChatActivity : AppCompatActivity() {
             gravity = Gravity.CENTER
             this.text = "＋ 添加新好友"
             textSize = 11f
-            setTextColor(0x40B3A0FF.toInt())
+            setTextColor(c.accent)
             setPadding(dp(12), dp(10), dp(12), dp(10))
             background = getDrawable(R.drawable.chat_card_bg)
         }
@@ -290,7 +293,7 @@ class ChatActivity : AppCompatActivity() {
             gravity = Gravity.CENTER
             this.text = friend.icon
             textSize = 18f
-            setTextColor(0x99B3A0FF.toInt())
+            setTextColor(c.accentStrong)
             setBackgroundResource(R.drawable.icon_bg)
         }
 
@@ -312,13 +315,13 @@ class ChatActivity : AppCompatActivity() {
             )
             this.text = friend.name
             textSize = 14f
-            setTextColor(0xD9FFFFFF.toInt())
+            setTextColor(c.textPrimary)
         }
 
         val tvTime = TextView(this).apply {
             this.text = time
             textSize = 10f
-            setTextColor(0x26FFFFFF.toInt())
+            setTextColor(c.dateLabel)
         }
 
         topRow.addView(tvName)
@@ -330,7 +333,7 @@ class ChatActivity : AppCompatActivity() {
             val tvModel = TextView(this).apply {
                 this.text = shortName
                 textSize = 8f
-                setTextColor(0x4DB3A0FF.toInt())
+                setTextColor(c.accent)
                 setPadding(dp(6), dp(1), dp(6), dp(1))
                 background = getDrawable(R.drawable.chat_card_bg)
                 layoutParams = LinearLayout.LayoutParams(
@@ -352,7 +355,7 @@ class ChatActivity : AppCompatActivity() {
             }
             this.text = lastMessage
             textSize = 12f
-            setTextColor(0x4DFFFFFF.toInt())
+            setTextColor(c.tipText)
             maxLines = 1
             ellipsize = android.text.TextUtils.TruncateAt.END
         }
@@ -366,7 +369,7 @@ class ChatActivity : AppCompatActivity() {
             val streakView = TextView(this).apply {
                 this.text = "🔥 $streak 天"
                 textSize = 10f
-                setTextColor(0x59FFB066.toInt())
+                setTextColor(c.warning)
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT
@@ -413,7 +416,7 @@ class ChatActivity : AppCompatActivity() {
             gravity = Gravity.CENTER
             this.text = friend.icon
             textSize = 16f
-            setTextColor(0x99B3A0FF.toInt())
+            setTextColor(c.accentStrong)
             setBackgroundResource(R.drawable.icon_bg)
         }
 
@@ -427,7 +430,7 @@ class ChatActivity : AppCompatActivity() {
         val tvName = TextView(this).apply {
             this.text = friend.name
             textSize = 14f
-            setTextColor(0xD9FFFFFF.toInt())
+            setTextColor(c.textPrimary)
         }
 
         val detailRow = LinearLayout(this).apply {
@@ -444,7 +447,7 @@ class ChatActivity : AppCompatActivity() {
         val tvGroup = TextView(this).apply {
             this.text = friend.group
             textSize = 9f
-            setTextColor(0x73B3A0FF.toInt())
+            setTextColor(c.accent)
             setPadding(dp(8), dp(2), dp(8), dp(2))
             background = getDrawable(R.drawable.chat_card_bg)
         }
@@ -452,7 +455,7 @@ class ChatActivity : AppCompatActivity() {
         val tvCode = TextView(this).apply {
             this.text = friend.id
             textSize = 9f
-            setTextColor(0x26FFFFFF.toInt())
+            setTextColor(c.dateLabel)
             setPadding(dp(8), 0, 0, 0)
         }
 
@@ -465,7 +468,7 @@ class ChatActivity : AppCompatActivity() {
             val tvStreak = TextView(this).apply {
                 this.text = "🔥$streak"
                 textSize = 9f
-                setTextColor(0x59FFB066.toInt())
+                setTextColor(c.warning)
                 setPadding(dp(8), 0, 0, 0)
             }
             detailRow.addView(tvStreak)
@@ -477,7 +480,7 @@ class ChatActivity : AppCompatActivity() {
         val arrow = TextView(this).apply {
             this.text = "›"
             textSize = 18f
-            setTextColor(0x1AFFFFFF.toInt())
+            setTextColor(c.timeText)
             setPadding(dp(8), dp(8), dp(4), dp(8))
             // 点击箭头进入好友详情
             setOnClickListener {
@@ -639,7 +642,7 @@ class ChatActivity : AppCompatActivity() {
         val hint = TextView(this).apply {
             this.text = "留空则使用全局配置（设置页的配置）"
             textSize = 11f
-            setTextColor(0xFF888888.toInt())
+            setTextColor(c.textSecondary)
             setPadding(0, 0, 0, dp(12))
         }
         layout.addView(hint)
@@ -732,7 +735,7 @@ class ChatActivity : AppCompatActivity() {
             gravity = Gravity.CENTER
             this.text = if (userName.isNotEmpty()) userName.first().toString() else "?"
             textSize = 26f
-            setTextColor(0x80B3A0FF.toInt())
+            setTextColor(c.accentStrong)
             setBackgroundResource(R.drawable.icon_bg)
         }
 
@@ -743,7 +746,7 @@ class ChatActivity : AppCompatActivity() {
             ).apply { topMargin = dp(10) }
             this.text = if (userName.isNotEmpty()) userName else "点击设置名字"
             textSize = 18f
-            setTextColor(if (userName.isNotEmpty()) 0xD9FFFFFF.toInt() else 0x4DFFFFFF.toInt())
+            setTextColor(if (userName.isNotEmpty()) c.textPrimary else c.tipText)
         }
 
         val subtitle = TextView(this).apply {
@@ -753,7 +756,7 @@ class ChatActivity : AppCompatActivity() {
             ).apply { topMargin = dp(4) }
             this.text = "这里是你的归栖"
             textSize = 11f
-            setTextColor(0x26FFFFFF.toInt())
+            setTextColor(c.dateLabel)
         }
 
         avatarSection.addView(avatarCircle)
@@ -788,13 +791,13 @@ class ChatActivity : AppCompatActivity() {
                 layout.addView(TextView(this).apply {
                     this.text = number
                     textSize = 20f
-                    setTextColor(0xD9FFFFFF.toInt())
+                    setTextColor(c.textPrimary)
                     gravity = Gravity.CENTER
                 })
                 layout.addView(TextView(this).apply {
                     this.text = label
                     textSize = 10f
-                    setTextColor(0x4DFFFFFF.toInt())
+                    setTextColor(c.tipText)
                     gravity = Gravity.CENTER
                     layoutParams = LinearLayout.LayoutParams(
                         LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -910,7 +913,7 @@ class ChatActivity : AppCompatActivity() {
             ).apply { topMargin = dp(12); bottomMargin = dp(8) }
             this.text = title
             textSize = 12f
-            setTextColor(0x66B3A0FF.toInt())
+            setTextColor(c.accent)
             setPadding(dp(4), 0, 0, 0)
             letterSpacing = 0.1f
         }
@@ -939,7 +942,7 @@ class ChatActivity : AppCompatActivity() {
         val tvTitle = TextView(this).apply {
             this.text = title
             textSize = 14f
-            setTextColor(0xD9FFFFFF.toInt())
+            setTextColor(c.textPrimary)
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
         topRow.addView(tvTitle)
@@ -948,7 +951,7 @@ class ChatActivity : AppCompatActivity() {
             val tvValue = TextView(this).apply {
                 this.text = value
                 textSize = 12f
-                setTextColor(0x4DB3A0FF.toInt())
+                setTextColor(c.accent)
             }
             topRow.addView(tvValue)
         }
@@ -959,7 +962,7 @@ class ChatActivity : AppCompatActivity() {
             val tvDesc = TextView(this).apply {
                 this.text = desc
                 textSize = 11f
-                setTextColor(0x4DFFFFFF.toInt())
+                setTextColor(c.tipText)
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT
@@ -987,7 +990,7 @@ class ChatActivity : AppCompatActivity() {
                 gravity = Gravity.CENTER
                 this.text = "还没有足迹~\n点右上角 ✎ 发布第一条吧"
                 textSize = 13f
-                setTextColor(0x26FFFFFF.toInt())
+                setTextColor(c.dateLabel)
                 setLineSpacing(0f, 1.4f)
             }
             footprintsList.addView(hint)
@@ -1031,7 +1034,7 @@ class ChatActivity : AppCompatActivity() {
             gravity = Gravity.CENTER
             this.text = if (isUser) "♡" else "★"
             textSize = 12f
-            setTextColor(if (isUser) 0x80FFFFFF.toInt() else 0x80B3A0FF.toInt())
+            setTextColor(if (isUser) c.textSecondary else c.accentStrong)
             setBackgroundResource(R.drawable.icon_bg)
         }
 
@@ -1039,13 +1042,13 @@ class ChatActivity : AppCompatActivity() {
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             this.text = fp.authorName
             textSize = 13f
-            setTextColor(0x99FFFFFF.toInt())
+            setTextColor(c.textSecondary)
         }
 
         val timeAgo = TextView(this).apply {
             this.text = formatTimeAgo(fp.timestamp)
             textSize = 10f
-            setTextColor(0x26FFFFFF.toInt())
+            setTextColor(c.dateLabel)
         }
 
         header.addView(avatar)
@@ -1058,7 +1061,7 @@ class ChatActivity : AppCompatActivity() {
             val content = TextView(this).apply {
                 this.text = fp.content
                 textSize = 14f
-                setTextColor(0xB3FFFFFF.toInt())
+                setTextColor(c.textOnAccent)
                 setLineSpacing(0f, 1.4f)
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
@@ -1090,7 +1093,7 @@ class ChatActivity : AppCompatActivity() {
         if (fp.comments.isNotEmpty()) {
             val commentBg = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
-                setBackgroundColor(0x08FFFFFF.toInt())
+                setBackgroundColor(c.border)
                 setPadding(dp(10), dp(6), dp(10), dp(6))
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
@@ -1098,11 +1101,11 @@ class ChatActivity : AppCompatActivity() {
                 ).apply { bottomMargin = dp(6) }
             }
 
-            for (c in fp.comments) {
+            for (comment in fp.comments) {
                 val commentView = TextView(this).apply {
-                    this.text = "${c.authorName}: ${c.content}"
+                    this.text = "${comment.authorName}: ${comment.content}"
                     textSize = 12f
-                    setTextColor(0x80FFFFFF.toInt())
+                    setTextColor(c.textSecondary)
                     setLineSpacing(0f, 1.3f)
                     layoutParams = LinearLayout.LayoutParams(
                         LinearLayout.LayoutParams.MATCH_PARENT,
@@ -1123,7 +1126,7 @@ class ChatActivity : AppCompatActivity() {
         val btnComment = TextView(this).apply {
             this.text = "💬 评论"
             textSize = 11f
-            setTextColor(0x4DFFFFFF.toInt())
+            setTextColor(c.tipText)
             setPadding(0, dp(4), dp(16), dp(4))
             setOnClickListener { showCommentDialog(fp) }
         }
@@ -1134,7 +1137,7 @@ class ChatActivity : AppCompatActivity() {
             val btnDelete = TextView(this).apply {
                 this.text = "🗑 删除"
                 textSize = 11f
-                setTextColor(0x33FF6B6B.toInt())
+                setTextColor(c.errorBg)
                 setPadding(0, dp(4), 0, dp(4))
                 setOnClickListener {
                     AlertDialog.Builder(this@ChatActivity)
@@ -1456,7 +1459,7 @@ class ChatActivity : AppCompatActivity() {
             gravity = Gravity.CENTER
             this.text = msg
             textSize = 13f
-            setTextColor(0x26FFFFFF.toInt())
+            setTextColor(c.dateLabel)
         }
         container.addView(hint)
     }

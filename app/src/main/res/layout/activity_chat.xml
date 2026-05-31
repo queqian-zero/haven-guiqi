@@ -32,7 +32,7 @@
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
                     android:text="来信"
-                    android:textColor="#BFFFFFFF"
+                    android:textColor="@color/haven_text_primary"
                     android:textSize="22sp"
                     android:letterSpacing="0.15" />
 
@@ -42,7 +42,7 @@
                     android:layout_height="32dp"
                     android:gravity="center"
                     android:text="＋"
-                    android:textColor="#40B3A0FF"
+                    android:textColor="@color/haven_accent"
                     android:textSize="20sp" />
             </LinearLayout>
 
@@ -76,7 +76,7 @@
                 android:paddingTop="16dp"
                 android:paddingBottom="12dp"
                 android:text="好友"
-                android:textColor="#BFFFFFFF"
+                android:textColor="@color/haven_text_primary"
                 android:textSize="22sp"
                 android:letterSpacing="0.15" />
 
@@ -117,7 +117,7 @@
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
                     android:text="足迹"
-                    android:textColor="#BFFFFFFF"
+                    android:textColor="@color/haven_text_primary"
                     android:textSize="22sp"
                     android:letterSpacing="0.15" />
 
@@ -127,7 +127,7 @@
                     android:layout_height="32dp"
                     android:gravity="center"
                     android:text="✎"
-                    android:textColor="#40B3A0FF"
+                    android:textColor="@color/haven_accent"
                     android:textSize="18sp" />
             </LinearLayout>
 
@@ -161,7 +161,7 @@
                 android:paddingTop="16dp"
                 android:paddingBottom="12dp"
                 android:text="我的"
-                android:textColor="#BFFFFFFF"
+                android:textColor="@color/haven_text_primary"
                 android:textSize="22sp"
                 android:letterSpacing="0.15" />
 
@@ -186,7 +186,7 @@
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="56dp"
-        android:background="#0AFFFFFF"
+        android:background="@color/haven_divider"
         android:gravity="center_vertical"
         android:orientation="horizontal">
 
@@ -204,7 +204,7 @@
                 android:layout_height="wrap_content"
                 android:text="✉"
                 android:textSize="18sp"
-                android:textColor="#B3A0FF" />
+                android:textColor="@color/haven_accent" />
 
             <TextView
                 android:id="@+id/labelTabMessages"
@@ -212,7 +212,7 @@
                 android:layout_height="wrap_content"
                 android:text="来信"
                 android:textSize="9sp"
-                android:textColor="#B3A0FF"
+                android:textColor="@color/haven_accent"
                 android:layout_marginTop="1dp" />
         </LinearLayout>
 
@@ -230,7 +230,7 @@
                 android:layout_height="wrap_content"
                 android:text="♡"
                 android:textSize="18sp"
-                android:textColor="#33FFFFFF" />
+                android:textColor="@color/haven_text_hint" />
 
             <TextView
                 android:id="@+id/labelTabFriends"
@@ -238,7 +238,7 @@
                 android:layout_height="wrap_content"
                 android:text="好友"
                 android:textSize="9sp"
-                android:textColor="#33FFFFFF"
+                android:textColor="@color/haven_text_hint"
                 android:layout_marginTop="1dp" />
         </LinearLayout>
 
@@ -256,7 +256,7 @@
                 android:layout_height="wrap_content"
                 android:text="☆"
                 android:textSize="18sp"
-                android:textColor="#33FFFFFF" />
+                android:textColor="@color/haven_text_hint" />
 
             <TextView
                 android:id="@+id/labelTabFootprints"
@@ -264,7 +264,7 @@
                 android:layout_height="wrap_content"
                 android:text="足迹"
                 android:textSize="9sp"
-                android:textColor="#33FFFFFF"
+                android:textColor="@color/haven_text_hint"
                 android:layout_marginTop="1dp" />
         </LinearLayout>
 
@@ -282,7 +282,7 @@
                 android:layout_height="wrap_content"
                 android:text="○"
                 android:textSize="18sp"
-                android:textColor="#33FFFFFF" />
+                android:textColor="@color/haven_text_hint" />
 
             <TextView
                 android:id="@+id/labelTabProfile"
@@ -290,7 +290,7 @@
                 android:layout_height="wrap_content"
                 android:text="我的"
                 android:textSize="9sp"
-                android:textColor="#33FFFFFF"
+                android:textColor="@color/haven_text_hint"
                 android:layout_marginTop="1dp" />
         </LinearLayout>
 

@@ -20,11 +20,8 @@ import androidx.core.view.WindowInsetsControllerCompat
  *
  * 显示：
  * - 头像 + 名字 + 状态
- * - 印象便签（紫色特殊卡片）
+ * - 印象便签（特殊卡片）
  * - 文件夹列表（记忆、日记、梦境、聊天总结、废纸篓）
- *
- * 每个文件夹有彩色标签页，显示预览和条目数
- * 点击文件夹进入 ArchiveFolderActivity 查看档案纸
  */
 class ArchiveDetailActivity : AppCompatActivity() {
 
@@ -32,6 +29,9 @@ class ArchiveDetailActivity : AppCompatActivity() {
     private var friendId = ""
     private var friendName = ""
     private var friendIcon = ""
+
+    /** 当前主题色 */
+    private val c get() = ThemeHelper.getColors(this)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -50,7 +50,7 @@ class ArchiveDetailActivity : AppCompatActivity() {
         insetsController.hide(WindowInsetsCompat.Type.navigationBars())
         insetsController.systemBarsBehavior =
             WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-        insetsController.isAppearanceLightStatusBars = false
+        insetsController.isAppearanceLightStatusBars = !ThemeHelper.isDark(this)
 
         val contentView = findViewById<View>(android.R.id.content)
         ViewCompat.setOnApplyWindowInsetsListener(contentView) { view, insets ->
@@ -98,7 +98,7 @@ class ArchiveDetailActivity : AppCompatActivity() {
         val nameView = TextView(this).apply {
             text = friendName
             textSize = 17f
-            setTextColor(0xD9FFFFFF.toInt())
+            setTextColor(c.textPrimary)
             gravity = Gravity.CENTER
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -114,7 +114,7 @@ class ArchiveDetailActivity : AppCompatActivity() {
             val statusView = TextView(this).apply {
                 text = status
                 textSize = 11f
-                setTextColor(0x4DB3A0FF.toInt())
+                setTextColor(c.accent)
                 gravity = Gravity.CENTER
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -132,7 +132,7 @@ class ArchiveDetailActivity : AppCompatActivity() {
         val memoLabel = TextView(this).apply {
             text = "💭 对你的印象"
             textSize = 11f
-            setTextColor(0x59FFFFFF.toInt())
+            setTextColor(c.textSecondary)
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
@@ -141,14 +141,14 @@ class ArchiveDetailActivity : AppCompatActivity() {
         detailContainer.addView(memoLabel)
 
         val memoBg = GradientDrawable().apply {
-            setColor(0x0FB3A0FF.toInt())
+            setColor(c.accentBg)
             cornerRadius = dp(8).toFloat()
-            setStroke(1, 0x1AB3A0FF.toInt())
+            setStroke(1, c.stampColor)
         }
         val memoCard = TextView(this).apply {
             text = if (impression.isNotEmpty()) impression else "还没有写过对你的印象"
             textSize = 12f
-            setTextColor(if (impression.isNotEmpty()) 0xB3FFFFFF.toInt() else 0x33FFFFFF.toInt())
+            setTextColor(if (impression.isNotEmpty()) c.textPrimary else c.textHint)
             setLineSpacing(0f, 1.45f)
             background = memoBg
             setPadding(dp(12), dp(10), dp(12), dp(10))
@@ -169,8 +169,7 @@ class ArchiveDetailActivity : AppCompatActivity() {
         // 记忆文件夹
         addFolder(
             tabText = "核心记忆",
-            tabColor = 0xFF78B48C.toInt(),
-            bodyBorderColor = 0x4D78B48C.toInt(),
+            tabColor = c.folderMemory,
             preview = if (memoryCount > 0) "共 ${memoryCount} 条记忆" else "还没有记忆",
             isEmpty = memoryCount == 0,
             dp = dp
@@ -185,8 +184,7 @@ class ArchiveDetailActivity : AppCompatActivity() {
         // 日记文件夹
         addFolder(
             tabText = "日记",
-            tabColor = 0xFFB48C64.toInt(),
-            bodyBorderColor = 0x4DB48C64.toInt(),
+            tabColor = c.folderDiary,
             preview = if (diaryCount > 0) "共 ${diaryCount} 篇日记" else "还没有日记",
             isEmpty = diaryCount == 0,
             dp = dp
@@ -202,8 +200,7 @@ class ArchiveDetailActivity : AppCompatActivity() {
         val dreamCount = DreamStorage(this).count(friendId)
         addFolder(
             tabText = "梦境",
-            tabColor = 0xFF8C78B4.toInt(),
-            bodyBorderColor = 0x4D8C78B4.toInt(),
+            tabColor = c.folderDream,
             preview = if (dreamCount > 0) "共 ${dreamCount} 个梦" else "还没有做过梦",
             isEmpty = dreamCount == 0,
             dp = dp
@@ -219,8 +216,7 @@ class ArchiveDetailActivity : AppCompatActivity() {
         val summaryCount = ChatSummaryStorage(this).count(friendId)
         addFolder(
             tabText = "聊天总结",
-            tabColor = 0xFF6496B4.toInt(),
-            bodyBorderColor = 0x4D6496B4.toInt(),
+            tabColor = c.folderSummary,
             preview = if (summaryCount > 0) "共 ${summaryCount} 条总结" else "还没有总结",
             isEmpty = summaryCount == 0,
             dp = dp
@@ -235,8 +231,7 @@ class ArchiveDetailActivity : AppCompatActivity() {
         // 废纸篓
         addFolder(
             tabText = "废纸篓",
-            tabColor = 0xFFA07878.toInt(),
-            bodyBorderColor = 0x4DA07878.toInt(),
+            tabColor = c.folderTrash,
             preview = if (trashCount > 0) "${trashCount} 条已删除" else "空的",
             isEmpty = trashCount == 0,
             dp = dp
@@ -251,18 +246,10 @@ class ArchiveDetailActivity : AppCompatActivity() {
 
     /**
      * 添加一个文件夹
-     *
-     * 样子：
-     *  ┌─记忆─┐
-     *  │ 共5条记忆      │
-     *  └────────────────┘
-     *
-     * 左上角有个彩色标签页突出来
      */
     private fun addFolder(
         tabText: String,
         tabColor: Int,
-        bodyBorderColor: Int,
         preview: String,
         isEmpty: Boolean,
         dp: (Int) -> Int,
@@ -300,8 +287,9 @@ class ArchiveDetailActivity : AppCompatActivity() {
         folderWrapper.addView(tab)
 
         // 文件夹主体
+        val bodyBorderColor = (tabColor and 0x00FFFFFF) or 0x4D000000
         val bodyBg = GradientDrawable().apply {
-            setColor(0x08FFFFFF.toInt())
+            setColor(c.border)
             cornerRadii = floatArrayOf(
                 0f, 0f,
                 dp(8).toFloat(), dp(8).toFloat(),
@@ -314,8 +302,6 @@ class ArchiveDetailActivity : AppCompatActivity() {
             gravity = Gravity.CENTER_VERTICAL
             background = bodyBg
             setPadding(dp(14), dp(12), dp(14), dp(12))
-            // 左边框模拟文件夹边缘
-            // 通过一个小竖条实现
         }
 
         // 左边竖条（文件夹边缘颜色）
@@ -335,7 +321,7 @@ class ArchiveDetailActivity : AppCompatActivity() {
         val previewView = TextView(this).apply {
             text = preview
             textSize = 12f
-            setTextColor(if (isEmpty) 0x33FFFFFF.toInt() else 0x80FFFFFF.toInt())
+            setTextColor(if (isEmpty) c.textHint else c.textSecondary)
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
         body.addView(previewView)
@@ -345,7 +331,7 @@ class ArchiveDetailActivity : AppCompatActivity() {
             val arrow = TextView(this).apply {
                 text = "›"
                 textSize = 18f
-                setTextColor(0x33FFFFFF.toInt())
+                setTextColor(c.textHint)
             }
             body.addView(arrow)
         }
