@@ -155,7 +155,7 @@ class DreamStorage(private val context: Context) {
         if (dreams.isEmpty()) return ""
 
         val recent = dreams.take(3)
-        val sb = StringBuilder("\n\n[你最近的梦境]\n")
+        val sb = StringBuilder("\n\n[我最近的梦境]\n")
         for (d in recent) {
             val dateStr = SimpleDateFormat("M月d日", Locale.CHINESE).format(Date(d.createdAt))
             when (d.status) {

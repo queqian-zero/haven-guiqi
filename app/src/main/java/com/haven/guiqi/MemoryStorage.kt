@@ -120,15 +120,14 @@ class MemoryStorage(private val context: Context) {
      */
     fun buildMemoryPrompt(friendId: String): String {
         val memories = loadMemories(friendId)
-        if (memories.isEmpty()) return ""
+        if (memories.isEmpty()) return "\n\n[我的核心记忆]\n还没有记过什么。想记的时候用 [MEMORY:内容] 就行。"
 
-        val sb = StringBuilder("\n\n[你的核心记忆]\n")
+        val sb = StringBuilder("\n\n[我的核心记忆]\n")
         for ((index, m) in memories.withIndex()) {
             sb.append("${index + 1}. [${m.id}] ${m.content}\n")
         }
-        sb.append("\n你可以用 [MEMORY:内容] 保存新记忆，")
-        sb.append("[FORGET:记忆ID] 删除记忆，")
-        sb.append("[EDIT_MEMORY:记忆ID:新内容] 修改记忆。")
+        sb.append("\n写新记忆: [MEMORY:内容]  |  删记忆: [FORGET:记忆ID]  |  改记忆: [EDIT_MEMORY:记忆ID:新内容]\n")
+        sb.append("删掉的会去废纸篓，不会真的消失。")
         return sb.toString()
     }
 

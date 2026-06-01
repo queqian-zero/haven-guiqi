@@ -233,6 +233,7 @@ class InstructionProcessor(private val context: Context) {
         }
 
         // ===== [MEMORY:] [DIARY:] [IMPRESSION:] =====
+        // 这三个由各自的 Storage 类处理（包含 MEMORY/FORGET/EDIT_MEMORY/DIARY 指令）
         val memResult = MemoryStorage(context).processAiResponse(friendId, text)
         val diaryResult = DiaryStorage(context).processAiResponse(friendId, memResult.text)
         val impressionResult = ImpressionStorage(context).processAiResponse(friendId, diaryResult.text)

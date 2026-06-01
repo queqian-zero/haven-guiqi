@@ -41,13 +41,12 @@ class ImpressionStorage(private val context: Context) {
      */
     fun buildImpressionPrompt(friendId: String): String {
         val impression = getImpression(friendId)
-        val sb = StringBuilder("\n\n[你对用户的印象]")
+        val sb = StringBuilder("\n\n[我眼中的用户]")
         if (impression.isEmpty()) {
-            sb.append("\n你还没有写过对用户的印象。")
+            sb.append("\n还没写过。想写的时候用 [IMPRESSION:内容]，想怎么写怎么写，会覆盖上一版。")
         } else {
             sb.append("\n$impression")
         }
-        sb.append("\n你可以用 [IMPRESSION:内容] 来写或更新你对用户的印象（整篇覆盖），这是你眼中的对方，自由发挥。")
         return sb.toString()
     }
 

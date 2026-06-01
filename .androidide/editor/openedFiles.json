@@ -20,13 +20,13 @@
       "selection": {
         "end": {
           "column": 1,
-          "index": 86311,
-          "line": 2224
+          "index": 86458,
+          "line": 2264
         },
         "start": {
           "column": 1,
-          "index": 86311,
-          "line": 2224
+          "index": 86458,
+          "line": 2264
         }
       }
     },
@@ -74,7 +74,82 @@
           "line": 61
         }
       }
+    },
+    {
+      "file": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/java/com/haven/guiqi/ImpressionStorage.kt",
+      "selection": {
+        "end": {
+          "column": 1,
+          "index": 2040,
+          "line": 77
+        },
+        "start": {
+          "column": 1,
+          "index": 2040,
+          "line": 77
+        }
+      }
+    },
+    {
+      "file": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/java/com/haven/guiqi/InstructionProcessor.kt",
+      "selection": {
+        "end": {
+          "column": 1,
+          "index": 10578,
+          "line": 263
+        },
+        "start": {
+          "column": 1,
+          "index": 10578,
+          "line": 263
+        }
+      }
+    },
+    {
+      "file": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/java/com/haven/guiqi/MemoryStorage.kt",
+      "selection": {
+        "end": {
+          "column": 1,
+          "index": 8532,
+          "line": 290
+        },
+        "start": {
+          "column": 1,
+          "index": 8532,
+          "line": 290
+        }
+      }
+    },
+    {
+      "file": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/java/com/haven/guiqi/DiaryStorage.kt",
+      "selection": {
+        "end": {
+          "column": 24,
+          "index": 8629,
+          "line": 273
+        },
+        "start": {
+          "column": 24,
+          "index": 8629,
+          "line": 273
+        }
+      }
+    },
+    {
+      "file": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/java/com/haven/guiqi/DreamStorage.kt",
+      "selection": {
+        "end": {
+          "column": 1,
+          "index": 8450,
+          "line": 290
+        },
+        "start": {
+          "column": 1,
+          "index": 8450,
+          "line": 290
+        }
+      }
     }
   ],
-  "selectedFile": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/res/layout/activity_chat_settings.xml"
+  "selectedFile": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/java/com/haven/guiqi/DiaryStorage.kt"
 }

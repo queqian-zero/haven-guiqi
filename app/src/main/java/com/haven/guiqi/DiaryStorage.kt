@@ -128,21 +128,18 @@ class DiaryStorage(private val context: Context) {
      */
     fun buildDiaryPrompt(friendId: String): String {
         val diaries = loadDiaries(friendId)
-        if (diaries.isEmpty()) return ""
+        if (diaries.isEmpty()) return "\n\n[我的日记]\n还没写过。想写的时候用 [DIARY:内容]。"
 
         val recent = diaries.take(10)
-        val sb = StringBuilder("\n\n[你的日记]\n")
+        val sb = StringBuilder("\n\n[我的日记]\n")
         for (d in recent) {
-            // 内容太长就截断，日记详情AI可以自己调取
             val preview = if (d.content.length > 100) d.content.substring(0, 100) + "..." else d.content
             sb.append("· [${d.id}] ${d.date}: $preview\n")
         }
         if (diaries.size > 10) {
             sb.append("（还有 ${diaries.size - 10} 篇更早的日记）\n")
         }
-        sb.append("\n你可以用 [DIARY:内容] 写新日记，")
-        sb.append("[EDIT_DIARY:日记ID:新内容] 修改，")
-        sb.append("[DELETE_DIARY:日记ID] 删除。")
+        sb.append("\n写日记: [DIARY:内容]  |  改: [EDIT_DIARY:日记ID:新内容]  |  删: [DELETE_DIARY:日记ID]")
         return sb.toString()
     }
 

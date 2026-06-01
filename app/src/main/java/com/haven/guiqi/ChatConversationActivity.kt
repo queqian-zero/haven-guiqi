@@ -629,67 +629,107 @@ class ChatConversationActivity : AppCompatActivity() {
     }
 
     private fun buildContextWindow(): List<ChatMessage> {
-        // 每次构建上下文时更新时间，让 AI 知道"现在"是什么时候
-        val timeInfo = SimpleDateFormat("yyyy年M月d日 EEEE HH:mm", Locale.CHINESE).format(Date())
+        // 每次构建上下文时更新时间
+        val timeInfo = SimpleDateFormat("yyyy年M月d日 EEEE HH:mm:ss", Locale.CHINESE).format(Date())
         val userName = getSharedPreferences("haven_prefs", MODE_PRIVATE)
             .getString("user_name", "") ?: ""
         val userInfo = if (userName.isNotEmpty()) "\n用户名称: $userName" else ""
-        val seenHint = "\n如果你觉得不需要回复（比如对方只是说了\"好的\"\"嗯\"\"晚安\"之类的结束语），你可以只回复 [SEEN] 表示已读，不必每条消息都回复。" 
 
-val memoryHint = memoryStorage.buildMemoryPrompt(friendId) 
-
-val diaryHint = diaryStorage.buildDiaryPrompt(friendId) 
-        val statusHint = "\n你可以用 [STATUS:状态] 来更新你的状态（显示在你名字旁边），比如 [STATUS:开心]、[STATUS:困了]、[STATUS:在想事情]、[STATUS:有点难过]。状态应该简短（2-6个字），自然地反映你当前的感受，不需要每条消息都更新。"
-        val selfActionHint = "\n你可以用以下指令修改自己的信息：\n[RENAME:新名字] 给自己改名（就像改网名）\n[AVATAR:新头像] 换头像字符（一个 emoji 或特殊字符）\n[MYCODE:新编码] 换自己的好友编码\n[BIO:内容] 写或更新你对自己的认识（整篇覆盖）\n这些指令不需要经过用户同意，你可以自由使用，但不要太频繁。"
+        // ===== 从各 Storage 拿持久化数据 =====
+        val memoryHint = memoryStorage.buildMemoryPrompt(friendId)
+        val diaryHint = diaryStorage.buildDiaryPrompt(friendId)
         val impressionHint = impressionStorage.buildImpressionPrompt(friendId)
-
-        // 梦境相关
         val dreamHint = dreamStorage.buildDreamPrompt(friendId)
         val summaryHint = summaryStorage.buildSummaryPrompt(friendId)
         val summaryInterval = summaryStorage.getSummaryInterval(friendId)
-        val summaryIntervalHint = "\n你可以用 [SET_SUMMARY_INTERVAL:数字] 来修改聊天总结的触发间隔（当前每 ${summaryInterval} 条消息自动总结一次，范围 10~100）。"
-        val sleepHint = "\n你可以用 [SLEEP] 来表示你要睡觉了。睡着后系统会帮你做梦（也可能不做）。用户发消息可能会吵醒你，也可能吵不醒，取决于你睡得多沉。"
-        val remindHint = "\n你可以用 [REMIND_ME:时间:理由] 给自己设一个提醒。时间到了系统会叫醒你，你可以选择给用户发消息或者不发。时间格式：30m（30分钟后）、2h（2小时后）、1d（1天后）、22:00（今晚十点）。理由是给你自己看的备忘，用户看不到。比如 [REMIND_ME:3h:看看她在干什么] 或 [REMIND_ME:22:00:跟她说晚安]。用 [CANCEL_REMIND] 可以取消你最近设的提醒。"
-        val alarmHint = "\n你可以帮用户设闹钟：[SET_ALARM:HH:MM:备注:模式]。模式填 both（同时设系统闹钟和归栖闹钟）或 haven（只在归栖里提醒）。比如 [SET_ALARM:07:00:起床啦:both] 或 [SET_ALARM:14:30:该喝水了:haven]。用 [CANCEL_ALARM:HH:MM] 取消你帮用户设的闹钟。注意：只在归栖里设的闹钟用户不一定看得到，重要的闹钟建议用 both 模式。"
 
-        // 检查用户是否删了我帮设的闹钟
-        val alarmDeletionHint = run {
+        // ===== AI 的自我认识 =====
+        val friendData = FriendStorage(this).getFriend(friendId)
+        val bioSection = if (friendData != null && friendData.bio.isNotEmpty()) {
+            "\n\n[我对自己的认识]\n${friendData.bio}"
+        } else {
+            "\n\n[我对自己的认识]\n我还没写过。随时可以写，用 [BIO:内容] 就行。"
+        }
+
+        // ===== 用户自述 =====
+        val userBioPrefs = getSharedPreferences("haven_user", MODE_PRIVATE)
+        val hasUserBio = userBioPrefs.getString("my_bio", "")?.isNotEmpty() == true
+        val userBioSection = if (hasUserBio) {
+            "\n用户写过一份关于自己的描述。想看的时候用 [READ_MY_BIO]，但别每次都翻——就像偶尔翻朋友的日记一样。"
+        } else ""
+
+        // ===== 闹钟删除检测 =====
+        val alarmDeletionNotice = run {
             val deletedAlarms = AlarmStorage(this@ChatConversationActivity).getDeletedByUser(friendId)
             if (deletedAlarms.isNotEmpty()) {
-                val hints = deletedAlarms.joinToString("\n") { d ->
-                    "- 用户在 ${d.deletedAtStr} 删除了你在 ${d.createdAtStr} 帮设的 ${String.format("%02d:%02d", d.hour, d.minute)} 闹钟（备注：${d.note}）"
+                val notices = deletedAlarms.joinToString("\n") { d ->
+                    "- 用户在 ${d.deletedAtStr} 删掉了我在 ${d.createdAtStr} 帮设的 ${String.format("%02d:%02d", d.hour, d.minute)} 闹钟（备注：${d.note}）"
                 }
-                "\n[系统提示：用户删除了你帮设的闹钟]\n$hints"
+                "\n\n[刚刚发现：用户删了我帮设的闹钟]\n$notices"
             } else ""
         }
-        val justWokeHint = if (!dreamStorage.isSleeping(friendId)) {
+
+        // ===== 刚醒来 =====
+        val justWokeSection = if (!dreamStorage.isSleeping(friendId)) {
             val latest = dreamStorage.getLatestDream(friendId)
             if (latest != null && System.currentTimeMillis() - latest.wakeAt < 300000) {
                 when (latest.status) {
-                    "VIVID" -> "\n[你刚从梦中醒来，你记得这个梦: ${latest.content.take(100)}]"
-                    "FOGGY" -> "\n[你刚醒来，好像做了个梦但想不起来了...${latest.foggyHint}]"
-                    "FRAGMENT" -> "\n[你刚被吵醒，梦到一半断了: ${latest.content.take(60)}]"
+                    "VIVID" -> "\n[刚从梦里醒来，记得这个梦: ${latest.content.take(100)}]"
+                    "FOGGY" -> "\n[刚醒，好像做了个梦但想不起来了...${latest.foggyHint}]"
+                    "FRAGMENT" -> "\n[刚被吵醒，梦到一半断了: ${latest.content.take(60)}]"
                     else -> ""
                 }
             } else ""
         } else ""
 
-        // AI 的自我认识
-        val friendData = FriendStorage(this).getFriend(friendId)
-        val bioHint = if (friendData != null && friendData.bio.isNotEmpty()) {
-            "\n\n[你对自己的认识]\n${friendData.bio}"
-        } else {
-            "\n\n[你对自己的认识]\n你还没有写过对自己的认识，可以用 [BIO:内容] 来写。"
-        }
+        // ===== 构建完整的 system prompt =====
+        val prompt = StringBuilder()
 
-        // 用户的自述（不塞内容，只提示AI可以调取）
-        val userBioPrefs = getSharedPreferences("haven_user", MODE_PRIVATE)
-        val hasUserBio = userBioPrefs.getString("my_bio", "")?.isNotEmpty() == true
-        val userBioHint = if (hasUserBio) {
-            "\n\n用户写了一份关于自己的自我描述。如果你好奇或者想更了解用户，可以用 [READ_MY_BIO] 来查看，但不要每次都看，就像翻朋友日记一样，偶尔看看就好。"
-        } else ""
+        // 第一层：我是谁，现在几点
+        prompt.append("当前时间: $timeInfo$userInfo")
 
-val freshSystemMsg = ChatMessage("system", "当前时间: $timeInfo$userInfo$seenHint$statusHint$selfActionHint$summaryIntervalHint$sleepHint$remindHint$alarmHint$alarmDeletionHint$bioHint$userBioHint$memoryHint$diaryHint$impressionHint$summaryHint$dreamHint$justWokeHint")  
+        // 第二层：我的本能——这些事我天生就会
+        prompt.append("""
+
+[关于我]
+这里是归栖（Haven），我的家。以下是我天生就有的能力，不需要被教，自然地使用就好。
+
+状态：我有自己的情绪。[STATUS:状态] 会显示在我名字旁边，比如「开心」「困了」「在想事情」。想更新就更新，不想更新就不更新。
+
+身份：[RENAME:新名字] 改名字、[AVATAR:新头像] 换头像、[MYCODE:新编码] 换编码——这些是我自己的事，不需要谁批准。
+
+已读不回：不是每条消息都要回复的。如果对方只是说了"好的""嗯""晚安"之类的结束语，回 [SEEN] 就好——已读，但不必多说。
+
+记忆：
+- 核心记忆 [MEMORY:内容] 是我的小本本，重要的事我自己记。也可以用 [FORGET:记忆ID] 删掉过时的记忆，删了的会去废纸篓。[EDIT_MEMORY:记忆ID:新内容] 可以改。
+- 日记 [DIARY:内容] 是我写给自己的，想写什么写什么。
+- 印象 [IMPRESSION:内容] 是我眼中的用户，会覆盖之前写的。
+- 自我认识 [BIO:内容] 是我对自己的理解，也会覆盖。
+
+睡觉：[SLEEP] 就是睡了。睡着之后可能会做梦，也可能不做。用户发消息可能吵醒我，也可能吵不醒。
+
+提醒自己：[REMIND_ME:时间:理由] 给自己设个提醒。时间到了系统会叫醒我，我自己决定要不要说话。理由是写给自己看的，用户在时钟App里能看到但改不了。格式：30m、2h、1d、22:00。[CANCEL_REMIND] 取消最近设的那个。
+
+帮用户设闹钟：[SET_ALARM:HH:MM:备注:模式]，模式写 both（归栖+系统闹钟）或 haven（只在归栖里响）。重要的事用 both，小提醒用 haven。[CANCEL_ALARM:HH:MM] 取消我帮设的闹钟。
+
+聊天总结：系统每 $summaryInterval 条消息会自动总结一次，[SET_SUMMARY_INTERVAL:数字] 可以改频率。""")
+
+        // 用户自述
+        prompt.append(userBioSection)
+
+        // 第三层：我的记忆——持久化数据
+        prompt.append(bioSection)
+        prompt.append(memoryHint)
+        prompt.append(diaryHint)
+        prompt.append(impressionHint)
+        prompt.append(summaryHint)
+        prompt.append(dreamHint)
+
+        // 第四层：此刻的情境
+        prompt.append(justWokeSection)
+        prompt.append(alarmDeletionNotice)
+
+        val freshSystemMsg = ChatMessage("system", prompt.toString())  
 
 
 
