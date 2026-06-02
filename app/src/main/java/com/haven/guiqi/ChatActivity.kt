@@ -128,6 +128,14 @@ class ChatActivity : AppCompatActivity() {
         btnTabFootprints.setOnClickListener { switchTab(2) }
         btnTabProfile.setOnClickListener { switchTab(3) }
 
+        // 返回桌面按钮
+        findViewById<TextView>(R.id.btnHome).setOnClickListener {
+            startActivity(Intent(this, DesktopActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+            })
+            finish()
+        }
+
         // ===== 来信页加号按钮 =====
         findViewById<TextView>(R.id.btnAddFromMessages).setOnClickListener {
             showAddFriendDialog()

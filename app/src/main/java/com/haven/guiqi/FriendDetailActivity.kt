@@ -24,6 +24,8 @@ import java.util.*
 
 class FriendDetailActivity : AppCompatActivity() {
 
+    private val c get() = ThemeHelper.getColors(this)
+
     private lateinit var detailContainer: LinearLayout
     private lateinit var friendStorage: FriendStorage
     private lateinit var chatStorage: ChatStorage
@@ -46,7 +48,7 @@ class FriendDetailActivity : AppCompatActivity() {
         insetsController.hide(WindowInsetsCompat.Type.navigationBars())
         insetsController.systemBarsBehavior =
             WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-        insetsController.isAppearanceLightStatusBars = false
+        insetsController.isAppearanceLightStatusBars = !ThemeHelper.isDark(this)
 
         val contentView = findViewById<View>(android.R.id.content)
         ViewCompat.setOnApplyWindowInsetsListener(contentView) { view, insets ->
@@ -93,7 +95,7 @@ class FriendDetailActivity : AppCompatActivity() {
             gravity = Gravity.CENTER
             this.text = friend.icon
             textSize = 28f
-            setTextColor(0x99B3A0FF.toInt())
+            setTextColor(c.accentStrong)
             setBackgroundResource(R.drawable.icon_bg)
         }
         avatarCircle.setOnClickListener { showEditIconDialog(friend) }
@@ -105,7 +107,7 @@ class FriendDetailActivity : AppCompatActivity() {
             ).apply { topMargin = dp(12) }
             this.text = friend.name
             textSize = 20f
-            setTextColor(0xD9FFFFFF.toInt())
+            setTextColor(c.textPrimary)
         }
 
         val codeText = TextView(this).apply {
@@ -115,7 +117,7 @@ class FriendDetailActivity : AppCompatActivity() {
             ).apply { topMargin = dp(4) }
             this.text = friend.id
             textSize = 12f
-            setTextColor(0x40FFFFFF.toInt())
+            setTextColor(c.textHint)
             setOnClickListener {
                 val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                 clipboard.setPrimaryClip(ClipData.newPlainText("code", friend.id))
@@ -134,7 +136,7 @@ class FriendDetailActivity : AppCompatActivity() {
                 ).apply { topMargin = dp(6) }
                 this.text = "🔥 连续聊天 $streak 天"
                 textSize = 12f
-                setTextColor(0x80FFB066.toInt())
+                setTextColor(c.warning)
             }
         } else null
 
@@ -164,13 +166,13 @@ class FriendDetailActivity : AppCompatActivity() {
                 layout.addView(TextView(this).apply {
                     this.text = number
                     textSize = 20f
-                    setTextColor(0xD9FFFFFF.toInt())
+                    setTextColor(c.textPrimary)
                     gravity = Gravity.CENTER
                 })
                 layout.addView(TextView(this).apply {
                     this.text = label
                     textSize = 10f
-                    setTextColor(0x4DFFFFFF.toInt())
+                    setTextColor(c.textHint)
                     gravity = Gravity.CENTER
                     layoutParams = LinearLayout.LayoutParams(
                         LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -280,7 +282,7 @@ class FriendDetailActivity : AppCompatActivity() {
             gravity = Gravity.CENTER
             this.text = "相识于 $createDate"
             textSize = 11f
-            setTextColor(0x1AFFFFFF.toInt())
+            setTextColor(c.timeText)
         }
         detailContainer.addView(footerText)
     }
@@ -357,7 +359,7 @@ class FriendDetailActivity : AppCompatActivity() {
                     gravity = Gravity.CENTER
                     this.text = icons[idx]
                     textSize = 20f
-                    setTextColor(if (icons[idx] == friend.icon) 0xFFB3A0FF.toInt() else 0x99FFFFFF.toInt())
+                    setTextColor(if (icons[idx] == friend.icon) c.highlightColor else c.textSecondary)
                     setBackgroundResource(R.drawable.icon_bg)
                 }
                 rowLayout.addView(iconBtn)
@@ -428,7 +430,7 @@ class FriendDetailActivity : AppCompatActivity() {
             ).apply { topMargin = dp(16); bottomMargin = dp(8) }
             this.text = title
             textSize = 12f
-            setTextColor(0x66B3A0FF.toInt())
+            setTextColor(c.accent)
             setPadding(dp(4), 0, 0, 0)
             letterSpacing = 0.1f
         }
@@ -458,14 +460,14 @@ class FriendDetailActivity : AppCompatActivity() {
         topRow.addView(TextView(this).apply {
             this.text = label
             textSize = 13f
-            setTextColor(0x80FFFFFF.toInt())
+            setTextColor(c.textSecondary)
             layoutParams = LinearLayout.LayoutParams(dp(60), LinearLayout.LayoutParams.WRAP_CONTENT)
         })
 
         topRow.addView(TextView(this).apply {
             this.text = value
             textSize = 13f
-            setTextColor(0xD9FFFFFF.toInt())
+            setTextColor(c.textPrimary)
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             maxLines = 2
         })
@@ -473,7 +475,7 @@ class FriendDetailActivity : AppCompatActivity() {
         topRow.addView(TextView(this).apply {
             this.text = "›"
             textSize = 16f
-            setTextColor(0x1AFFFFFF.toInt())
+            setTextColor(c.timeText)
         })
 
         card.addView(topRow)
@@ -481,7 +483,7 @@ class FriendDetailActivity : AppCompatActivity() {
         val tvDesc = TextView(this).apply {
             this.text = desc
             textSize = 10f
-            setTextColor(0x33FFFFFF.toInt())
+            setTextColor(c.textHint)
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
@@ -505,14 +507,14 @@ class FriendDetailActivity : AppCompatActivity() {
         row.addView(TextView(this).apply {
             this.text = label
             textSize = 13f
-            setTextColor(0x80FFFFFF.toInt())
+            setTextColor(c.textSecondary)
             layoutParams = LinearLayout.LayoutParams(dp(60), LinearLayout.LayoutParams.WRAP_CONTENT)
         })
 
         row.addView(TextView(this).apply {
             this.text = value
             textSize = 13f
-            setTextColor(0xB3FFFFFF.toInt())
+            setTextColor(c.textOnAccent)
         })
 
         detailContainer.addView(row)
@@ -536,13 +538,13 @@ class FriendDetailActivity : AppCompatActivity() {
         card.addView(TextView(this).apply {
             this.text = title
             textSize = 14f
-            setTextColor(0xD9FFFFFF.toInt())
+            setTextColor(c.textPrimary)
         })
 
         card.addView(TextView(this).apply {
             this.text = desc
             textSize = 10f
-            setTextColor(0x33FFFFFF.toInt())
+            setTextColor(c.textHint)
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT

@@ -236,7 +236,107 @@
         </HorizontalScrollView>
     </LinearLayout>
 
-    <!-- ===== 底部输入栏（普通模式） ===== -->
+    <!-- ===== 分条待发区（在输入栏上方） ===== -->
+    <LinearLayout
+        android:id="@+id/pendingArea"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:background="@color/haven_divider"
+        android:paddingHorizontal="12dp"
+        android:paddingTop="8dp"
+        android:paddingBottom="4dp"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:layout_marginBottom="6dp">
+
+            <TextView
+                android:id="@+id/pendingCount"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="待发送 (0)"
+                android:textColor="@color/haven_text_secondary"
+                android:textSize="11sp" />
+
+            <TextView
+                android:id="@+id/btnSendAll"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="发送全部 ➤"
+                android:textColor="@color/haven_accent"
+                android:textSize="12sp"
+                android:paddingHorizontal="8dp" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/pendingMessages"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical" />
+    </LinearLayout>
+
+    <!-- ===== 加号面板（在输入栏上方） ===== -->
+    <LinearLayout
+        android:id="@+id/plusPanel"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center"
+        android:paddingVertical="14dp"
+        android:paddingHorizontal="20dp"
+        android:background="@color/haven_divider"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:id="@+id/plusBtnImage"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:orientation="vertical"
+            android:padding="8dp">
+            <View
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:background="@drawable/settings_item_bg" />
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="发图片"
+                android:textColor="@color/haven_text_secondary"
+                android:textSize="11sp"
+                android:layout_marginTop="6dp" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/plusBtnSticker"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:orientation="vertical"
+            android:padding="8dp">
+            <View
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:background="@drawable/settings_item_bg" />
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="表情包"
+                android:textColor="@color/haven_text_secondary"
+                android:textSize="11sp"
+                android:layout_marginTop="6dp" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <!-- ===== 底部输入栏 ===== -->
     <LinearLayout
         android:id="@+id/inputBar"
         android:layout_width="match_parent"
@@ -247,7 +347,6 @@
         android:paddingVertical="8dp"
         android:background="@color/haven_divider">
 
-        <!-- 加号按钮 -->
         <TextView
             android:id="@+id/btnPlus"
             android:layout_width="36dp"
@@ -256,23 +355,13 @@
             android:text="＋"
             android:textColor="@color/haven_date_label"
             android:textSize="20sp" />
-                <!-- 表情包按钮 -->
-        <TextView
-            android:id="@+id/btnSticker"
-            android:layout_width="32dp"
-            android:layout_height="36dp"
-            android:gravity="center"
-            android:text="😊"
-            android:textColor="@color/haven_date_label"
-            android:textSize="18sp" />
 
-        <!-- 输入框 -->
         <EditText
             android:id="@+id/inputMessage"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:layout_marginHorizontal="8dp"
+            android:layout_marginHorizontal="6dp"
             android:minHeight="38dp"
             android:maxLines="4"
             android:background="@drawable/chat_input_bg"
@@ -285,7 +374,15 @@
             android:inputType="textMultiLine"
             android:imeOptions="actionNone" />
 
-        <!-- 展开按钮 -->
+        <TextView
+            android:id="@+id/btnBatch"
+            android:layout_width="28dp"
+            android:layout_height="36dp"
+            android:gravity="center"
+            android:text="≡"
+            android:textColor="@color/haven_date_label"
+            android:textSize="18sp" />
+
         <TextView
             android:id="@+id/btnExpand"
             android:layout_width="28dp"
@@ -295,7 +392,6 @@
             android:textColor="@color/haven_date_label"
             android:textSize="16sp" />
 
-        <!-- 发送按钮 -->
         <TextView
             android:id="@+id/btnSend"
             android:layout_width="36dp"

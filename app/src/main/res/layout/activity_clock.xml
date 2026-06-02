@@ -19,9 +19,9 @@
             android:layout_width="36dp"
             android:layout_height="36dp"
             android:gravity="center"
-            android:text="←"
+            android:text="🏠"
             android:textColor="@color/haven_settings_back"
-            android:textSize="18sp" />
+            android:textSize="16sp" />
 
         <TextView
             android:layout_width="0dp"

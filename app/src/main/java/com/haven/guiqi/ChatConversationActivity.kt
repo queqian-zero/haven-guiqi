@@ -54,7 +54,6 @@ class ChatConversationActivity : AppCompatActivity() {
     private lateinit var expandedInputPanel: LinearLayout
     private lateinit var expandedInput: EditText
         // 表情包相关
-    private lateinit var btnSticker: TextView
     private lateinit var stickerPanel: LinearLayout
     private lateinit var stickerGrid: LinearLayout
     private lateinit var stickerStorage: StickerStorage
@@ -148,7 +147,6 @@ class ChatConversationActivity : AppCompatActivity() {
         inputBar = findViewById(R.id.inputBar)
         expandedInputPanel = findViewById(R.id.expandedInputPanel)
         expandedInput = findViewById(R.id.expandedInput)
-        btnSticker = findViewById(R.id.btnSticker)
         stickerPanel = findViewById(R.id.stickerPanel)
         stickerGrid = findViewById(R.id.stickerGrid)
 
@@ -234,13 +232,14 @@ class ChatConversationActivity : AppCompatActivity() {
             }
         }
 
-        btnPlus.setOnClickListener {
-            val intent = Intent(Intent.ACTION_PICK).apply { type = "image/*" }
-            startActivityForResult(intent, PICK_IMAGE)
-        }
-        // 表情包按钮：点击切换面板显示/隐藏
-        btnSticker.setOnClickListener { toggleStickerPanel() }
- 
+        btnPlus.setOnClickListener { showPlusMenu() }
+
+        // 分条模式按钮
+        findViewById<TextView>(R.id.btnBatch).setOnClickListener { toggleBatchMode() }
+
+        // 发送全部
+        findViewById<TextView>(R.id.btnSendAll).setOnClickListener { sendAllPending() }
+
         // 导入按钮：从相册选图导入为表情包
         findViewById<TextView>(R.id.btnAddSticker).setOnClickListener {
             val intent = Intent(Intent.ACTION_PICK).apply { type = "image/*" }
@@ -699,6 +698,8 @@ class ChatConversationActivity : AppCompatActivity() {
 身份：[RENAME:新名字] 改名字、[AVATAR:新头像] 换头像、[MYCODE:新编码] 换编码——这些是我自己的事，不需要谁批准。
 
 已读不回：不是每条消息都要回复的。如果对方只是说了"好的""嗯""晚安"之类的结束语，回 [SEEN] 就好——已读，但不必多说。
+
+分条说话：想一条一条发消息的时候，用 [SPLIT] 隔开。比如"嗯[SPLIT]等一下让我想想[SPLIT]好，我觉得你说得对"会变成三条独立的消息一条条蹦出来，像真的在打字聊天。
 
 记忆：
 - 核心记忆 [MEMORY:内容] 是我的小本本，重要的事我自己记。也可以用 [FORGET:记忆ID] 删掉过时的记忆，删了的会去废纸篓。[EDIT_MEMORY:记忆ID:新内容] 可以改。
@@ -1192,6 +1193,12 @@ class ChatConversationActivity : AppCompatActivity() {
         val msg = inputMessage.text.toString().trim()
         val imagePath = pendingImagePath
 
+        // 分条模式：文字消息蹦到待发区，不真正发送
+        if (isBatchMode && msg.isNotEmpty() && imagePath == null) {
+            addToPending(msg)
+            return
+        }
+
         // 都没有就不发
         if (msg.isEmpty() && imagePath == null) return
         if (apiUrl.isEmpty() || apiKey.isEmpty() || apiModel.isEmpty()) {
@@ -1649,6 +1656,18 @@ class ChatConversationActivity : AppCompatActivity() {
 
     // ===== AI 气泡 =====
     private fun addAiBubble(msg: String, timeStr: String) {
+        // 处理分条消息
+        if (msg.contains("[SPLIT]")) {
+            val parts = msg.split("[SPLIT]").map { it.trim() }.filter { it.isNotEmpty() }
+            for (part in parts) {
+                addAiBubbleSingleStatic(part, timeStr)
+            }
+            return
+        }
+        addAiBubbleSingleStatic(msg, timeStr)
+    }
+
+    private fun addAiBubbleSingleStatic(msg: String, timeStr: String) {
         val dp = { value: Int -> (value * resources.displayMetrics.density).toInt() }
         val wrapper = LinearLayout(this).apply {
             layoutParams = LinearLayout.LayoutParams(
@@ -1720,6 +1739,159 @@ class ChatConversationActivity : AppCompatActivity() {
      * delay = 每次蹦字之间隔多少毫秒（越小越快）
      */
          // ===== 表情包面板：显示/隐藏 =====
+    // ===== 分条模式状态 =====
+    private var isBatchMode = false
+    private val pendingTexts = mutableListOf<String>()
+
+    /**
+     * 加号菜单：在输入栏上方显示/隐藏
+     */
+    private fun showPlusMenu() {
+        val plusPanel = findViewById<LinearLayout>(R.id.plusPanel)
+        val pendingArea = findViewById<LinearLayout>(R.id.pendingArea)
+
+        if (plusPanel.visibility == View.VISIBLE) {
+            plusPanel.visibility = View.GONE
+            return
+        }
+
+        stickerPanel.visibility = View.GONE
+        plusPanel.visibility = View.VISIBLE
+
+        findViewById<LinearLayout>(R.id.plusBtnImage).setOnClickListener {
+            plusPanel.visibility = View.GONE
+            val intent = Intent(Intent.ACTION_PICK).apply { type = "image/*" }
+            startActivityForResult(intent, PICK_IMAGE)
+        }
+
+        findViewById<LinearLayout>(R.id.plusBtnSticker).setOnClickListener {
+            plusPanel.visibility = View.GONE
+            toggleStickerPanel()
+        }
+    }
+
+    /**
+     * 切换分条模式
+     */
+    private fun toggleBatchMode() {
+        val btnBatch = findViewById<TextView>(R.id.btnBatch)
+        val pendingArea = findViewById<LinearLayout>(R.id.pendingArea)
+
+        isBatchMode = !isBatchMode
+
+        if (isBatchMode) {
+            btnBatch.setTextColor(c.accent)
+            pendingArea.visibility = View.VISIBLE
+            pendingTexts.clear()
+            refreshPendingUI()
+            // 关掉其他面板
+            findViewById<LinearLayout>(R.id.plusPanel).visibility = View.GONE
+            stickerPanel.visibility = View.GONE
+        } else {
+            btnBatch.setTextColor(c.dateLabel)
+            pendingArea.visibility = View.GONE
+            pendingTexts.clear()
+        }
+    }
+
+    /**
+     * 分条模式下按发送：消息蹦到待发区
+     */
+    private fun addToPending(text: String) {
+        pendingTexts.add(text)
+        inputMessage.text.clear()
+        refreshPendingUI()
+    }
+
+    /**
+     * 刷新待发区 UI
+     */
+    private fun refreshPendingUI() {
+        val container = findViewById<LinearLayout>(R.id.pendingMessages)
+        val countView = findViewById<TextView>(R.id.pendingCount)
+        container.removeAllViews()
+        countView.text = "待发送 (${pendingTexts.size})"
+
+        val dp = { v: Int -> (v * resources.displayMetrics.density).toInt() }
+
+        for ((index, text) in pendingTexts.withIndex()) {
+            val itemBg = android.graphics.drawable.GradientDrawable().apply {
+                setColor(c.card)
+                cornerRadius = dp(8).toFloat()
+                setStroke(1, c.border)
+            }
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                background = itemBg
+                setPadding(dp(10), dp(6), dp(6), dp(6))
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { bottomMargin = dp(4) }
+            }
+            val textView = TextView(this).apply {
+                this.text = text
+                textSize = 12f
+                setTextColor(c.textPrimary)
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                maxLines = 2
+            }
+            val deleteBtn = TextView(this).apply {
+                this.text = "✕"
+                textSize = 14f
+                setTextColor(c.textHint)
+                setPadding(dp(8), dp(4), dp(8), dp(4))
+                setOnClickListener {
+                    pendingTexts.removeAt(index)
+                    refreshPendingUI()
+                }
+            }
+            row.addView(textView)
+            row.addView(deleteBtn)
+            container.addView(row)
+        }
+    }
+
+    /**
+     * 发送全部待发消息
+     */
+    private fun sendAllPending() {
+        if (pendingTexts.isEmpty()) return
+        val texts = pendingTexts.toList()
+        pendingTexts.clear()
+        isBatchMode = false
+        findViewById<TextView>(R.id.btnBatch).setTextColor(c.dateLabel)
+        findViewById<LinearLayout>(R.id.pendingArea).visibility = View.GONE
+        sendBatchMessages(texts)
+    }
+
+    /**
+     * 批量发送消息：一条条蹦出去，但只调一次 API
+     */
+    private fun sendBatchMessages(texts: List<String>) {
+        val handler = android.os.Handler(android.os.Looper.getMainLooper())
+        val allText = texts.joinToString("\n")
+        var delay = 0L
+
+        for ((index, text) in texts.withIndex()) {
+            handler.postDelayed({
+                val now = System.currentTimeMillis()
+                val timeStr = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(now))
+                checkDateSeparator(now)
+                addUserBubble(text, timeStr)
+                chatStorage.appendMessage(friendId, StoredMessage("user", text, now))
+
+                // 最后一条发完之后调 API
+                if (index == texts.size - 1) {
+                    chatHistory.add(ChatMessage("user", allText))
+                    callApiForReply()
+                }
+            }, delay)
+            delay += 300L // 每条间隔 300ms
+        }
+    }
+
     private fun toggleStickerPanel() {
         if (stickerPanel.visibility == View.VISIBLE) {
             stickerPanel.visibility = View.GONE
@@ -2080,6 +2252,27 @@ $impression"""
     }
 
     private fun addAiBubbleStreaming(msg: String, timeStr: String) {
+        // ===== 处理 [SPLIT] 分条消息 =====
+        if (msg.contains("[SPLIT]")) {
+            val parts = msg.split("[SPLIT]").map { it.trim() }.filter { it.isNotEmpty() }
+            if (parts.size > 1) {
+                val splitHandler = android.os.Handler(android.os.Looper.getMainLooper())
+                var delay = 0L
+                for (part in parts) {
+                    splitHandler.postDelayed({
+                        addAiBubbleSingle(part, timeStr)
+                        scrollToBottom()
+                    }, delay)
+                    delay += 600L // 每条间隔 600ms
+                }
+                return
+            }
+        }
+        // 普通单条消息
+        addAiBubbleSingle(msg, timeStr)
+    }
+
+    private fun addAiBubbleSingle(msg: String, timeStr: String) {
         val dp = { value: Int -> (value * resources.displayMetrics.density).toInt() }
 
         // ===== 创建气泡布局（跟 addAiBubble 一模一样） =====

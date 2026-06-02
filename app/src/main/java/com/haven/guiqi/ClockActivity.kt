@@ -56,7 +56,12 @@ class ClockActivity : AppCompatActivity() {
         }
 
         clockContainer = findViewById(R.id.clockContainer)
-        findViewById<TextView>(R.id.btnBack).setOnClickListener { finish() }
+        findViewById<TextView>(R.id.btnBack).setOnClickListener {
+            startActivity(Intent(this, DesktopActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+            })
+            finish()
+        }
         findViewById<TextView>(R.id.btnHistory).setOnClickListener {
             startActivity(Intent(this, ClockHistoryActivity::class.java))
         }

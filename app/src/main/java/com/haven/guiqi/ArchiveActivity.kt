@@ -71,7 +71,12 @@ class ArchiveActivity : AppCompatActivity() {
         archivePage = findViewById(R.id.archivePage)
         cabinetContainer = findViewById(R.id.cabinetContainer)
 
-        findViewById<TextView>(R.id.btnBack).setOnClickListener { finish() }
+        findViewById<TextView>(R.id.btnBack).setOnClickListener {
+            startActivity(Intent(this, DesktopActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+            })
+            finish()
+        }
 
         tabLibrary.setOnClickListener { switchTab(false) }
         tabArchive.setOnClickListener { switchTab(true) }

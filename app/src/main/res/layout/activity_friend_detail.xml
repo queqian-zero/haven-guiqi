@@ -21,7 +21,7 @@
             android:layout_height="36dp"
             android:gravity="center"
             android:text="←"
-            android:textColor="#59FFFFFF"
+            android:textColor="@color/haven_settings_back"
             android:textSize="18sp" />
 
         <TextView
@@ -30,7 +30,7 @@
             android:layout_weight="1"
             android:gravity="center"
             android:text="好友详情"
-            android:textColor="#D9FFFFFF"
+            android:textColor="@color/haven_text_primary"
             android:textSize="15sp" />
 
         <View
@@ -41,7 +41,7 @@
     <View
         android:layout_width="match_parent"
         android:layout_height="0.5dp"
-        android:background="#08FFFFFF" />
+        android:background="@color/haven_divider" />
 
     <ScrollView
         android:layout_width="match_parent"
