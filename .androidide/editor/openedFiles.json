@@ -35,16 +35,31 @@
       "selection": {
         "end": {
           "column": 1,
-          "index": 124064,
-          "line": 3158
+          "index": 123023,
+          "line": 3126
         },
         "start": {
           "column": 1,
-          "index": 124064,
-          "line": 3158
+          "index": 123023,
+          "line": 3126
+        }
+      }
+    },
+    {
+      "file": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/java/com/haven/guiqi/BubbleRenderer.kt",
+      "selection": {
+        "end": {
+          "column": 1,
+          "index": 6027,
+          "line": 173
+        },
+        "start": {
+          "column": 1,
+          "index": 6027,
+          "line": 173
         }
       }
     }
   ],
-  "selectedFile": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/java/com/haven/guiqi/ChatConversationActivity.kt"
+  "selectedFile": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/java/com/haven/guiqi/BubbleRenderer.kt"
 }

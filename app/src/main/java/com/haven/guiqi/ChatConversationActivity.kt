@@ -94,6 +94,7 @@ class ChatConversationActivity : AppCompatActivity() {
     private val chatHistory = mutableListOf<ChatMessage>()
     private var maxContextMessages = 30
     private lateinit var chatStorage: ChatStorage
+    private lateinit var bubbleRenderer: BubbleRenderer
 
     // 待发送的图片（支持多张）
     private val pendingImagePaths = mutableListOf<String>()
@@ -142,6 +143,9 @@ class ChatConversationActivity : AppCompatActivity() {
         tvFriendName = findViewById(R.id.tvFriendName)
         tvStatus = findViewById(R.id.tvStatus)
         messagesContainer = findViewById(R.id.messagesContainer)
+        bubbleRenderer = BubbleRenderer(this, messagesContainer, scrollMessages)
+        bubbleRenderer.friendName = friendName
+        bubbleRenderer.friendIcon = friendIcon
         scrollMessages = findViewById(R.id.scrollMessages)
         inputMessage = findViewById(R.id.inputMessage)
         btnSend = findViewById(R.id.btnSend)
@@ -2815,25 +2819,7 @@ $impression"""
         }.start()
     }
 
-    private fun addSeenIndicator() {
-        val dp = { value: Int -> (value * resources.displayMetrics.density).toInt() }
-        val seen = TextView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply {
-                topMargin = dp(2)
-                bottomMargin = dp(8)
-            }
-            gravity = Gravity.END
-            text = "已读"
-            textSize = 10f
-            setTextColor(c.accent)
-            setPadding(0, 0, dp(12), 0)
-        }
-        messagesContainer.addView(seen)
-        scrollToBottom()
-    }
+    private fun addSeenIndicator() = bubbleRenderer.addSeenIndicator()
 
     private fun addAiBubbleStreaming(msg: String, timeStr: String) {
         // ===== 处理 [SPLIT] 分条消息 =====
@@ -2984,23 +2970,7 @@ $impression"""
         handler.post(typingRunnable)
     }
     
-    private fun addSystemTip(msg: String) {
-        val dp = { value: Int -> (value * resources.displayMetrics.density).toInt() }
-        val tip = TextView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { topMargin = dp(4); bottomMargin = dp(10) }
-            gravity = Gravity.CENTER
-            this.text = msg
-            textSize = 11f
-            setTextColor(c.textHint)
-            setLineSpacing(0f, 1.35f)
-            setPadding(dp(20), 0, dp(20), 0)
-        }
-        messagesContainer.addView(tip)
-        scrollToBottom()
-    }
+    private fun addSystemTip(msg: String) = bubbleRenderer.addSystemTip(msg)
 
     /**
      * 把异常转成人话
@@ -3153,7 +3123,5 @@ $impression"""
     private fun removeTypingIndicator() {
         typingView?.let { messagesContainer.removeView(it); typingView = null }
     }
-    private fun scrollToBottom() {
-        scrollMessages.post { scrollMessages.fullScroll(View.FOCUS_DOWN) }
-    }
+    private fun scrollToBottom() = bubbleRenderer.scrollToBottom()
 }
