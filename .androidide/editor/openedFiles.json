@@ -35,13 +35,13 @@
       "selection": {
         "end": {
           "column": 1,
-          "index": 123023,
-          "line": 3126
+          "index": 123978,
+          "line": 3147
         },
         "start": {
           "column": 1,
-          "index": 123023,
-          "line": 3126
+          "index": 123978,
+          "line": 3147
         }
       }
     },
@@ -61,5 +61,5 @@
       }
     }
   ],
-  "selectedFile": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/java/com/haven/guiqi/BubbleRenderer.kt"
+  "selectedFile": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/java/com/haven/guiqi/ChatConversationActivity.kt"
 }

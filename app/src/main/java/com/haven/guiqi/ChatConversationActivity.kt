@@ -143,10 +143,10 @@ class ChatConversationActivity : AppCompatActivity() {
         tvFriendName = findViewById(R.id.tvFriendName)
         tvStatus = findViewById(R.id.tvStatus)
         messagesContainer = findViewById(R.id.messagesContainer)
+        scrollMessages = findViewById(R.id.scrollMessages)
         bubbleRenderer = BubbleRenderer(this, messagesContainer, scrollMessages)
         bubbleRenderer.friendName = friendName
         bubbleRenderer.friendIcon = friendIcon
-        scrollMessages = findViewById(R.id.scrollMessages)
         inputMessage = findViewById(R.id.inputMessage)
         btnSend = findViewById(R.id.btnSend)
         btnBack = findViewById(R.id.btnBack)
@@ -1791,11 +1791,32 @@ class ChatConversationActivity : AppCompatActivity() {
         if (msg.contains("[SPLIT]")) {
             val parts = msg.split("[SPLIT]").map { it.trim() }.filter { it.isNotEmpty() }
             for (part in parts) {
-                addAiBubbleSingleStatic(part, timeStr)
+                renderAiSegmentStatic(part, timeStr)
             }
             return
         }
-        addAiBubbleSingleStatic(msg, timeStr)
+        renderAiSegmentStatic(msg, timeStr)
+    }
+
+    /** 静态渲染一段AI消息（加载历史时用，跟 renderAiSegment 一样但不带动画） */
+    private fun renderAiSegmentStatic(segment: String, timeStr: String) {
+        val stickerPattern = Regex("\\[STICKER_IMG:(.+?)]")
+        if (!segment.contains("[STICKER_IMG:")) {
+            addAiBubbleSingleStatic(segment, timeStr)
+            return
+        }
+        var remaining = segment
+        var match = stickerPattern.find(remaining)
+        while (match != null) {
+            val textBefore = remaining.substring(0, match.range.first).trim()
+            if (textBefore.isNotEmpty()) addAiBubbleSingleStatic(textBefore, timeStr)
+            val stickerPath = match.groupValues[1]
+            addAiImageBubble(stickerPath, timeStr)
+            remaining = remaining.substring(match.range.last + 1)
+            match = stickerPattern.find(remaining)
+        }
+        val textAfter = remaining.trim()
+        if (textAfter.isNotEmpty()) addAiBubbleSingleStatic(textAfter, timeStr)
     }
 
     private fun addAiBubbleSingleStatic(msg: String, timeStr: String) {
