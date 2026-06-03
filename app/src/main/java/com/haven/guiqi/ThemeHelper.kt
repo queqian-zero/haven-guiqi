@@ -173,8 +173,8 @@ object ThemeHelper {
     // ===== 浅色模式配色（Claude 同款） =====
     private val lightColors = HavenColors(
         // 背景
-        background = 0xFFFAF9F7.toInt(),
-        backgroundSecondary = 0xFFF5F3EF.toInt(),
+        background = 0xFFFDFCFA.toInt(),
+        backgroundSecondary = 0xFFF8F7F4.toInt(),
         card = 0xFFFFFFFF.toInt(),
         inputBg = 0x08000000.toInt(),
 
@@ -190,15 +190,15 @@ object ThemeHelper {
         accentBg = 0x1AB3845A.toInt(),
 
         // 气泡
-        userBubbleBg = 0xFFE8DDD0.toInt(),
+        userBubbleBg = 0xFFF2ECE3.toInt(),
         userBubbleText = 0xFF3D3730.toInt(),
-        aiBubbleBg = 0xFFFFFFFF.toInt(),
+        aiBubbleBg = 0xFFF7F6F3.toInt(),
         aiBubbleText = 0xFF3D3730.toInt(),
 
         // 边框和分隔
-        border = 0x26B4A082.toInt(),
-        borderMedium = 0x33B4A082.toInt(),
-        divider = 0x1AB4A082.toInt(),
+        border = 0x1AD4C8B8.toInt(),
+        borderMedium = 0x22D4C8B8.toInt(),
+        divider = 0x12D4C8B8.toInt(),
 
         // 状态栏和导航栏
         statusBar = 0x00000000.toInt(),

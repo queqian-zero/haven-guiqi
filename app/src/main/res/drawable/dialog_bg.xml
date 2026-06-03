@@ -1,8 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
-<shape xmlns:android="http://schemas.android.com/apk/res/android">
-    <solid android:color="@color/haven_dialog_bg" />
-    <corners android:radius="16dp" />
-    <stroke
-        android:width="0.5dp"
-        android:color="@color/haven_border_medium" />
-</shape>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <shape>
+            <solid android:color="#18000000" />
+            <corners android:radius="20dp" />
+        </shape>
+    </item>
+    <item android:bottom="1dp" android:left="0.5dp" android:right="0.5dp" android:top="0dp">
+        <shape>
+            <solid android:color="@color/haven_dialog_bg" />
+            <corners android:radius="20dp" />
+        </shape>
+    </item>
+</layer-list>

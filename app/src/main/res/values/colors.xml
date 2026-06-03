@@ -3,8 +3,8 @@
     <!-- ===== 归栖配色 · 浅色模式（Claude 同款） ===== -->
 
     <!-- 背景 -->
-    <color name="haven_background">#FAF9F7</color>
-    <color name="haven_background_secondary">#F5F3EF</color>
+    <color name="haven_background">#FDFCFA</color>
+    <color name="haven_background_secondary">#F8F7F4</color>
     <color name="haven_card">#FFFFFF</color>
     <color name="haven_input_bg">#08000000</color>
 
@@ -25,7 +25,7 @@
     <color name="haven_divider">#1AB4A082</color>
 
     <!-- 设置页专用 -->
-    <color name="haven_settings_bg">#FAF9F7</color>
+    <color name="haven_settings_bg">#FDFCFA</color>
     <color name="haven_settings_item_bg">#FFFFFF</color>
     <color name="haven_settings_title">#FF2D2B28</color>
     <color name="haven_settings_section">#996B6560</color>
@@ -45,7 +45,7 @@
     <color name="haven_dialog_accent">#FFB3845A</color>
 
     <!-- 桌面 -->
-    <color name="haven_desktop_gradient_start">#FBF8F4</color>
+    <color name="haven_desktop_gradient_start">#FDFCFA</color>
     <color name="haven_desktop_gradient_center">#EFE9E0</color>
     <color name="haven_desktop_gradient_end">#F5F0EA</color>
     <color name="haven_desktop_time">#FF2D2B28</color>
@@ -53,7 +53,7 @@
     <color name="haven_desktop_date">#996B6560</color>
     <color name="haven_desktop_icon_label">#996B6560</color>
     <color name="haven_desktop_icon_bg">#0D000000</color>
-    <color name="haven_desktop_icon_border">#1AB4A082</color>
+    <color name="haven_desktop_icon_border">#14D4C8B8</color>
     <color name="haven_desktop_icon_selected_bg">#26B3845A</color>
     <color name="haven_desktop_icon_selected_border">#80B3845A</color>
     <color name="haven_desktop_icon_color">#806B6560</color>
@@ -63,7 +63,7 @@
     <color name="haven_desktop_drawer_title">#4D6B6560</color>
     <color name="haven_desktop_drawer_overlay">#33000000</color>
     <color name="haven_desktop_icon_circle_bg">#0D000000</color>
-    <color name="haven_desktop_icon_circle_border">#1AB4A082</color>
+    <color name="haven_desktop_icon_circle_border">#14D4C8B8</color>
 
     <color name="haven_date_label">#996B6560</color>
     <!-- 聊天页 -->
