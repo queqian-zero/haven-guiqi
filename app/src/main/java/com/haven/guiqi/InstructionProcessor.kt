@@ -27,6 +27,9 @@ import android.util.Log
  *   [DIARY:xxx]                        → 写日记
  *   [IMPRESSION:xxx]                   → 写印象
  *   [SEEN]                             → 已读不回
+ *   [STICKER:分组名]                    → 从分组随机挑一张表情包发出去
+ *   [STICKER:STK-xxx]                  → 发指定ID的表情包
+ *   [BROWSE_STICKERS:分组名]            → 翻看某个分组的表情包列表（不发给用户）
  */
 class InstructionProcessor(private val context: Context) {
 
@@ -43,7 +46,8 @@ class InstructionProcessor(private val context: Context) {
         val actions: List<String>,
         val isSeen: Boolean,
         val shouldDream: Boolean,
-        val userBioContext: String?
+        val userBioContext: String?,
+        val stickerPaths: List<String> = emptyList()  // AI 发的表情包图片路径
     )
 
     fun process(friendId: String, rawText: String): Result {
@@ -245,12 +249,57 @@ class InstructionProcessor(private val context: Context) {
             actions.add("💭 更新了对你的印象")
         }
 
+        // ===== [STICKER:xxx] — 发表情包（替换成内联标记，渲染时在原位显示图片） =====
+        val stickerPaths = mutableListOf<String>()
+        val stickerStorage = StickerStorage(context)
+
+        val stickerPattern = Regex("\\[STICKER:(.+?)]")
+        var stickerCleanText = cleanText
+        var stickerMatch = stickerPattern.find(stickerCleanText)
+        while (stickerMatch != null) {
+            val arg = stickerMatch.groupValues[1].trim()
+            var resolvedPath: String? = null
+            if (arg.startsWith("STK-")) {
+                val sticker = stickerStorage.findById(arg)
+                if (sticker != null) {
+                    val file = stickerStorage.getFile(sticker)
+                    if (file != null) resolvedPath = file.absolutePath
+                }
+            } else {
+                val stickers = stickerStorage.loadByGroup(arg)
+                if (stickers.isNotEmpty()) {
+                    val picked = stickers.random()
+                    val file = stickerStorage.getFile(picked)
+                    if (file != null) resolvedPath = file.absolutePath
+                }
+            }
+            if (resolvedPath != null) {
+                // 替换成内联标记，留在原位
+                stickerCleanText = stickerCleanText.replaceFirst(stickerMatch.value, "[STICKER_IMG:$resolvedPath]")
+                stickerPaths.add(resolvedPath)
+            } else {
+                stickerCleanText = stickerCleanText.replaceFirst(stickerMatch.value, "")
+            }
+            // 继续找下一个（跳过已替换的 STICKER_IMG）
+            stickerMatch = stickerPattern.find(stickerCleanText)
+        }
+
+        // ===== [BROWSE_STICKERS:分组名] — 翻看表情包（塞回上下文，用户看不到） =====
+        val browsePattern = Regex("\\[BROWSE_STICKERS:(.+?)]")
+        browsePattern.find(stickerCleanText)?.let { match ->
+            val groupName = match.groupValues[1].trim()
+            val detail = stickerStorage.getGroupDetailForAI(groupName)
+            userBioContext = (userBioContext ?: "") + "\n[表情包「$groupName」详情]\n$detail"
+            // 不告诉用户我在翻表情包
+            stickerCleanText = stickerCleanText.replace(match.value, "")
+        }
+
         // ===== [SEEN] =====
-        val trimmed = cleanText.trim()
+        val trimmed = stickerCleanText.trim()
         val isSeen = (trimmed == "[SEEN]" || trimmed == "[seen]" || trimmed == "[ SEEN ]")
 
         return Result(
-            cleanText = cleanText,
+            cleanText = stickerCleanText,
             newStatus = newStatus,
             newName = newName,
             newIcon = newIcon,
@@ -258,7 +307,8 @@ class InstructionProcessor(private val context: Context) {
             actions = actions,
             isSeen = isSeen,
             shouldDream = shouldDream,
-            userBioContext = userBioContext
+            userBioContext = userBioContext,
+            stickerPaths = stickerPaths
         )
     }
 }

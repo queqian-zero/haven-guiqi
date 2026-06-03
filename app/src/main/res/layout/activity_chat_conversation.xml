@@ -189,19 +189,19 @@
     <LinearLayout
         android:id="@+id/stickerPanel"
         android:layout_width="match_parent"
-        android:layout_height="180dp"
+        android:layout_height="260dp"
         android:orientation="vertical"
         android:background="@color/haven_background_secondary"
         android:visibility="gone"
         android:paddingHorizontal="12dp"
-        android:paddingVertical="8dp">
+        android:paddingTop="8dp">
  
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
             android:gravity="center_vertical"
-            android:paddingBottom="8dp">
+            android:paddingBottom="4dp">
  
             <TextView
                 android:layout_width="0dp"
@@ -210,7 +210,17 @@
                 android:text="我的表情包"
                 android:textColor="@color/haven_text_secondary"
                 android:textSize="12sp" />
- 
+
+            <TextView
+                android:id="@+id/btnManageSticker"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="管理"
+                android:textColor="@color/haven_text_secondary"
+                android:textSize="11sp"
+                android:paddingHorizontal="6dp"
+                android:paddingVertical="4dp" />
+
             <TextView
                 android:id="@+id/btnAddSticker"
                 android:layout_width="wrap_content"
@@ -221,19 +231,45 @@
                 android:paddingHorizontal="8dp"
                 android:paddingVertical="4dp" />
         </LinearLayout>
- 
+
+        <!-- 分组标签栏 -->
         <HorizontalScrollView
             android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:scrollbars="none">
- 
+            android:layout_height="wrap_content"
+            android:scrollbars="none"
+            android:paddingBottom="6dp">
             <LinearLayout
-                android:id="@+id/stickerGrid"
+                android:id="@+id/stickerGroupTabs"
                 android:layout_width="wrap_content"
-                android:layout_height="match_parent"
+                android:layout_height="wrap_content"
                 android:orientation="horizontal"
                 android:gravity="center_vertical" />
         </HorizontalScrollView>
+
+        <!-- 表情包网格（纵向滚动） -->
+        <ScrollView
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:scrollbars="none"
+            android:fillViewport="true">
+
+            <LinearLayout
+                android:id="@+id/stickerGrid"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical" />
+        </ScrollView>
+
+        <!-- 管理模式底部操作栏 -->
+        <LinearLayout
+            android:id="@+id/stickerActionBar"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingVertical="8dp"
+            android:visibility="gone" />
     </LinearLayout>
 
     <!-- ===== 分条待发区（在输入栏上方） ===== -->
@@ -412,15 +448,23 @@
         android:background="@color/haven_background_secondary"
         android:visibility="gone">
 
-        <!-- 展开模式顶栏 -->
+        <!-- 展开模式顶栏：收起在右上角 -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
             android:gravity="center_vertical"
             android:paddingHorizontal="14dp"
-            android:paddingVertical="8dp"
+            android:paddingVertical="6dp"
             android:background="@color/haven_divider">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="展开模式 · 回车换行"
+                android:textColor="@color/haven_text_hint"
+                android:textSize="11sp" />
 
             <TextView
                 android:id="@+id/btnCollapse"
@@ -430,11 +474,33 @@
                 android:textColor="@color/haven_accent"
                 android:textSize="13sp"
                 android:paddingHorizontal="4dp" />
+        </LinearLayout>
 
-            <View
-                android:layout_width="0dp"
-                android:layout_height="1dp"
-                android:layout_weight="1" />
+        <!-- 大输入框 -->
+        <EditText
+            android:id="@+id/expandedInput"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:background="@null"
+            android:paddingHorizontal="16dp"
+            android:paddingTop="12dp"
+            android:hint="在这里写，回车换行..."
+            android:textColor="@color/haven_text_on_card"
+            android:textColorHint="@color/haven_date_label"
+            android:textSize="14sp"
+            android:inputType="textMultiLine"
+            android:gravity="top"
+            android:scrollbars="vertical" />
+
+        <!-- 底栏：发送在右下角 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical|end"
+            android:paddingHorizontal="14dp"
+            android:paddingVertical="6dp">
 
             <TextView
                 android:id="@+id/btnExpandSend"
@@ -442,25 +508,10 @@
                 android:layout_height="wrap_content"
                 android:text="发送 ➤"
                 android:textColor="@color/haven_accent"
-                android:textSize="13sp"
-                android:paddingHorizontal="4dp" />
+                android:textSize="14sp"
+                android:paddingHorizontal="8dp"
+                android:paddingVertical="4dp" />
         </LinearLayout>
-
-        <!-- 大输入框 -->
-        <EditText
-            android:id="@+id/expandedInput"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:background="@null"
-            android:paddingHorizontal="16dp"
-            android:paddingTop="12dp"
-            android:hint="展开模式：回车就是换行，不会发送\n写完点右上角「发送」"
-            android:textColor="@color/haven_text_on_card"
-            android:textColorHint="@color/haven_date_label"
-            android:textSize="14sp"
-            android:inputType="textMultiLine"
-            android:gravity="top"
-            android:scrollbars="vertical" />
     </LinearLayout>
 
 </LinearLayout>

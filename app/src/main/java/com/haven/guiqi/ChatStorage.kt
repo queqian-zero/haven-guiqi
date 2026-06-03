@@ -51,6 +51,14 @@ class ChatStorage(private val context: Context) {
                 if (msg.imagePath.isNotEmpty()) {
                     put("image_path", msg.imagePath)
                 }
+                // 消息类型（text 是默认值，不存可以省空间）
+                if (msg.type != "text") {
+                    put("type", msg.type)
+                }
+                // 附加数据（空字符串不存）
+                if (msg.extras.isNotEmpty()) {
+                    put("extras", msg.extras)
+                }
             })
         }
 
@@ -78,12 +86,19 @@ class ChatStorage(private val context: Context) {
 
             for (i in 0 until array.length()) {
                 val obj = array.getJSONObject(i)
+                val imagePath = obj.optString("image_path", "")
+                // 旧消息没有 type 字段：有图片路径的自动识别为 image，否则为 text
+                val type = obj.optString("type", 
+                    if (imagePath.isNotEmpty()) "image" else "text"
+                )
                 messages.add(StoredMessage(
                     role = obj.getString("role"),
                     content = obj.getString("content"),
                     timestamp = obj.optLong("timestamp", 0L),
                     thinking = obj.optString("thinking", ""),
-                    imagePath = obj.optString("image_path", "")
+                    imagePath = imagePath,
+                    type = type,
+                    extras = obj.optString("extras", "")
                 ))
             }
 
@@ -122,12 +137,36 @@ class ChatStorage(private val context: Context) {
 
 /**
  * 存储用的消息格式
- * 跟 ChatMessage 的区别是多了一个 timestamp（时间戳）
+ * 跟 ChatMessage 的区别是多了时间戳和消息类型
+ *
+ * type 可选值（以后加新类型只在这里加，不动别的代码）：
+ *   text       纯文字（默认）
+ *   image      图片（用户拍的/选的照片）
+ *   sticker    表情包（从收藏夹发的）
+ *   voice      语音消息
+ *   music      音乐分享
+ *   video      视频
+ *   file       文件
+ *   link       链接预览卡片
+ *   code       代码块 / 运行结果
+ *   share      分享卡片（记忆/日记/梦境/足迹/总结）
+ *   screenshot 查岗截屏
+ *   report     报备
+ *   quote      引用回复
+ *   system     系统提示（换天、间隔等）
+ *
+ * extras 是 JSON 字符串，放每种类型的附加信息，比如：
+ *   share  → {"share_type":"memory","item_id":"MEM-001"}
+ *   music  → {"title":"...","artist":"...","duration":180}
+ *   link   → {"url":"...","title":"...","preview":"..."}
+ *   quote  → {"quote_author":"...","quote_content":"..."}
  */
 data class StoredMessage(
     val role: String,           // "user" / "assistant" / "system"
     val content: String,        // 消息内容
     val timestamp: Long,        // 发送时间（毫秒）
     val thinking: String = "",  // AI 的思考过程（可能为空）
-    val imagePath: String = ""  // 图片路径（可能为空）
+    val imagePath: String = "", // 图片路径（可能为空）
+    val type: String = "text",  // 消息类型（默认纯文字）
+    val extras: String = ""     // 附加数据（JSON 字符串，按类型不同装不同东西）
 )

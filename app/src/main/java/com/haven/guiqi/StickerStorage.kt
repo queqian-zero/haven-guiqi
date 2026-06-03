@@ -10,38 +10,35 @@ import java.io.File
 import java.io.FileOutputStream
 
 /**
- * StickerStorage - 表情包收藏管理
- *
- * 表情包图片存在应用内部存储的 stickers 文件夹里
- * 索引信息存在 stickers.json 文件里
+ * StickerStorage - 表情包收藏管理（带分组和标签）
  *
  * 文件结构：
  *   应用内部存储/
  *     stickers/              ← 表情包图片文件夹
- *       STK-1715000000.jpg   ← 每张表情包一个文件
- *       STK-1715000001.jpg
- *     stickers.json          ← 索引文件，记录每张表情包的信息
+ *       STK-1715000000.jpg
+ *     stickers.json          ← 索引文件
  *
  * stickers.json 格式：
  * {
  *   "stickers": [
  *     {
- *       "id": "STK-1715000000",    // 唯一标识
- *       "fileName": "STK-xxx.jpg", // 文件名
- *       "addedAt": 1715000000      // 添加时间（毫秒）
+ *       "id": "STK-1715000000",
+ *       "fileName": "STK-xxx.jpg",
+ *       "addedAt": 1715000000,
+ *       "group": "猫猫",        ← 分组（新增）
+ *       "label": "思考"         ← 标签/简短描述（新增）
  *     }
  *   ]
  * }
  *
- * 用法很简单：
- *   val storage = StickerStorage(context)
- *   storage.importFromUri(uri)          // 从相册导入
- *   val list = storage.loadStickers()   // 获取所有表情包
- *   storage.deleteSticker("STK-xxx")    // 删除某个表情包
+ * 向后兼容：旧数据没有 group/label 字段时自动填默认值
  */
 class StickerStorage(private val context: Context) {
 
-    // 表情包图片存放的文件夹
+    companion object {
+        const val DEFAULT_GROUP = "未分类"
+    }
+
     private val stickerDir: File
         get() {
             val dir = File(context.filesDir, "stickers")
@@ -49,109 +46,144 @@ class StickerStorage(private val context: Context) {
             return dir
         }
 
-    // 索引文件
     private val indexFile: File
         get() = File(context.filesDir, "stickers.json")
 
+    // ===== 导入 =====
+
     /**
      * 从相册导入一张表情包
-     *
-     * @param uri 用户从相册选的图片的 Uri
-     * @return 导入成功返回 Sticker 对象，失败返回 null
-     *
-     * 原理：
-     * 1. 通过 uri 读取图片的字节流
-     * 2. 解码成 Bitmap（安卓里的图片对象）
-     * 3. 如果图片太大就缩小（表情包不需要很大）
-     * 4. 保存到 stickers 文件夹里
-     * 5. 在索引文件里记一笔
+     * @param group 导入到哪个分组（默认"未分类"）
      */
-    fun importFromUri(uri: Uri): Sticker? {
+    fun importFromUri(uri: Uri, group: String = DEFAULT_GROUP): Sticker? {
         return try {
-            // 读取图片
             val inputStream = context.contentResolver.openInputStream(uri) ?: return null
             val originalBitmap = BitmapFactory.decodeStream(inputStream)
             inputStream.close()
-
             if (originalBitmap == null) return null
 
-            // 如果图片太大就缩小，表情包 512px 足够了
             val maxSize = 512
             val bitmap = if (originalBitmap.width > maxSize || originalBitmap.height > maxSize) {
                 val scale = maxSize.toFloat() / maxOf(originalBitmap.width, originalBitmap.height)
-                val newW = (originalBitmap.width * scale).toInt()
-                val newH = (originalBitmap.height * scale).toInt()
-                Bitmap.createScaledBitmap(originalBitmap, newW, newH, true)
-            } else {
-                originalBitmap
-            }
+                Bitmap.createScaledBitmap(originalBitmap,
+                    (originalBitmap.width * scale).toInt(),
+                    (originalBitmap.height * scale).toInt(), true)
+            } else { originalBitmap }
 
-            // 生成唯一 ID 和文件名
             val id = "STK-${System.currentTimeMillis()}"
             val fileName = "$id.jpg"
             val file = File(stickerDir, fileName)
+            FileOutputStream(file).use { out ->
+                bitmap.compress(Bitmap.CompressFormat.JPEG, 85, out)
+            }
 
-            // 保存图片到文件
-            val out = FileOutputStream(file)
-            bitmap.compress(Bitmap.CompressFormat.JPEG, 85, out)
-            out.flush()
-            out.close()
-
-            // 创建表情包记录
             val sticker = Sticker(
                 id = id,
                 fileName = fileName,
-                addedAt = System.currentTimeMillis()
+                addedAt = System.currentTimeMillis(),
+                group = group
             )
 
-            // 写入索引
             val stickers = loadStickers().toMutableList()
             stickers.add(sticker)
             saveIndex(stickers)
 
+            if (bitmap != originalBitmap) bitmap.recycle()
+            originalBitmap.recycle()
+
             sticker
-        } catch (e: Exception) {
-            // 导入失败不崩溃，返回 null
-            null
-        }
+        } catch (e: Exception) { null }
     }
 
-    /**
-     * 获取所有表情包（按添加时间倒序，最新的在前面）
-     */
+    // ===== 查询 =====
+
+    /** 获取所有表情包（最新在前） */
     fun loadStickers(): List<Sticker> {
         if (!indexFile.exists()) return emptyList()
-
         return try {
             val json = JSONObject(indexFile.readText())
             val array = json.getJSONArray("stickers")
             val list = mutableListOf<Sticker>()
-
             for (i in 0 until array.length()) {
                 val obj = array.getJSONObject(i)
                 val sticker = Sticker(
                     id = obj.getString("id"),
                     fileName = obj.getString("fileName"),
-                    addedAt = obj.optLong("addedAt", 0L)
+                    addedAt = obj.optLong("addedAt", 0L),
+                    group = obj.optString("group", DEFAULT_GROUP),
+                    label = obj.optString("label", "")
                 )
-                // 确认图片文件还在（万一被手动删了）
-                if (getFile(sticker) != null) {
-                    list.add(sticker)
-                }
+                if (getFile(sticker) != null) list.add(sticker)
             }
-
             list.sortedByDescending { it.addedAt }
-        } catch (e: Exception) {
-            emptyList()
+        } catch (e: Exception) { emptyList() }
+    }
+
+    /** 获取某个分组的表情包 */
+    fun loadByGroup(group: String): List<Sticker> {
+        return loadStickers().filter { it.group == group }
+    }
+
+    /** 获取所有分组名 + 每组数量，按数量降序 */
+    fun loadGroups(): List<Pair<String, Int>> {
+        return loadStickers()
+            .groupBy { it.group }
+            .map { (name, list) -> Pair(name, list.size) }
+            .sortedByDescending { it.second }
+    }
+
+    /** 根据 ID 查找表情包 */
+    fun findById(stickerId: String): Sticker? {
+        return loadStickers().find { it.id == stickerId }
+    }
+
+    /** 表情包总数 */
+    fun count(): Int = loadStickers().size
+
+    /** 获取图片文件（不存在返回 null） */
+    fun getFile(sticker: Sticker): File? {
+        val file = File(stickerDir, sticker.fileName)
+        return if (file.exists()) file else null
+    }
+
+    // ===== 修改 =====
+
+    /** 给表情包设置标签 */
+    fun setLabel(stickerId: String, label: String) {
+        val stickers = loadStickers().toMutableList()
+        val index = stickers.indexOfFirst { it.id == stickerId }
+        if (index >= 0) {
+            stickers[index] = stickers[index].copy(label = label)
+            saveIndex(stickers)
         }
     }
 
-    /**
-     * 删除一张表情包
-     * 同时删除图片文件和索引记录
-     */
+    /** 移动表情包到另一个分组 */
+    fun setGroup(stickerId: String, group: String) {
+        val stickers = loadStickers().toMutableList()
+        val index = stickers.indexOfFirst { it.id == stickerId }
+        if (index >= 0) {
+            stickers[index] = stickers[index].copy(group = group)
+            saveIndex(stickers)
+        }
+    }
+
+    /** 批量移动到某个分组 */
+    fun batchSetGroup(stickerIds: List<String>, group: String) {
+        val stickers = loadStickers().toMutableList()
+        val idSet = stickerIds.toSet()
+        for (i in stickers.indices) {
+            if (stickers[i].id in idSet) {
+                stickers[i] = stickers[i].copy(group = group)
+            }
+        }
+        saveIndex(stickers)
+    }
+
+    // ===== 删除 =====
+
+    /** 删除单张表情包 */
     fun deleteSticker(stickerId: String) {
-        // 删除图片文件
         val stickers = loadStickers().toMutableList()
         val target = stickers.find { it.id == stickerId }
         if (target != null) {
@@ -161,21 +193,68 @@ class StickerStorage(private val context: Context) {
         }
     }
 
+    /** 批量删除表情包 */
+    fun batchDelete(stickerIds: List<String>) {
+        val stickers = loadStickers().toMutableList()
+        val idSet = stickerIds.toSet()
+        val toRemove = stickers.filter { it.id in idSet }
+        for (s in toRemove) {
+            File(stickerDir, s.fileName).delete()
+        }
+        stickers.removeAll(toRemove)
+        saveIndex(stickers)
+    }
+
+    /** 删除整个分组（表情包移到未分类） */
+    fun deleteGroup(group: String) {
+        if (group == DEFAULT_GROUP) return  // 不能删默认分组
+        val stickers = loadStickers().toMutableList()
+        for (i in stickers.indices) {
+            if (stickers[i].group == group) {
+                stickers[i] = stickers[i].copy(group = DEFAULT_GROUP)
+            }
+        }
+        saveIndex(stickers)
+    }
+
+    /** 重命名分组 */
+    fun renameGroup(oldName: String, newName: String) {
+        if (oldName == DEFAULT_GROUP) return
+        val stickers = loadStickers().toMutableList()
+        for (i in stickers.indices) {
+            if (stickers[i].group == oldName) {
+                stickers[i] = stickers[i].copy(group = newName)
+            }
+        }
+        saveIndex(stickers)
+    }
+
+    // ===== AI 用：生成分组概览给 prompt =====
+
     /**
-     * 根据表情包获取它的图片文件路径
-     * 如果文件不存在就返回 null
+     * 给 AI 看的表情包概览
+     * 格式：猫猫(32张) | 沙雕(48张) | 可爱(15张)
      */
-    fun getFile(sticker: Sticker): File? {
-        val file = File(stickerDir, sticker.fileName)
-        return if (file.exists()) file else null
+    fun getSummaryForAI(): String {
+        val groups = loadGroups()
+        if (groups.isEmpty()) return "（没有表情包）"
+        return groups.joinToString(" | ") { "${it.first}(${it.second}张)" }
     }
 
     /**
-     * 表情包总数
+     * 给 AI 看某个分组的详细列表（带标签）
+     * 格式：STK-xxx[思考] | STK-yyy[嗯？] | STK-zzz
      */
-    fun count(): Int = loadStickers().size
+    fun getGroupDetailForAI(group: String): String {
+        val stickers = loadByGroup(group)
+        if (stickers.isEmpty()) return "（这个分组是空的）"
+        return stickers.joinToString(" | ") { s ->
+            if (s.label.isNotEmpty()) "${s.id}[${s.label}]" else s.id
+        }
+    }
 
-    // ===== 保存索引到 JSON 文件 =====
+    // ===== 内部 =====
+
     private fun saveIndex(stickers: List<Sticker>) {
         val array = JSONArray()
         for (s in stickers) {
@@ -183,12 +262,11 @@ class StickerStorage(private val context: Context) {
                 put("id", s.id)
                 put("fileName", s.fileName)
                 put("addedAt", s.addedAt)
+                if (s.group != DEFAULT_GROUP) put("group", s.group)
+                if (s.label.isNotEmpty()) put("label", s.label)
             })
         }
-        val json = JSONObject().apply {
-            put("stickers", array)
-        }
-        indexFile.writeText(json.toString())
+        indexFile.writeText(JSONObject().apply { put("stickers", array) }.toString())
     }
 }
 
@@ -196,7 +274,9 @@ class StickerStorage(private val context: Context) {
  * 一张表情包的信息
  */
 data class Sticker(
-    val id: String,           // 唯一标识，格式 "STK-时间戳"
-    val fileName: String,     // 图片文件名
-    val addedAt: Long         // 添加时间（毫秒）
+    val id: String,                              // 唯一标识
+    val fileName: String,                        // 图片文件名
+    val addedAt: Long,                           // 添加时间（毫秒）
+    val group: String = StickerStorage.DEFAULT_GROUP,  // 分组
+    val label: String = ""                       // 标签/简短描述
 )

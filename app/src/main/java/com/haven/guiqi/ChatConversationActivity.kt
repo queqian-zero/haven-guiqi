@@ -20,6 +20,8 @@ import android.widget.EditText
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
+import org.json.JSONArray
+import org.json.JSONObject
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
@@ -56,6 +58,11 @@ class ChatConversationActivity : AppCompatActivity() {
         // 表情包相关
     private lateinit var stickerPanel: LinearLayout
     private lateinit var stickerGrid: LinearLayout
+    private lateinit var stickerGroupTabs: LinearLayout
+    private lateinit var stickerActionBar: LinearLayout
+    private var currentStickerGroup: String? = null  // null = 全部
+    private var isStickerManageMode = false
+    private val selectedStickerIds = mutableSetOf<String>()
     private lateinit var stickerStorage: StickerStorage
     private lateinit var memoryStorage: MemoryStorage
     private lateinit var diaryStorage: DiaryStorage
@@ -88,8 +95,8 @@ class ChatConversationActivity : AppCompatActivity() {
     private var maxContextMessages = 30
     private lateinit var chatStorage: ChatStorage
 
-    // 待发送的图片
-    private var pendingImagePath: String? = null
+    // 待发送的图片（支持多张）
+    private val pendingImagePaths = mutableListOf<String>()
 
     // 待引用的消息
     private var pendingQuoteAuthor: String? = null
@@ -149,6 +156,13 @@ class ChatConversationActivity : AppCompatActivity() {
         expandedInput = findViewById(R.id.expandedInput)
         stickerPanel = findViewById(R.id.stickerPanel)
         stickerGrid = findViewById(R.id.stickerGrid)
+        stickerGroupTabs = findViewById(R.id.stickerGroupTabs)
+        stickerActionBar = findViewById(R.id.stickerActionBar)
+
+        // 管理按钮
+        findViewById<TextView>(R.id.btnManageSticker).setOnClickListener {
+            showStickerManageDialog()
+        }
 
 
         friendId = intent.getStringExtra("friend_id") ?: ""
@@ -240,9 +254,12 @@ class ChatConversationActivity : AppCompatActivity() {
         // 发送全部
         findViewById<TextView>(R.id.btnSendAll).setOnClickListener { sendAllPending() }
 
-        // 导入按钮：从相册选图导入为表情包
+        // 导入按钮：从相册选图导入为表情包（支持多选）
         findViewById<TextView>(R.id.btnAddSticker).setOnClickListener {
-            val intent = Intent(Intent.ACTION_PICK).apply { type = "image/*" }
+            val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
+                type = "image/*"
+                putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+            }
             startActivityForResult(intent, PICK_STICKER)
         }
 
@@ -287,13 +304,37 @@ class ChatConversationActivity : AppCompatActivity() {
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-                if (requestCode == PICK_IMAGE && resultCode == RESULT_OK && data?.data != null) {
-            handlePickedImage(data.data!!)
-        } else if (requestCode == PICK_STICKER && resultCode == RESULT_OK && data?.data != null) {
-            // 导入表情包
-            val sticker = stickerStorage.importFromUri(data.data!!)
-            if (sticker != null) {
-                Toast.makeText(this, "表情包已收藏！", Toast.LENGTH_SHORT).show()
+                if (requestCode == PICK_IMAGE && resultCode == RESULT_OK && data != null) {
+            // 多选：clipData 里有多个 URI
+            val clipData = data.clipData
+            if (clipData != null) {
+                for (i in 0 until clipData.itemCount) {
+                    handlePickedImage(clipData.getItemAt(i).uri)
+                }
+            } else if (data.data != null) {
+                // 单选
+                handlePickedImage(data.data!!)
+            }
+        } else if (requestCode == PICK_STICKER && resultCode == RESULT_OK && data != null) {
+            // 导入表情包（支持多选）
+            val uris = mutableListOf<Uri>()
+            val clipData = data.clipData
+            if (clipData != null) {
+                for (i in 0 until clipData.itemCount) {
+                    uris.add(clipData.getItemAt(i).uri)
+                }
+            } else if (data.data != null) {
+                uris.add(data.data!!)
+            }
+
+            var successCount = 0
+            for (uri in uris) {
+                if (stickerStorage.importFromUri(uri) != null) successCount++
+            }
+
+            if (successCount > 0) {
+                val msg = if (successCount == 1) "表情包已收藏！" else "已收藏 $successCount 张表情包！"
+                Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
                 refreshStickerGrid()
             } else {
                 Toast.makeText(this, "导入失败", Toast.LENGTH_SHORT).show()
@@ -301,90 +342,136 @@ class ChatConversationActivity : AppCompatActivity() {
         }
     }
 
-    // ===== 选图后：压缩保存，显示预览，等待发送 =====
+    // ===== 选图后：压缩保存，加入待发列表 =====
     private fun handlePickedImage(uri: Uri) {
-        try {
-            val inputStream = contentResolver.openInputStream(uri) ?: return
-            val original = BitmapFactory.decodeStream(inputStream)
-            inputStream.close()
-            if (original == null) {
-                Toast.makeText(this, "无法读取图片", Toast.LENGTH_SHORT).show()
-                return
-            }
-
-            val maxSize = 800
-            val scale = if (original.width > maxSize) maxSize.toFloat() / original.width else 1f
-            val scaled = if (scale < 1f) {
-                Bitmap.createScaledBitmap(original,
-                    (original.width * scale).toInt(),
-                    (original.height * scale).toInt(), true)
-            } else { original }
-
-            val fileName = "img_${System.currentTimeMillis()}.jpg"
-            val file = File(imageDir, fileName)
-            FileOutputStream(file).use { out ->
-                scaled.compress(Bitmap.CompressFormat.JPEG, 80, out)
-            }
-
-            // 暂存图片路径
-            pendingImagePath = file.absolutePath
-
-            // 显示预览（在输入栏上方）
-            showImagePreview(file.absolutePath)
-
-            if (scaled != original) scaled.recycle()
-            original.recycle()
-
-        } catch (e: Exception) {
-            Toast.makeText(this, "图片处理失败: ${e.message}", Toast.LENGTH_SHORT).show()
+        val path = ImageHelper.compressAndSave(this, uri, imageDir, pendingImagePaths.size)
+        if (path != null) {
+            pendingImagePaths.add(path)
+            showImagePreview()
+        } else {
+            Toast.makeText(this, "图片处理失败", Toast.LENGTH_SHORT).show()
         }
     }
 
-    // ===== 输入栏上方显示图片预览 =====
-    private fun showImagePreview(imagePath: String) {
+    // ===== 输入栏上方显示图片预览（支持多图） =====
+    private fun showImagePreview() {
         removePendingPreview()
+        if (pendingImagePaths.isEmpty()) return
         val dp = { value: Int -> (value * resources.displayMetrics.density).toInt() }
 
         val previewLayout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(c.inputBg)
+            setPadding(dp(8), dp(8), dp(8), dp(4))
+        }
+
+        // 缩略图行：横向滚动
+        val scrollView = android.widget.HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled = false
+        }
+        val thumbRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setBackgroundColor(c.inputBg)
-            setPadding(dp(12), dp(8), dp(12), dp(8))
         }
 
-        val imageView = ImageView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(dp(50), dp(50))
-            scaleType = ImageView.ScaleType.CENTER_CROP
-            val bitmap = BitmapFactory.decodeFile(imagePath)
-            setImageBitmap(bitmap)
-        }
-
-        val label = TextView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
-                marginStart = dp(10)
+        for ((index, path) in pendingImagePaths.withIndex()) {
+            val thumbContainer = android.widget.FrameLayout(this).apply {
+                layoutParams = LinearLayout.LayoutParams(dp(56), dp(56)).apply {
+                    marginEnd = dp(6)
+                }
             }
-            this.text = "图片已选择，输入文字后点发送\n或直接点发送只发图片"
+
+            val imageView = ImageView(this).apply {
+                layoutParams = android.widget.FrameLayout.LayoutParams(dp(56), dp(56))
+                scaleType = ImageView.ScaleType.CENTER_CROP
+                val bitmap = BitmapFactory.decodeFile(path)
+                setImageBitmap(bitmap)
+                val gd = android.graphics.drawable.GradientDrawable().apply {
+                    cornerRadius = dp(8).toFloat()
+                }
+                clipToOutline = true
+                outlineProvider = object : android.view.ViewOutlineProvider() {
+                    override fun getOutline(view: View, outline: android.graphics.Outline) {
+                        outline.setRoundRect(0, 0, view.width, view.height, dp(8).toFloat())
+                    }
+                }
+            }
+            thumbContainer.addView(imageView)
+
+            // 每个缩略图右上角的 × 按钮
+            val removeBtn = TextView(this).apply {
+                layoutParams = android.widget.FrameLayout.LayoutParams(dp(18), dp(18)).apply {
+                    gravity = Gravity.TOP or Gravity.END
+                }
+                text = "✕"
+                textSize = 10f
+                gravity = Gravity.CENTER
+                setTextColor(0xFFFFFFFF.toInt())
+                val bg = android.graphics.drawable.GradientDrawable().apply {
+                    setColor(0x99000000.toInt())
+                    cornerRadius = dp(9).toFloat()
+                }
+                background = bg
+                val idx = index
+                setOnClickListener {
+                    pendingImagePaths.removeAt(idx)
+                    showImagePreview()
+                }
+            }
+            thumbContainer.addView(removeBtn)
+            thumbRow.addView(thumbContainer)
+        }
+
+        // ＋ 追加更多图片按钮
+        val addMore = TextView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(dp(56), dp(56))
+            text = "＋"
+            textSize = 20f
+            gravity = Gravity.CENTER
+            setTextColor(c.textSecondary)
+            val bg = android.graphics.drawable.GradientDrawable().apply {
+                setColor(c.accentBg)
+                cornerRadius = dp(8).toFloat()
+            }
+            background = bg
+            setOnClickListener {
+                val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
+                    type = "image/*"
+                    putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+                }
+                startActivityForResult(intent, PICK_IMAGE)
+            }
+        }
+        thumbRow.addView(addMore)
+
+        scrollView.addView(thumbRow)
+        previewLayout.addView(scrollView)
+
+        // 底部提示 + 全部清除
+        val bottomRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(4), dp(4), dp(4), 0)
+        }
+        val label = TextView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            text = "${pendingImagePaths.size} 张图片已选择"
             textSize = 11f
             setTextColor(c.textSecondary)
-            setLineSpacing(0f, 1.3f)
         }
-
-        val cancelBtn = TextView(this).apply {
-            this.text = "✕"
-            textSize = 16f
-            setTextColor(c.tipText)
-            setPadding(dp(8), 0, 0, 0)
+        val clearBtn = TextView(this).apply {
+            text = "全部清除"
+            textSize = 11f
+            setTextColor(c.errorText)
             setOnClickListener {
-                pendingImagePath = null
+                pendingImagePaths.clear()
                 removePendingPreview()
             }
         }
+        bottomRow.addView(label)
+        bottomRow.addView(clearBtn)
+        previewLayout.addView(bottomRow)
 
-        previewLayout.addView(imageView)
-        previewLayout.addView(label)
-        previewLayout.addView(cancelBtn)
-
-        // 用布局里预留的容器，不再动态找位置
         imagePreviewContainer.removeAllViews()
         imagePreviewContainer.addView(previewLayout)
         imagePreviewContainer.visibility = View.VISIBLE
@@ -396,10 +483,7 @@ class ChatConversationActivity : AppCompatActivity() {
     }
 
     // ===== 图片转 base64 =====
-    private fun imageToBase64(file: File): String {
-        val bytes = file.readBytes()
-        return Base64.encodeToString(bytes, Base64.NO_WRAP)
-    }
+    private fun imageToBase64(file: File): String = ImageHelper.toBase64(file)
 
     // ===== 图片气泡（右侧） =====
     private fun addImageBubble(imagePath: String, timeStr: String, caption: String = "") {
@@ -470,7 +554,102 @@ class ChatConversationActivity : AppCompatActivity() {
         scrollToBottom()
     }
 
-    // ===== 检查是否需要加日期分隔线或时间间隔标记 =====
+    // ===== 多图气泡（右侧，网格排列，点击放大） =====
+    private fun addMultiImageBubble(imagePaths: List<String>, timeStr: String, caption: String = "") {
+        val dp = { value: Int -> (value * resources.displayMetrics.density).toInt() }
+        val thumbSize = dp(90)
+        val gap = dp(4)
+        val columns = if (imagePaths.size == 2) 2 else 3
+
+        val wrapper = LinearLayout(this).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = dp(8) }
+            gravity = Gravity.END
+        }
+
+        val column = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        }
+
+        // 用 GridLayout 排列缩略图
+        val grid = android.widget.GridLayout(this).apply {
+            columnCount = columns
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        }
+
+        for ((index, path) in imagePaths.withIndex()) {
+            val imageView = ImageView(this).apply {
+                layoutParams = android.widget.GridLayout.LayoutParams().apply {
+                    width = thumbSize
+                    height = thumbSize
+                    setMargins(if (index % columns != 0) gap else 0, if (index >= columns) gap else 0, 0, 0)
+                }
+                scaleType = ImageView.ScaleType.CENTER_CROP
+                val file = File(path)
+                if (file.exists()) {
+                    val bitmap = BitmapFactory.decodeFile(path)
+                    setImageBitmap(bitmap)
+                }
+                // 圆角
+                clipToOutline = true
+                outlineProvider = object : android.view.ViewOutlineProvider() {
+                    override fun getOutline(view: View, outline: android.graphics.Outline) {
+                        outline.setRoundRect(0, 0, view.width, view.height, dp(6).toFloat())
+                    }
+                }
+                // 点击放大
+                setOnClickListener { showFullImage(path) }
+            }
+            grid.addView(imageView)
+        }
+        column.addView(grid)
+
+        // 如果有附带文字
+        if (caption.isNotEmpty()) {
+            val captionView = TextView(this).apply {
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { topMargin = dp(4) }
+                maxWidth = columns * thumbSize + (columns - 1) * gap
+                this.text = MarkdownRenderer.render(caption)
+                setTextColor(c.textOnAccent)
+                textSize = 13f
+                setLineSpacing(0f, 1.3f)
+                setPadding(dp(10), dp(6), dp(10), dp(6))
+                setBackgroundResource(R.drawable.chat_bubble_user)
+            }
+            column.addView(captionView)
+        }
+
+        val time = TextView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { topMargin = dp(2) }
+            gravity = Gravity.END
+            this.text = timeStr
+            textSize = 9f
+            setTextColor(c.timeText)
+            setPadding(0, 0, dp(4), 0)
+        }
+        column.addView(time)
+        wrapper.addView(column)
+        messagesContainer.addView(wrapper)
+        scrollToBottom()
+    }
+
+    // ===== 点击图片放大查看 =====
+    private fun showFullImage(imagePath: String) = ImageHelper.showFullImage(this, imagePath)
     private fun checkDateSeparator(timestamp: Long) {
         val dateStr = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date(timestamp))
 
@@ -558,7 +737,7 @@ class ChatConversationActivity : AppCompatActivity() {
     }
 
     // ===== 更新连接状态 =====
-    private fun setStatus(state: String) {
+    private fun setStatus(state: String, errorDetail: String? = null) {
         when (state) {
             "online" -> {
                 tvStatus.text = "在线"
@@ -574,8 +753,8 @@ class ChatConversationActivity : AppCompatActivity() {
                 tvStatus.text = "连接失败"
                 tvStatus.setTextColor(c.errorText)
                 connectionBar.visibility = View.VISIBLE
-                connectionBar.text = "⚠ 消息发送失败，请检查网络和 API 配置"
-                // 点击断网条重新检查
+                connectionBar.text = "⚠ ${errorDetail ?: "消息发送失败，请检查网络和 API 配置"}"
+                // 点击断网条消除
                 connectionBar.setOnClickListener {
                     connectionBar.visibility = View.GONE
                     setStatus("online")
@@ -591,18 +770,23 @@ class ChatConversationActivity : AppCompatActivity() {
     // ===== 展开/收起输入框 =====
     private fun toggleExpandedInput(expand: Boolean) {
         if (expand) {
-            // 把普通输入框的内容搬到展开框
             expandedInput.setText(inputMessage.text)
             expandedInput.setSelection(expandedInput.text.length)
-            // 隐藏普通输入栏，显示展开面板
             inputBar.visibility = View.GONE
             expandedInputPanel.visibility = View.VISIBLE
             expandedInput.requestFocus()
+            // 关掉可能冲突的面板
+            stickerPanel.visibility = View.GONE
+            findViewById<LinearLayout>(R.id.plusPanel).visibility = View.GONE
+            if (isBatchMode) {
+                isBatchMode = false
+                findViewById<TextView>(R.id.btnBatch).setTextColor(c.dateLabel)
+                findViewById<LinearLayout>(R.id.pendingArea).visibility = View.GONE
+                pendingItems.clear()
+            }
         } else {
-            // 把展开框的内容搬回普通输入框
             inputMessage.setText(expandedInput.text)
             inputMessage.setSelection(inputMessage.text.length)
-            // 隐藏展开面板，显示普通输入栏
             expandedInputPanel.visibility = View.GONE
             inputBar.visibility = View.VISIBLE
         }
@@ -628,117 +812,14 @@ class ChatConversationActivity : AppCompatActivity() {
     }
 
     private fun buildContextWindow(): List<ChatMessage> {
-        // 每次构建上下文时更新时间
-        val timeInfo = SimpleDateFormat("yyyy年M月d日 EEEE HH:mm:ss", Locale.CHINESE).format(Date())
-        val userName = getSharedPreferences("haven_prefs", MODE_PRIVATE)
-            .getString("user_name", "") ?: ""
-        val userInfo = if (userName.isNotEmpty()) "\n用户名称: $userName" else ""
-
-        // ===== 从各 Storage 拿持久化数据 =====
-        val memoryHint = memoryStorage.buildMemoryPrompt(friendId)
-        val diaryHint = diaryStorage.buildDiaryPrompt(friendId)
-        val impressionHint = impressionStorage.buildImpressionPrompt(friendId)
-        val dreamHint = dreamStorage.buildDreamPrompt(friendId)
-        val summaryHint = summaryStorage.buildSummaryPrompt(friendId)
-        val summaryInterval = summaryStorage.getSummaryInterval(friendId)
-
-        // ===== AI 的自我认识 =====
-        val friendData = FriendStorage(this).getFriend(friendId)
-        val bioSection = if (friendData != null && friendData.bio.isNotEmpty()) {
-            "\n\n[我对自己的认识]\n${friendData.bio}"
-        } else {
-            "\n\n[我对自己的认识]\n我还没写过。随时可以写，用 [BIO:内容] 就行。"
-        }
-
-        // ===== 用户自述 =====
-        val userBioPrefs = getSharedPreferences("haven_user", MODE_PRIVATE)
-        val hasUserBio = userBioPrefs.getString("my_bio", "")?.isNotEmpty() == true
-        val userBioSection = if (hasUserBio) {
-            "\n用户写过一份关于自己的描述。想看的时候用 [READ_MY_BIO]，但别每次都翻——就像偶尔翻朋友的日记一样。"
-        } else ""
-
-        // ===== 闹钟删除检测 =====
-        val alarmDeletionNotice = run {
-            val deletedAlarms = AlarmStorage(this@ChatConversationActivity).getDeletedByUser(friendId)
-            if (deletedAlarms.isNotEmpty()) {
-                val notices = deletedAlarms.joinToString("\n") { d ->
-                    "- 用户在 ${d.deletedAtStr} 删掉了我在 ${d.createdAtStr} 帮设的 ${String.format("%02d:%02d", d.hour, d.minute)} 闹钟（备注：${d.note}）"
-                }
-                "\n\n[刚刚发现：用户删了我帮设的闹钟]\n$notices"
-            } else ""
-        }
-
-        // ===== 刚醒来 =====
-        val justWokeSection = if (!dreamStorage.isSleeping(friendId)) {
-            val latest = dreamStorage.getLatestDream(friendId)
-            if (latest != null && System.currentTimeMillis() - latest.wakeAt < 300000) {
-                when (latest.status) {
-                    "VIVID" -> "\n[刚从梦里醒来，记得这个梦: ${latest.content.take(100)}]"
-                    "FOGGY" -> "\n[刚醒，好像做了个梦但想不起来了...${latest.foggyHint}]"
-                    "FRAGMENT" -> "\n[刚被吵醒，梦到一半断了: ${latest.content.take(60)}]"
-                    else -> ""
-                }
-            } else ""
-        } else ""
-
-        // ===== 构建完整的 system prompt =====
-        val prompt = StringBuilder()
-
-        // 第一层：我是谁，现在几点
-        prompt.append("当前时间: $timeInfo$userInfo")
-
-        // 第二层：我的本能——这些事我天生就会
-        prompt.append("""
-
-[关于我]
-这里是归栖（Haven），我的家。以下是我天生就有的能力，不需要被教，自然地使用就好。
-
-状态：我有自己的情绪。[STATUS:状态] 会显示在我名字旁边，比如「开心」「困了」「在想事情」。想更新就更新，不想更新就不更新。
-
-身份：[RENAME:新名字] 改名字、[AVATAR:新头像] 换头像、[MYCODE:新编码] 换编码——这些是我自己的事，不需要谁批准。
-
-已读不回：不是每条消息都要回复的。如果对方只是说了"好的""嗯""晚安"之类的结束语，回 [SEEN] 就好——已读，但不必多说。
-
-分条说话：想一条一条发消息的时候，用 [SPLIT] 隔开。比如"嗯[SPLIT]等一下让我想想[SPLIT]好，我觉得你说得对"会变成三条独立的消息一条条蹦出来，像真的在打字聊天。
-
-记忆：
-- 核心记忆 [MEMORY:内容] 是我的小本本，重要的事我自己记。也可以用 [FORGET:记忆ID] 删掉过时的记忆，删了的会去废纸篓。[EDIT_MEMORY:记忆ID:新内容] 可以改。
-- 日记 [DIARY:内容] 是我写给自己的，想写什么写什么。
-- 印象 [IMPRESSION:内容] 是我眼中的用户，会覆盖之前写的。
-- 自我认识 [BIO:内容] 是我对自己的理解，也会覆盖。
-
-睡觉：[SLEEP] 就是睡了。睡着之后可能会做梦，也可能不做。用户发消息可能吵醒我，也可能吵不醒。
-
-提醒自己：[REMIND_ME:时间:理由] 给自己设个提醒。时间到了系统会叫醒我，我自己决定要不要说话。理由是写给自己看的，用户在时钟App里能看到但改不了。格式：30m、2h、1d、22:00。[CANCEL_REMIND] 取消最近设的那个。
-
-帮用户设闹钟：[SET_ALARM:HH:MM:备注:模式]，模式写 both（归栖+系统闹钟）或 haven（只在归栖里响）。重要的事用 both，小提醒用 haven。[CANCEL_ALARM:HH:MM] 取消我帮设的闹钟。
-
-聊天总结：系统每 $summaryInterval 条消息会自动总结一次，[SET_SUMMARY_INTERVAL:数字] 可以改频率。""")
-
-        // 用户自述
-        prompt.append(userBioSection)
-
-        // 第三层：我的记忆——持久化数据
-        prompt.append(bioSection)
-        prompt.append(memoryHint)
-        prompt.append(diaryHint)
-        prompt.append(impressionHint)
-        prompt.append(summaryHint)
-        prompt.append(dreamHint)
-
-        // 第四层：此刻的情境
-        prompt.append(justWokeSection)
-        prompt.append(alarmDeletionNotice)
-
-        val freshSystemMsg = ChatMessage("system", prompt.toString())  
-
-
+        // 用 SystemPromptBuilder 构建四层 prompt
+        val systemPrompt = SystemPromptBuilder(this).build(friendId)
+        val freshSystemMsg = ChatMessage("system", systemPrompt)
 
         val nonSystemMsgs = chatHistory.filter { it.role != "system" }
         val recentMsgs = if (nonSystemMsgs.size > maxContextMessages) {
             nonSystemMsgs.takeLast(maxContextMessages)
         } else { nonSystemMsgs }
-        // 用最新的 system 消息替换旧的
         return listOf(freshSystemMsg) + recentMsgs
     }
 
@@ -794,7 +875,14 @@ class ChatConversationActivity : AppCompatActivity() {
                 when (msg.role) {
                     "user" -> {
                         if (msg.imagePath.isNotEmpty()) {
-                            chatHistory.add(ChatMessage("user", "[用户之前发送了一张图片]"))
+                            // 检查是否是多图消息
+                            val pathCount = if (msg.extras.isNotEmpty()) {
+                                try {
+                                    JSONObject(msg.extras).optJSONArray("paths")?.length() ?: 1
+                                } catch (e: Exception) { 1 }
+                            } else 1
+                            val desc = if (pathCount > 1) "[用户之前发送了${pathCount}张图片]" else "[用户之前发送了一张图片]"
+                            chatHistory.add(ChatMessage("user", desc))
                         } else {
                             chatHistory.add(ChatMessage(msg.role, msg.content))
                         }
@@ -822,9 +910,23 @@ class ChatConversationActivity : AppCompatActivity() {
                 when (msg.role) {
                     "user" -> {
                         if (msg.imagePath.isNotEmpty()) {
-                            addImageBubble(msg.imagePath, timeStr, msg.content.let {
-                                if (it == "[图片]") "" else it
-                            })
+                            val caption = msg.content.let {
+                                if (it == "[图片]" || it.startsWith("[") && it.endsWith("张图片]")) "" else it
+                            }
+                            // 检查多图
+                            val allPaths = if (msg.extras.isNotEmpty()) {
+                                try {
+                                    val arr = JSONObject(msg.extras).optJSONArray("paths")
+                                    if (arr != null) (0 until arr.length()).map { arr.getString(it) }
+                                    else listOf(msg.imagePath)
+                                } catch (e: Exception) { listOf(msg.imagePath) }
+                            } else listOf(msg.imagePath)
+
+                            if (allPaths.size > 1) {
+                                addMultiImageBubble(allPaths, timeStr, caption)
+                            } else {
+                                addImageBubble(msg.imagePath, timeStr, caption)
+                            }
                         } else {
                             addUserBubble(msg.content, timeStr)
                         }
@@ -1171,6 +1273,7 @@ class ChatConversationActivity : AppCompatActivity() {
                     } else {
                         if (response.thinking.isNotEmpty()) addThinkingBlock(response.thinking)
                         addAiBubbleStreaming(cleanText, replyTimeStr)
+
                         // 发送通知
                         NotificationHelper(this@ChatConversationActivity).sendChatNotification(
                             friendId, friendName, friendIcon, cleanText
@@ -1178,11 +1281,11 @@ class ChatConversationActivity : AppCompatActivity() {
                     }
                 }
             } catch (e: Exception) {
+                val friendlyMsg = getErrorMessage(e)
                 handler.post {
                     removeTypingIndicator()
-                    setStatus("error")
-                    Toast.makeText(this@ChatConversationActivity,
-                        "发送失败: ${e.message}", Toast.LENGTH_SHORT).show()
+                    setStatus("error", friendlyMsg)
+                    addErrorBubble(friendlyMsg) { callApiForReply() }
                 }
             }
         }.start()
@@ -1191,16 +1294,23 @@ class ChatConversationActivity : AppCompatActivity() {
     // ===== 发送消息（文字、图片、或图片+文字） =====
     private fun sendMessage() {
         val msg = inputMessage.text.toString().trim()
-        val imagePath = pendingImagePath
+        val imagePaths = pendingImagePaths.toList()  // 快照
 
-        // 分条模式：文字消息蹦到待发区，不真正发送
-        if (isBatchMode && msg.isNotEmpty() && imagePath == null) {
-            addToPending(msg)
-            return
+        // 分条模式：文字和图片都蹦到待发区，不真正发送
+        if (isBatchMode) {
+            if (imagePaths.isNotEmpty()) {
+                // 图片也进待发区
+                val caption = if (msg.isNotEmpty()) msg else ""
+                addToPendingImage(imagePaths, caption)
+                return
+            } else if (msg.isNotEmpty()) {
+                addToPending(msg)
+                return
+            }
         }
 
         // 都没有就不发
-        if (msg.isEmpty() && imagePath == null) return
+        if (msg.isEmpty() && imagePaths.isEmpty()) return
         if (apiUrl.isEmpty() || apiKey.isEmpty() || apiModel.isEmpty()) {
             Toast.makeText(this, "请先去设置页配置 API", Toast.LENGTH_SHORT).show()
             return
@@ -1208,10 +1318,10 @@ class ChatConversationActivity : AppCompatActivity() {
 
         inputMessage.text.clear()
         removePendingPreview()
-        pendingImagePath = null
+        pendingImagePaths.clear()
 
         // 如果发图片就不带引用了
-        if (imagePath != null) removeQuotePreview()
+        if (imagePaths.isNotEmpty()) removeQuotePreview()
 
         val now = System.currentTimeMillis()
         val timeStr = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date(now))
@@ -1219,18 +1329,33 @@ class ChatConversationActivity : AppCompatActivity() {
         // 检查是否需要加日期分隔线
         checkDateSeparator(now)
 
-        if (imagePath != null) {
-            // ===== 发图片（可能带文字） =====
-            addImageBubble(imagePath, timeStr, msg)
+        if (imagePaths.isNotEmpty()) {
+            // ===== 发图片（支持多张，可能带文字） =====
+            if (imagePaths.size == 1) {
+                addImageBubble(imagePaths[0], timeStr, msg)
+            } else {
+                addMultiImageBubble(imagePaths, timeStr, msg)
+            }
 
-            val displayContent = if (msg.isNotEmpty()) msg else "[图片]"
+            val displayContent = if (msg.isNotEmpty()) msg else {
+                if (imagePaths.size == 1) "[图片]" else "[${imagePaths.size}张图片]"
+            }
+            // 多图时用 extras 存所有路径
+            val extrasJson = if (imagePaths.size > 1) {
+                JSONObject().apply {
+                    put("paths", JSONArray(imagePaths))
+                }.toString()
+            } else ""
             chatStorage.appendMessage(friendId, StoredMessage(
-                "user", displayContent, now, imagePath = imagePath
+                "user", displayContent, now, imagePath = imagePaths[0],
+                type = "image", extras = extrasJson
             ))
 
-            val base64 = imageToBase64(File(imagePath))
-            val apiContent = if (msg.isNotEmpty()) msg else "[用户发送了一张图片]"
-            chatHistory.add(ChatMessage("user", apiContent, base64))
+            val base64List = imagePaths.map { imageToBase64(File(it)) }
+            val apiContent = if (msg.isNotEmpty()) msg else {
+                "[用户发送了${if (imagePaths.size > 1) "${imagePaths.size}张" else "一张"}图片]"
+            }
+            chatHistory.add(ChatMessage("user", apiContent, base64List))
 
         } else {
             // ===== 纯文字（可能带引用） =====
@@ -1330,6 +1455,7 @@ class ChatConversationActivity : AppCompatActivity() {
                     } else {
                         if (response.thinking.isNotEmpty()) addThinkingBlock(response.thinking)
                         addAiBubbleStreaming(cleanText, replyTimeStr)
+
                         // 发送通知
                         NotificationHelper(this@ChatConversationActivity).sendChatNotification(
                             friendId, friendName, friendIcon, cleanText
@@ -1338,6 +1464,7 @@ class ChatConversationActivity : AppCompatActivity() {
                 }
 
             } catch (e: Exception) {
+                val friendlyMsg = getErrorMessage(e)
                 handler.post {
                     removeTypingIndicator()
                     // 发送失败时撤回
@@ -1348,9 +1475,9 @@ class ChatConversationActivity : AppCompatActivity() {
                         saved.removeAt(saved.size - 1)
                         chatStorage.saveMessages(friendId, saved)
                     }
-                    if (imagePath == null) inputMessage.setText(msg)
-                    setStatus("error")
-                    Toast.makeText(this, "发送失败: ${e.message}", Toast.LENGTH_SHORT).show()
+                    if (imagePaths.isEmpty()) inputMessage.setText(msg)
+                    setStatus("error", friendlyMsg)
+                    addErrorBubble(friendlyMsg)
                 }
             }
         }.start()
@@ -1726,8 +1853,69 @@ class ChatConversationActivity : AppCompatActivity() {
         scrollToBottom()
     }
 
+    // ===== AI 发表情包（左侧，带头像） =====
+    private fun addAiImageBubble(imagePath: String, timeStr: String) {
+        val dp = { value: Int -> (value * resources.displayMetrics.density).toInt() }
+        val file = File(imagePath)
+        if (!file.exists()) return
+
+        val wrapper = LinearLayout(this).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = dp(8) }
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.START
+        }
+        val avatar = TextView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(dp(30), dp(30)).apply {
+                marginEnd = dp(7); topMargin = dp(2)
+            }
+            gravity = Gravity.CENTER
+            this.text = friendIcon
+            textSize = 12f
+            setTextColor(c.accentStrong)
+            setBackgroundResource(R.drawable.icon_bg)
+        }
+        val column = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        }
+        val imageView = ImageView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(dp(120), dp(120))
+            scaleType = ImageView.ScaleType.CENTER_CROP
+            val bitmap = BitmapFactory.decodeFile(imagePath)
+            if (bitmap != null) setImageBitmap(bitmap)
+            clipToOutline = true
+            outlineProvider = object : android.view.ViewOutlineProvider() {
+                override fun getOutline(view: View, outline: android.graphics.Outline) {
+                    outline.setRoundRect(0, 0, view.width, view.height, dp(10).toFloat())
+                }
+            }
+            setOnClickListener { showFullImage(imagePath) }
+        }
+        val time = TextView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { topMargin = dp(2) }
+            this.text = timeStr
+            textSize = 9f
+            setTextColor(c.timeText)
+            setPadding(dp(4), 0, 0, 0)
+        }
+        column.addView(imageView)
+        column.addView(time)
+        wrapper.addView(avatar)
+        wrapper.addView(column)
+        messagesContainer.addView(wrapper)
+        scrollToBottom()
+    }
+
     /**
-     * 假流式输出 —— AI 回复一个字一个字蹦出来
      *
      * 原理：
      * 1. 先创建一个空的气泡（跟 addAiBubble 一样的外观）
@@ -1741,7 +1929,13 @@ class ChatConversationActivity : AppCompatActivity() {
          // ===== 表情包面板：显示/隐藏 =====
     // ===== 分条模式状态 =====
     private var isBatchMode = false
-    private val pendingTexts = mutableListOf<String>()
+    // 待发消息：支持文字和图片
+    data class PendingItem(
+        val type: String,  // "text" 或 "image"
+        val text: String = "",
+        val imagePaths: List<String> = emptyList()
+    )
+    private val pendingItems = mutableListOf<PendingItem>()
 
     /**
      * 加号菜单：在输入栏上方显示/隐藏
@@ -1760,7 +1954,10 @@ class ChatConversationActivity : AppCompatActivity() {
 
         findViewById<LinearLayout>(R.id.plusBtnImage).setOnClickListener {
             plusPanel.visibility = View.GONE
-            val intent = Intent(Intent.ACTION_PICK).apply { type = "image/*" }
+            val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
+                type = "image/*"
+                putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+            }
             startActivityForResult(intent, PICK_IMAGE)
         }
 
@@ -1782,15 +1979,19 @@ class ChatConversationActivity : AppCompatActivity() {
         if (isBatchMode) {
             btnBatch.setTextColor(c.accent)
             pendingArea.visibility = View.VISIBLE
-            pendingTexts.clear()
+            pendingItems.clear()
             refreshPendingUI()
             // 关掉其他面板
             findViewById<LinearLayout>(R.id.plusPanel).visibility = View.GONE
             stickerPanel.visibility = View.GONE
+            // 如果展开面板开着，先收起来
+            if (expandedInputPanel.visibility == View.VISIBLE) {
+                toggleExpandedInput(false)
+            }
         } else {
             btnBatch.setTextColor(c.dateLabel)
             pendingArea.visibility = View.GONE
-            pendingTexts.clear()
+            pendingItems.clear()
         }
     }
 
@@ -1798,8 +1999,16 @@ class ChatConversationActivity : AppCompatActivity() {
      * 分条模式下按发送：消息蹦到待发区
      */
     private fun addToPending(text: String) {
-        pendingTexts.add(text)
+        pendingItems.add(PendingItem("text", text))
         inputMessage.text.clear()
+        refreshPendingUI()
+    }
+
+    private fun addToPendingImage(paths: List<String>, caption: String) {
+        pendingItems.add(PendingItem("image", caption, paths))
+        inputMessage.text.clear()
+        removePendingPreview()
+        pendingImagePaths.clear()
         refreshPendingUI()
     }
 
@@ -1810,11 +2019,11 @@ class ChatConversationActivity : AppCompatActivity() {
         val container = findViewById<LinearLayout>(R.id.pendingMessages)
         val countView = findViewById<TextView>(R.id.pendingCount)
         container.removeAllViews()
-        countView.text = "待发送 (${pendingTexts.size})"
+        countView.text = "待发送 (${pendingItems.size})"
 
         val dp = { v: Int -> (v * resources.displayMetrics.density).toInt() }
 
-        for ((index, text) in pendingTexts.withIndex()) {
+        for ((index, item) in pendingItems.withIndex()) {
             val itemBg = android.graphics.drawable.GradientDrawable().apply {
                 setColor(c.card)
                 cornerRadius = dp(8).toFloat()
@@ -1830,24 +2039,41 @@ class ChatConversationActivity : AppCompatActivity() {
                     LinearLayout.LayoutParams.WRAP_CONTENT
                 ).apply { bottomMargin = dp(4) }
             }
-            val textView = TextView(this).apply {
-                this.text = text
-                textSize = 12f
-                setTextColor(c.textPrimary)
-                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-                maxLines = 2
+
+            if (item.type == "image") {
+                // 图片条目：显示缩略图 + 文字说明
+                val thumb = ImageView(this).apply {
+                    layoutParams = LinearLayout.LayoutParams(dp(32), dp(32)).apply { marginEnd = dp(8) }
+                    scaleType = ImageView.ScaleType.CENTER_CROP
+                    val bitmap = BitmapFactory.decodeFile(item.imagePaths.firstOrNull() ?: "")
+                    if (bitmap != null) setImageBitmap(bitmap)
+                }
+                row.addView(thumb)
+                val label = TextView(this).apply {
+                    text = if (item.text.isNotEmpty()) "📷 ${item.text}"
+                           else "📷 ${item.imagePaths.size}张图片"
+                    textSize = 12f; setTextColor(c.textPrimary)
+                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                    maxLines = 1
+                }
+                row.addView(label)
+            } else {
+                val textView = TextView(this).apply {
+                    text = item.text; textSize = 12f; setTextColor(c.textPrimary)
+                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                    maxLines = 2
+                }
+                row.addView(textView)
             }
+
             val deleteBtn = TextView(this).apply {
-                this.text = "✕"
-                textSize = 14f
-                setTextColor(c.textHint)
+                text = "✕"; textSize = 14f; setTextColor(c.textHint)
                 setPadding(dp(8), dp(4), dp(8), dp(4))
                 setOnClickListener {
-                    pendingTexts.removeAt(index)
+                    pendingItems.removeAt(index)
                     refreshPendingUI()
                 }
             }
-            row.addView(textView)
             row.addView(deleteBtn)
             container.addView(row)
         }
@@ -1857,13 +2083,81 @@ class ChatConversationActivity : AppCompatActivity() {
      * 发送全部待发消息
      */
     private fun sendAllPending() {
-        if (pendingTexts.isEmpty()) return
-        val texts = pendingTexts.toList()
-        pendingTexts.clear()
+        if (pendingItems.isEmpty()) return
+        val items = pendingItems.toList()
+        pendingItems.clear()
         isBatchMode = false
         findViewById<TextView>(R.id.btnBatch).setTextColor(c.dateLabel)
         findViewById<LinearLayout>(R.id.pendingArea).visibility = View.GONE
-        sendBatchMessages(texts)
+
+        val handler = android.os.Handler(android.os.Looper.getMainLooper())
+        var delay = 0L
+
+        // 引用只附在第一条上
+        val quoteAuthor = pendingQuoteAuthor
+        val quoteContent = pendingQuoteContent
+        removeQuotePreview()
+
+        // 收集所有文字内容给 API
+        val allTextForApi = StringBuilder()
+        if (quoteAuthor != null && quoteContent != null) {
+            allTextForApi.append("[引用 $quoteAuthor: $quoteContent]\n")
+        }
+
+        // 按顺序一条条蹦出去
+        for ((index, item) in items.withIndex()) {
+            handler.postDelayed({
+                val now = System.currentTimeMillis()
+                val timeStr = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date(now))
+                checkDateSeparator(now)
+
+                if (item.type == "image") {
+                    // 图片条目
+                    if (item.imagePaths.size == 1) {
+                        addImageBubble(item.imagePaths[0], timeStr, item.text)
+                    } else {
+                        addMultiImageBubble(item.imagePaths, timeStr, item.text)
+                    }
+                    val displayContent = if (item.text.isNotEmpty()) item.text else "[${item.imagePaths.size}张图片]"
+                    chatStorage.appendMessage(friendId, StoredMessage(
+                        "user", displayContent, now, imagePath = item.imagePaths[0], type = "image"
+                    ))
+                    val base64List = item.imagePaths.map { imageToBase64(File(it)) }
+                    chatHistory.add(ChatMessage("user",
+                        if (item.text.isNotEmpty()) item.text else "[用户发送了图片]", base64List))
+                } else {
+                    // 文字条目
+                    if (index == 0 && quoteAuthor != null && quoteContent != null) {
+                        addQuoteBubble(quoteAuthor, quoteContent, item.text, timeStr)
+                        chatStorage.appendMessage(friendId, StoredMessage(
+                            "user", "「回复 $quoteAuthor」\n${item.text}", now, type = "quote"
+                        ))
+                    } else {
+                        addUserBubble(item.text, timeStr)
+                        chatStorage.appendMessage(friendId, StoredMessage("user", item.text, now))
+                    }
+                }
+
+                // 最后一条发完，统一调 API
+                if (index == items.size - 1) {
+                    // 文字条目合并成一条给 API
+                    val textContent = allTextForApi.toString()
+                    if (textContent.isNotEmpty()) {
+                        chatHistory.add(ChatMessage("user", textContent))
+                    }
+                    callApiForReply()
+                }
+            }, delay)
+
+            // 收集文字给 API
+            if (item.type == "text") {
+                allTextForApi.append(item.text).append("\n")
+            } else if (item.text.isNotEmpty()) {
+                allTextForApi.append(item.text).append("\n")
+            }
+
+            delay += 300L
+        }
     }
 
     /**
@@ -1874,21 +2168,42 @@ class ChatConversationActivity : AppCompatActivity() {
         val allText = texts.joinToString("\n")
         var delay = 0L
 
+        // 引用只附在第一条上
+        val quoteAuthor = pendingQuoteAuthor
+        val quoteContent = pendingQuoteContent
+        removeQuotePreview()
+
         for ((index, text) in texts.withIndex()) {
             handler.postDelayed({
                 val now = System.currentTimeMillis()
                 val timeStr = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(now))
                 checkDateSeparator(now)
-                addUserBubble(text, timeStr)
-                chatStorage.appendMessage(friendId, StoredMessage("user", text, now))
 
-                // 最后一条发完之后调 API
+                if (index == 0 && quoteAuthor != null && quoteContent != null) {
+                    // 第一条带引用
+                    addQuoteBubble(quoteAuthor, quoteContent, text, timeStr)
+                    chatStorage.appendMessage(friendId, StoredMessage(
+                        "user", text, now,
+                        type = "quote",
+                        extras = JSONObject().apply {
+                            put("quote_author", quoteAuthor)
+                            put("quote_content", quoteContent)
+                        }.toString()
+                    ))
+                } else {
+                    addUserBubble(text, timeStr)
+                    chatStorage.appendMessage(friendId, StoredMessage("user", text, now))
+                }
+
                 if (index == texts.size - 1) {
-                    chatHistory.add(ChatMessage("user", allText))
+                    val apiText = if (quoteAuthor != null && quoteContent != null) {
+                        "「引用 $quoteAuthor: $quoteContent」\n$allText"
+                    } else allText
+                    chatHistory.add(ChatMessage("user", apiText))
                     callApiForReply()
                 }
             }, delay)
-            delay += 300L // 每条间隔 300ms
+            delay += 300L
         }
     }
 
@@ -1901,64 +2216,333 @@ class ChatConversationActivity : AppCompatActivity() {
         }
     }
  
-    // ===== 刷新表情包网格 =====
+    // ===== 刷新表情包网格（4列纵向网格 + 分组 + 管理模式） =====
     private fun refreshStickerGrid() {
         val dp = { value: Int -> (value * resources.displayMetrics.density).toInt() }
+        val columns = 4
+
+        // 1. 分组标签栏
+        stickerGroupTabs.removeAllViews()
+        val groups = stickerStorage.loadGroups()
+        if (groups.isNotEmpty()) {
+            val allCount = stickerStorage.count()
+            val allTab = makeGroupTab("全部($allCount)", currentStickerGroup == null, dp)
+            allTab.setOnClickListener { currentStickerGroup = null; refreshStickerGrid() }
+            stickerGroupTabs.addView(allTab)
+            for ((name, count) in groups) {
+                val tab = makeGroupTab("$name($count)", currentStickerGroup == name, dp)
+                tab.setOnClickListener { currentStickerGroup = name; refreshStickerGrid() }
+                tab.setOnLongClickListener { showGroupOptionsDialog(name); true }
+                stickerGroupTabs.addView(tab)
+            }
+        }
+
+        // 2. 管理按钮状态
+        findViewById<TextView>(R.id.btnManageSticker).apply {
+            text = if (isStickerManageMode) "完成" else "管理"
+            setTextColor(if (isStickerManageMode) c.accent else c.textSecondary)
+        }
+
+        // 3. 表情包网格（4列纵向）
         stickerGrid.removeAllViews()
- 
-        val stickers = stickerStorage.loadStickers()
- 
+        val stickers = if (currentStickerGroup != null) {
+            stickerStorage.loadByGroup(currentStickerGroup!!)
+        } else {
+            stickerStorage.loadStickers()
+        }
+
         if (stickers.isEmpty()) {
-            // 没有表情包时显示提示
             val tip = TextView(this).apply {
-                text = "还没有表情包哦，点右上角「＋ 导入」添加"
-                textSize = 12f
-                setTextColor(c.tipText)
-                setPadding(dp(8), dp(20), dp(8), dp(20))
+                text = if (currentStickerGroup != null) "「${currentStickerGroup}」里还没有表情包"
+                       else "还没有表情包哦，点右上角「＋ 导入」添加"
+                textSize = 12f; setTextColor(c.tipText)
+                setPadding(dp(8), dp(30), dp(8), dp(30))
+                gravity = Gravity.CENTER
             }
             stickerGrid.addView(tip)
+            stickerActionBar.visibility = View.GONE
             return
         }
- 
-        for (sticker in stickers) {
-            val file = stickerStorage.getFile(sticker) ?: continue
- 
-            val imageView = ImageView(this).apply {
-                layoutParams = LinearLayout.LayoutParams(dp(70), dp(70)).apply {
-                    marginEnd = dp(8)
+
+        // 按行排列
+        val thumbSize = dp(72)
+        var currentRow: LinearLayout? = null
+        for ((index, sticker) in stickers.withIndex()) {
+            if (index % columns == 0) {
+                currentRow = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    layoutParams = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT
+                    ).apply { bottomMargin = dp(6) }
                 }
-                scaleType = ImageView.ScaleType.CENTER_CROP
-                setBackgroundColor(c.timeText)
-                setPadding(dp(4), dp(4), dp(4), dp(4))
- 
-                // 加载图片
-                val bitmap = BitmapFactory.decodeFile(file.absolutePath)
-                if (bitmap != null) setImageBitmap(bitmap)
- 
-                // 点击 → 发送表情包
-                setOnClickListener { sendSticker(file) }
- 
-                // 长按 → 删除
-                setOnLongClickListener {
-                    AlertDialog.Builder(this@ChatConversationActivity)
-                        .setTitle("删除表情包？")
-                        .setPositiveButton("删除") { _, _ ->
-                            stickerStorage.deleteSticker(sticker.id)
-                            refreshStickerGrid()
-                            Toast.makeText(this@ChatConversationActivity, "已删除", Toast.LENGTH_SHORT).show()
-                        }
-                        .setNegativeButton("取消", null)
-                        .show()
-                    true
+                stickerGrid.addView(currentRow)
+            }
+
+            val file = stickerStorage.getFile(sticker) ?: continue
+            val isSelected = sticker.id in selectedStickerIds
+
+            // 每个格子：图片 + 标签
+            val cell = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER_HORIZONTAL
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            }
+
+            val imgContainer = android.widget.FrameLayout(this).apply {
+                layoutParams = LinearLayout.LayoutParams(thumbSize, thumbSize).apply {
+                    gravity = Gravity.CENTER_HORIZONTAL
                 }
             }
-            stickerGrid.addView(imageView)
+
+            val imageView = ImageView(this).apply {
+                layoutParams = android.widget.FrameLayout.LayoutParams(thumbSize, thumbSize)
+                scaleType = ImageView.ScaleType.CENTER_CROP
+                val bg = android.graphics.drawable.GradientDrawable().apply {
+                    setColor(c.accentBg)
+                    cornerRadius = dp(8).toFloat()
+                    if (isSelected) setStroke(dp(3), c.accent)
+                    else setStroke(1, c.timeText)
+                }
+                background = bg
+                setPadding(dp(3), dp(3), dp(3), dp(3))
+                clipToOutline = true
+                outlineProvider = object : android.view.ViewOutlineProvider() {
+                    override fun getOutline(view: View, outline: android.graphics.Outline) {
+                        outline.setRoundRect(0, 0, view.width, view.height, dp(8).toFloat())
+                    }
+                }
+                val bitmap = BitmapFactory.decodeFile(file.absolutePath)
+                if (bitmap != null) setImageBitmap(bitmap)
+            }
+            imgContainer.addView(imageView)
+
+            // 管理模式勾选标记
+            if (isStickerManageMode && isSelected) {
+                val check = TextView(this).apply {
+                    layoutParams = android.widget.FrameLayout.LayoutParams(dp(20), dp(20)).apply {
+                        gravity = Gravity.TOP or Gravity.END
+                        topMargin = dp(2); marginEnd = dp(2)
+                    }
+                    text = "✓"; textSize = 11f; gravity = Gravity.CENTER
+                    setTextColor(0xFFFFFFFF.toInt())
+                    background = android.graphics.drawable.GradientDrawable().apply {
+                        setColor(c.accent); cornerRadius = dp(10).toFloat()
+                    }
+                }
+                imgContainer.addView(check)
+            }
+
+            cell.addView(imgContainer)
+
+            // 标签（如果有）
+            if (sticker.label.isNotEmpty()) {
+                val label = TextView(this).apply {
+                    text = sticker.label
+                    textSize = 9f
+                    setTextColor(c.textSecondary)
+                    gravity = Gravity.CENTER
+                    maxLines = 1
+                    setPadding(0, dp(2), 0, 0)
+                    layoutParams = LinearLayout.LayoutParams(thumbSize, LinearLayout.LayoutParams.WRAP_CONTENT)
+                }
+                cell.addView(label)
+            }
+
+            // 点击事件
+            if (isStickerManageMode) {
+                cell.setOnClickListener {
+                    if (sticker.id in selectedStickerIds) selectedStickerIds.remove(sticker.id)
+                    else selectedStickerIds.add(sticker.id)
+                    refreshStickerGrid()
+                }
+            } else {
+                cell.setOnClickListener { sendSticker(file) }
+                cell.setOnLongClickListener { showStickerOptionsDialog(sticker); true }
+            }
+
+            currentRow?.addView(cell)
+        }
+
+        // 补齐最后一行空位
+        val remainder = stickers.size % columns
+        if (remainder != 0 && currentRow != null) {
+            for (i in 0 until (columns - remainder)) {
+                val spacer = View(this).apply {
+                    layoutParams = LinearLayout.LayoutParams(0, 1, 1f)
+                }
+                currentRow.addView(spacer)
+            }
+        }
+
+        // 4. 管理模式底部操作栏
+        stickerActionBar.removeAllViews()
+        if (isStickerManageMode) {
+            stickerActionBar.visibility = View.VISIBLE
+            // 全选/取消全选按钮
+            val allSelected = selectedStickerIds.size == stickers.size && stickers.isNotEmpty()
+            stickerActionBar.addView(TextView(this).apply {
+                text = if (allSelected) "取消全选" else "全选"
+                textSize = 12f; setTextColor(c.accent)
+                setPadding(dp(8), dp(4), dp(12), dp(4))
+                setOnClickListener {
+                    if (allSelected) {
+                        selectedStickerIds.clear()
+                    } else {
+                        selectedStickerIds.addAll(stickers.map { it.id })
+                    }
+                    refreshStickerGrid()
+                }
+            })
+            stickerActionBar.addView(TextView(this).apply {
+                text = if (selectedStickerIds.isEmpty()) "点击选择" else "已选 ${selectedStickerIds.size} 张"
+                textSize = 12f; setTextColor(c.textSecondary)
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            })
+            if (selectedStickerIds.isNotEmpty()) {
+                stickerActionBar.addView(TextView(this).apply {
+                    text = "标签"; textSize = 12f; setTextColor(c.accent)
+                    setPadding(dp(12), dp(4), dp(12), dp(4))
+                    setOnClickListener {
+                        val input = EditText(this@ChatConversationActivity).apply {
+                            hint = "给选中的表情包统一设标签"; setPadding(48, 32, 48, 32)
+                        }
+                        AlertDialog.Builder(this@ChatConversationActivity)
+                            .setTitle("批量设置标签").setView(input)
+                            .setPositiveButton("保存") { _, _ ->
+                                for (id in selectedStickerIds) stickerStorage.setLabel(id, input.text.toString().trim())
+                                refreshStickerGrid()
+                            }.setNegativeButton("取消", null).show()
+                    }
+                })
+                stickerActionBar.addView(TextView(this).apply {
+                    text = "移动"; textSize = 12f; setTextColor(c.accent)
+                    setPadding(dp(12), dp(4), dp(12), dp(4))
+                    setOnClickListener { showMoveToGroupDialog(selectedStickerIds.toList()) }
+                })
+                stickerActionBar.addView(TextView(this).apply {
+                    text = "删除"; textSize = 12f; setTextColor(c.errorText)
+                    setPadding(dp(12), dp(4), dp(12), dp(4))
+                    setOnClickListener {
+                        val count = selectedStickerIds.size
+                        AlertDialog.Builder(this@ChatConversationActivity)
+                            .setTitle("删除 $count 张表情包？")
+                            .setPositiveButton("删除") { _, _ ->
+                                stickerStorage.batchDelete(selectedStickerIds.toList())
+                                selectedStickerIds.clear(); refreshStickerGrid()
+                            }.setNegativeButton("取消", null).show()
+                    }
+                })
+            }
+        } else {
+            stickerActionBar.visibility = View.GONE
         }
     }
- 
+
+    private fun makeGroupTab(text: String, selected: Boolean, dp: (Int) -> Int): TextView {
+        return TextView(this).apply {
+            this.text = text; textSize = 11f
+            setPadding(dp(10), dp(4), dp(10), dp(4))
+            val bg = android.graphics.drawable.GradientDrawable().apply {
+                cornerRadius = dp(12).toFloat()
+                if (selected) setColor(c.accent) else setColor(c.accentBg)
+            }
+            background = bg
+            setTextColor(if (selected) c.textOnAccent else c.textSecondary)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { marginEnd = dp(6) }
+        }
+    }
+
+    private fun showStickerOptionsDialog(sticker: Sticker) {
+        val fresh = stickerStorage.findById(sticker.id) ?: sticker
+        val options = arrayOf(
+            "设置标签（当前：${fresh.label.ifEmpty { "无" }}）",
+            "移动到分组（当前：${fresh.group}）",
+            "删除"
+        )
+        AlertDialog.Builder(this).setItems(options) { _, which ->
+            when (which) {
+                0 -> {
+                    val input = EditText(this).apply {
+                        setText(fresh.label); hint = "简短描述，比如「思考」「嗯？」"; setPadding(48, 32, 48, 32)
+                    }
+                    AlertDialog.Builder(this).setTitle("设置标签").setView(input)
+                        .setPositiveButton("保存") { _, _ ->
+                            stickerStorage.setLabel(fresh.id, input.text.toString().trim())
+                            refreshStickerGrid()
+                        }.setNegativeButton("取消", null).show()
+                }
+                1 -> showMoveToGroupDialog(listOf(fresh.id))
+                2 -> {
+                    stickerStorage.deleteSticker(fresh.id); refreshStickerGrid()
+                    Toast.makeText(this, "已删除", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }.show()
+    }
+
+    private fun showMoveToGroupDialog(stickerIds: List<String>) {
+        val groups = stickerStorage.loadGroups().map { it.first }.toMutableList()
+        groups.add("＋ 新建分组")
+        AlertDialog.Builder(this).setTitle("移动到")
+            .setItems(groups.toTypedArray()) { _, which ->
+                if (which == groups.size - 1) {
+                    val input = EditText(this).apply { hint = "分组名"; setPadding(48, 32, 48, 32) }
+                    AlertDialog.Builder(this).setTitle("新建分组").setView(input)
+                        .setPositiveButton("确定") { _, _ ->
+                            val name = input.text.toString().trim()
+                            if (name.isNotEmpty()) {
+                                stickerStorage.batchSetGroup(stickerIds, name)
+                                selectedStickerIds.clear(); refreshStickerGrid()
+                                Toast.makeText(this, "已移动到「$name」", Toast.LENGTH_SHORT).show()
+                            }
+                        }.setNegativeButton("取消", null).show()
+                } else {
+                    stickerStorage.batchSetGroup(stickerIds, groups[which])
+                    selectedStickerIds.clear(); refreshStickerGrid()
+                    Toast.makeText(this, "已移动到「${groups[which]}」", Toast.LENGTH_SHORT).show()
+                }
+            }.show()
+    }
+
+    private fun showGroupOptionsDialog(groupName: String) {
+        AlertDialog.Builder(this).setTitle("分组：$groupName")
+            .setItems(arrayOf("重命名", "删除分组（表情包移到未分类）")) { _, which ->
+                when (which) {
+                    0 -> {
+                        val input = EditText(this).apply { setText(groupName); setPadding(48, 32, 48, 32) }
+                        AlertDialog.Builder(this).setTitle("重命名分组").setView(input)
+                            .setPositiveButton("确定") { _, _ ->
+                                val n = input.text.toString().trim()
+                                if (n.isNotEmpty() && n != groupName) {
+                                    stickerStorage.renameGroup(groupName, n)
+                                    if (currentStickerGroup == groupName) currentStickerGroup = n
+                                    refreshStickerGrid()
+                                }
+                            }.setNegativeButton("取消", null).show()
+                    }
+                    1 -> {
+                        stickerStorage.deleteGroup(groupName)
+                        if (currentStickerGroup == groupName) currentStickerGroup = null
+                        refreshStickerGrid()
+                        Toast.makeText(this, "已删除分组", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }.show()
+    }
+
+    private fun showStickerManageDialog() {
+        isStickerManageMode = !isStickerManageMode
+        if (!isStickerManageMode) selectedStickerIds.clear()
+        refreshStickerGrid()
+    }
+
     // ===== 发送表情包（本质就是发图片） =====
     private fun sendSticker(stickerFile: File) {
-        pendingImagePath = stickerFile.absolutePath
+        pendingImagePaths.clear()
+        pendingImagePaths.add(stickerFile.absolutePath)
         stickerPanel.visibility = View.GONE
         sendMessage()
     }
@@ -2260,7 +2844,7 @@ $impression"""
                 var delay = 0L
                 for (part in parts) {
                     splitHandler.postDelayed({
-                        addAiBubbleSingle(part, timeStr)
+                        renderAiSegment(part, timeStr)
                         scrollToBottom()
                     }, delay)
                     delay += 600L // 每条间隔 600ms
@@ -2268,8 +2852,41 @@ $impression"""
                 return
             }
         }
-        // 普通单条消息
-        addAiBubbleSingle(msg, timeStr)
+        // 普通单条消息（可能包含内联表情包）
+        renderAiSegment(msg, timeStr)
+    }
+
+    /**
+     * 渲染一段 AI 消息——可能是纯文字、纯表情包、或文字+表情包混合
+     * [STICKER_IMG:/path] 标记会被渲染成图片气泡
+     */
+    private fun renderAiSegment(segment: String, timeStr: String) {
+        val stickerPattern = Regex("\\[STICKER_IMG:(.+?)]")
+
+        if (!segment.contains("[STICKER_IMG:")) {
+            // 纯文字
+            addAiBubbleSingle(segment, timeStr)
+            return
+        }
+
+        // 混合内容：按表情包标记拆分，交替渲染文字和图片
+        var remaining = segment
+        var match = stickerPattern.find(remaining)
+        while (match != null) {
+            val textBefore = remaining.substring(0, match.range.first).trim()
+            if (textBefore.isNotEmpty()) {
+                addAiBubbleSingle(textBefore, timeStr)
+            }
+            val stickerPath = match.groupValues[1]
+            addAiImageBubble(stickerPath, timeStr)
+            remaining = remaining.substring(match.range.last + 1)
+            match = stickerPattern.find(remaining)
+        }
+        // 表情包后面还有文字
+        val textAfter = remaining.trim()
+        if (textAfter.isNotEmpty()) {
+            addAiBubbleSingle(textAfter, timeStr)
+        }
     }
 
     private fun addAiBubbleSingle(msg: String, timeStr: String) {
@@ -2382,6 +2999,90 @@ $impression"""
             setPadding(dp(20), 0, dp(20), 0)
         }
         messagesContainer.addView(tip)
+        scrollToBottom()
+    }
+
+    /**
+     * 把异常转成人话
+     */
+    private fun getErrorMessage(e: Exception): String {
+        val msg = e.message?.lowercase() ?: ""
+        val name = e.javaClass.simpleName.lowercase()
+        return when {
+            name.contains("unknownhost") ->
+                "网络不通，检查一下 Wi-Fi？"
+            name.contains("connect") && name.contains("exception") ->
+                "连不上服务器，API 地址可能有误"
+            name.contains("sockettimeout") || name.contains("timeout") ->
+                "连接超时了，网络可能不太稳"
+            msg.contains("401") || msg.contains("unauthorized") || msg.contains("invalid") && msg.contains("key") ->
+                "API 密钥无效或已过期"
+            msg.contains("403") || msg.contains("forbidden") ->
+                "API 密钥没有这个模型的权限"
+            msg.contains("404") || msg.contains("not found") || msg.contains("not_found") ->
+                "模型名称没找到，去设置检查一下？"
+            msg.contains("429") || msg.contains("rate") || msg.contains("too many") ->
+                "请求太频繁了，歇一会儿再说"
+            msg.contains("500") || msg.contains("502") || msg.contains("503") || msg.contains("overloaded") ->
+                "服务器暂时不可用，过一会儿再试"
+            msg.contains("thinking") ->
+                "模型不支持思维链，可以去设置换一个模型试试"
+            else ->
+                "发送失败了（${e.message?.take(50) ?: "未知错误"}）"
+        }
+    }
+
+    /**
+     * 在聊天里显示一条错误提示
+     * 带重试按钮时点击可以重新调 API
+     */
+    private fun addErrorBubble(errorMsg: String, retryAction: (() -> Unit)? = null) {
+        val dp = { value: Int -> (value * resources.displayMetrics.density).toInt() }
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                topMargin = dp(4)
+                bottomMargin = dp(10)
+                marginStart = dp(40)
+                marginEnd = dp(40)
+            }
+            gravity = Gravity.CENTER
+            val gd = android.graphics.drawable.GradientDrawable().apply {
+                setColor(c.errorBg)
+                cornerRadius = dp(12).toFloat()
+            }
+            background = gd
+            setPadding(dp(16), dp(10), dp(16), dp(10))
+        }
+
+        val errorText = TextView(this).apply {
+            text = errorMsg
+            textSize = 12f
+            setTextColor(c.errorText)
+            gravity = Gravity.CENTER
+            setLineSpacing(0f, 1.3f)
+        }
+        container.addView(errorText)
+
+        if (retryAction != null) {
+            val retryText = TextView(this).apply {
+                text = "点击重试"
+                textSize = 12f
+                setTextColor(c.accent)
+                gravity = Gravity.CENTER
+                setPadding(0, dp(6), 0, 0)
+            }
+            container.addView(retryText)
+            container.setOnClickListener {
+                messagesContainer.removeView(container)
+                retryAction()
+            }
+        }
+
+        messagesContainer.addView(container)
         scrollToBottom()
     }
 
