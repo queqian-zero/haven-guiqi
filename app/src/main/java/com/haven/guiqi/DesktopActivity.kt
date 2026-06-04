@@ -44,6 +44,7 @@ class DesktopActivity : AppCompatActivity() {
     // ===== 立绘模式元素 =====
     private lateinit var liveDesktop: LinearLayout
     private lateinit var liveBgImage: ImageView
+    private lateinit var normalBgImage: ImageView
     private lateinit var liveTime: TextView
     private lateinit var liveDate: TextView
     private lateinit var drawerBtn: FrameLayout
@@ -99,6 +100,7 @@ class DesktopActivity : AppCompatActivity() {
 
     companion object {
         private const val PICK_IMAGE_REQUEST = 1001
+        private const val PICK_NORMAL_BG_REQUEST = 1002
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -149,11 +151,26 @@ class DesktopActivity : AppCompatActivity() {
         // ===== 绑定立绘模式元素 =====
         liveDesktop = findViewById(R.id.liveDesktop)
         liveBgImage = findViewById(R.id.liveBgImage)
+        normalBgImage = findViewById(R.id.normalBgImage)
+
+        // 加载普通桌面壁纸
+        val normalBgUri = prefs.getString("normal_bg_uri", null)
+        if (normalBgUri != null) {
+            try {
+                normalBgImage.setImageURI(Uri.parse(normalBgUri))
+                normalBgImage.visibility = View.VISIBLE
+            } catch (e: Exception) {
+                normalBgImage.visibility = View.GONE
+            }
+        }
         liveTime = findViewById(R.id.liveTime)
         liveDate = findViewById(R.id.liveDate)
         drawerBtn = findViewById(R.id.drawerBtn)
         drawerBtnIcon = findViewById(R.id.drawerBtnIcon)
         drawerPanel = findViewById(R.id.drawerPanel)
+        // 恢复上次的抽屉配色
+        val savedTint = prefs.getInt("drawer_tint_color", 0)
+        if (savedTint != 0) drawerPanel.setBackgroundColor(savedTint)
         drawerOverlay = findViewById(R.id.drawerOverlay)
         drawerGrid = findViewById(R.id.drawerGrid)
 
@@ -286,7 +303,7 @@ class DesktopActivity : AppCompatActivity() {
         val items = if (isLiveMode) {
             arrayOf("切换到普通模式", "更换立绘背景")
         } else {
-            arrayOf("切换到立绘模式", "设置立绘背景", "编辑桌面图标")
+            arrayOf("切换到立绘模式", "更换桌面壁纸", "编辑桌面图标")
         }
 
         AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog)
@@ -300,7 +317,7 @@ class DesktopActivity : AppCompatActivity() {
                 } else {
                     when (which) {
                         0 -> switchToLiveMode(true)
-                        1 -> pickImage()
+                        1 -> pickNormalWallpaper()
                         2 -> enterEditMode()
                     }
                 }
@@ -317,6 +334,7 @@ class DesktopActivity : AppCompatActivity() {
         if (save) prefs.edit().putBoolean("live_mode", true).apply()
 
         normalDesktop.visibility = View.GONE
+        normalBgImage.visibility = View.GONE
         liveDesktop.visibility = View.VISIBLE
         liveBgImage.visibility = View.VISIBLE
         drawerBtn.visibility = View.VISIBLE
@@ -325,9 +343,61 @@ class DesktopActivity : AppCompatActivity() {
         if (bgUri != null) {
             try {
                 liveBgImage.setImageURI(Uri.parse(bgUri))
+                updateDrawerTint(Uri.parse(bgUri))
             } catch (e: Exception) {
                 liveBgImage.visibility = View.GONE
             }
+        }
+    }
+
+    /**
+     * 从壁纸提取主色调，给抽屉上半透明底色
+     */
+    private fun updateDrawerTint(imageUri: Uri) {
+        try {
+            val input = contentResolver.openInputStream(imageUri) ?: return
+            val options = android.graphics.BitmapFactory.Options().apply {
+                inSampleSize = 16  // 缩小16倍，只要大致颜色
+            }
+            val bitmap = android.graphics.BitmapFactory.decodeStream(input, null, options)
+            input.close()
+            if (bitmap == null) return
+
+            // 取中间区域像素的平均色
+            var r = 0L; var g = 0L; var b = 0L; var count = 0L
+            val w = bitmap.width; val h = bitmap.height
+            val startX = w / 4; val endX = w * 3 / 4
+            val startY = h / 4; val endY = h * 3 / 4
+
+            for (x in startX until endX step 2) {
+                for (y in startY until endY step 2) {
+                    val pixel = bitmap.getPixel(x, y)
+                    r += (pixel shr 16) and 0xFF
+                    g += (pixel shr 8) and 0xFF
+                    b += pixel and 0xFF
+                    count++
+                }
+            }
+            bitmap.recycle()
+
+            if (count == 0L) return
+            val avgR = (r / count).toInt()
+            val avgG = (g / count).toInt()
+            val avgB = (b / count).toInt()
+
+            // 混合：适度变暗保持质感，90%不透明度
+            val darkFactor = 0.7
+            val tintColor = android.graphics.Color.argb(230,
+                (avgR * darkFactor).toInt(),
+                (avgG * darkFactor).toInt(),
+                (avgB * darkFactor).toInt()
+            )
+            drawerPanel.setBackgroundColor(tintColor)
+
+            // 保存颜色给下次启动用
+            prefs.edit().putInt("drawer_tint_color", tintColor).apply()
+        } catch (e: Exception) {
+            // 提取失败就保持默认颜色
         }
     }
 
@@ -342,6 +412,14 @@ class DesktopActivity : AppCompatActivity() {
         liveDesktop.visibility = View.GONE
         liveBgImage.visibility = View.GONE
         drawerBtn.visibility = View.GONE
+
+        // 显示普通桌面壁纸（如果有）
+        val normalBgUri = prefs.getString("normal_bg_uri", null)
+        if (normalBgUri != null) {
+            normalBgImage.visibility = View.VISIBLE
+        } else {
+            normalBgImage.visibility = View.GONE
+        }
     }
 
     // ===== 打开/关闭抽屉 =====
@@ -381,23 +459,46 @@ class DesktopActivity : AppCompatActivity() {
         startActivityForResult(intent, PICK_IMAGE_REQUEST)
     }
 
+    private fun pickNormalWallpaper() {
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "image/*"
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+        }
+        startActivityForResult(intent, PICK_NORMAL_BG_REQUEST)
+    }
+
     @Suppress("DEPRECATION")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == PICK_IMAGE_REQUEST && resultCode == RESULT_OK) {
-            val uri = data?.data ?: return
-            try {
-                contentResolver.takePersistableUriPermission(
-                    uri, Intent.FLAG_GRANT_READ_URI_PERMISSION
-                )
-            } catch (e: Exception) { }
+        if (resultCode != RESULT_OK) return
+        val uri = data?.data ?: return
 
-            prefs.edit().putString("live_bg_uri", uri.toString()).apply()
-            liveBgImage.setImageURI(uri)
-            liveBgImage.visibility = View.VISIBLE
+        try {
+            contentResolver.takePersistableUriPermission(
+                uri, Intent.FLAG_GRANT_READ_URI_PERMISSION
+            )
+        } catch (e: Exception) { }
 
-            if (!isLiveMode) switchToLiveMode(true)
-            Toast.makeText(this, "立绘设置成功 ♡", Toast.LENGTH_SHORT).show()
+        when (requestCode) {
+            PICK_IMAGE_REQUEST -> {
+                // 立绘背景
+                prefs.edit().putString("live_bg_uri", uri.toString()).apply()
+                liveBgImage.setImageURI(uri)
+                liveBgImage.visibility = View.VISIBLE
+                if (!isLiveMode) switchToLiveMode(true)
+                // 抽屉颜色跟壁纸走
+                updateDrawerTint(uri)
+                Toast.makeText(this, "立绘背景已更换 ♡", Toast.LENGTH_SHORT).show()
+            }
+            PICK_NORMAL_BG_REQUEST -> {
+                // 普通桌面壁纸
+                prefs.edit().putString("normal_bg_uri", uri.toString()).apply()
+                normalBgImage.setImageURI(uri)
+                normalBgImage.visibility = View.VISIBLE
+                Toast.makeText(this, "桌面壁纸已更换 ♡", Toast.LENGTH_SHORT).show()
+            }
         }
     }
 
@@ -453,6 +554,10 @@ class DesktopActivity : AppCompatActivity() {
                 scaleType = ImageView.ScaleType.CENTER
                 background = createIconBackground()
                 setImageDrawable(LineIconDrawable(icon.type, dpToPx(20)))
+                // 抽屉里图标固定白色，不跟主题走
+                if (!isDesktop) {
+                    setColorFilter(0xFFFFFFFF.toInt(), android.graphics.PorterDuff.Mode.SRC_IN)
+                }
             }
 
             val labelView = TextView(this).apply {
@@ -462,8 +567,11 @@ class DesktopActivity : AppCompatActivity() {
                 ).apply { topMargin = dpToPx(3) }
                 text = icon.label
                 textSize = 9f
-                setTextColor(ContextCompat.getColor(this@DesktopActivity, R.color.haven_desktop_icon_label))
+                setTextColor(if (isDesktop)
+                    ContextCompat.getColor(this@DesktopActivity, R.color.haven_desktop_icon_label)
+                else 0xE6FFFFFF.toInt())
                 gravity = Gravity.CENTER
+                setShadowLayer(3f, 0f, 1f, 0x66000000)
             }
 
             itemLayout.addView(iconView)
@@ -628,12 +736,14 @@ class DesktopActivity : AppCompatActivity() {
             strokeCap = Paint.Cap.ROUND
             strokeJoin = Paint.Join.ROUND
             color = iconColor
+            setShadowLayer(3f, 0f, 1f, 0x66000000)
         }
 
         private val fillPaint = Paint().apply {
             isAntiAlias = true
             style = Paint.Style.FILL
             color = iconColor
+            setShadowLayer(3f, 0f, 1f, 0x66000000)
         }
 
         override fun draw(canvas: Canvas) {

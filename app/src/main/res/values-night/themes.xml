@@ -24,6 +24,22 @@
     <item name="colorSurface">#0D1B2A</item>
     <item name="colorSurfaceVariant">#1A2535</item>
     <item name="android:textColorAlertDialogListItem">#D9FFFFFF</item>
-    <item name="android:listPreferredItemHeightSmall">48dp</item>
+    <item name="android:listPreferredItemHeightSmall">52dp</item>
+    <item name="buttonBarPositiveButtonStyle">@style/HavenDialogButton</item>
+    <item name="buttonBarNegativeButtonStyle">@style/HavenDialogButtonNeg</item>
+  </style>
+
+  <style name="HavenDialogButton" parent="Widget.Material3.Button.TextButton.Dialog">
+    <item name="android:textColor">#B3A0FF</item>
+    <item name="android:textSize">14sp</item>
+    <item name="android:paddingStart">20dp</item>
+    <item name="android:paddingEnd">20dp</item>
+  </style>
+
+  <style name="HavenDialogButtonNeg" parent="Widget.Material3.Button.TextButton.Dialog">
+    <item name="android:textColor">#80FFFFFF</item>
+    <item name="android:textSize">14sp</item>
+    <item name="android:paddingStart">20dp</item>
+    <item name="android:paddingEnd">20dp</item>
   </style>
 </resources>

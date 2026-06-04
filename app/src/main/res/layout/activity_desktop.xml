@@ -13,6 +13,14 @@
         android:scaleType="centerCrop"
         android:visibility="gone" />
 
+    <!-- ===== 普通桌面背景图（普通模式自定义壁纸） ===== -->
+    <ImageView
+        android:id="@+id/normalBgImage"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:scaleType="centerCrop"
+        android:visibility="gone" />
+
     <!-- ===== 普通模式的桌面内容 ===== -->
     <LinearLayout
         android:id="@+id/normalDesktop"
