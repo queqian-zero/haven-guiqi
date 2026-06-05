@@ -60,10 +60,9 @@ class ChatConversationActivity : AppCompatActivity() {
     private lateinit var stickerGrid: LinearLayout
     private lateinit var stickerGroupTabs: LinearLayout
     private lateinit var stickerActionBar: LinearLayout
-    private var currentStickerGroup: String? = null  // null = 全部
-    private var isStickerManageMode = false
-    private val selectedStickerIds = mutableSetOf<String>()
     private lateinit var stickerStorage: StickerStorage
+    private lateinit var stickerPanelManager: StickerPanelManager
+    private lateinit var batchModeManager: BatchModeManager
     private lateinit var memoryStorage: MemoryStorage
     private lateinit var diaryStorage: DiaryStorage
     private lateinit var impressionStorage: ImpressionStorage
@@ -147,6 +146,8 @@ class ChatConversationActivity : AppCompatActivity() {
         bubbleRenderer = BubbleRenderer(this, messagesContainer, scrollMessages)
         bubbleRenderer.friendName = friendName
         bubbleRenderer.friendIcon = friendIcon
+        bubbleRenderer.onQuote = { author, content -> showQuotePreview(author, content) }
+        bubbleRenderer.onLoadMore = { loadEarlierMessages() }
         inputMessage = findViewById(R.id.inputMessage)
         btnSend = findViewById(R.id.btnSend)
         btnBack = findViewById(R.id.btnBack)
@@ -165,7 +166,7 @@ class ChatConversationActivity : AppCompatActivity() {
 
         // 管理按钮
         findViewById<TextView>(R.id.btnManageSticker).setOnClickListener {
-            showStickerManageDialog()
+            stickerPanelManager.toggleManageMode()
         }
 
 
@@ -173,11 +174,31 @@ class ChatConversationActivity : AppCompatActivity() {
         friendName = intent.getStringExtra("friend_name") ?: "好友"
         friendIcon = intent.getStringExtra("friend_icon") ?: "★"
         tvFriendName.text = friendName
+        bubbleRenderer.friendName = friendName
+        bubbleRenderer.friendIcon = friendIcon
         chatStorage = ChatStorage(this)
         // 恢复上次的 AI 状态
         val statusPrefs = getSharedPreferences("haven_status", MODE_PRIVATE)
         currentAiStatus = statusPrefs.getString("status_$friendId", "") ?: ""
         stickerStorage = StickerStorage(this)
+        stickerPanelManager = StickerPanelManager(
+            this, stickerPanel, stickerGrid, stickerGroupTabs, stickerActionBar, stickerStorage
+        )
+        stickerPanelManager.onSendSticker = { file -> sendSticker(file) }
+        batchModeManager = BatchModeManager(
+            this,
+            findViewById(R.id.pendingArea),
+            findViewById(R.id.pendingMessages),
+            findViewById(R.id.pendingCount),
+            findViewById(R.id.btnBatch)
+        )
+        batchModeManager.onToggle = { entering ->
+            if (entering) {
+                findViewById<LinearLayout>(R.id.plusPanel).visibility = View.GONE
+                stickerPanelManager.hide()
+                if (expandedInputPanel.visibility == View.VISIBLE) toggleExpandedInput(false)
+            }
+        }
         memoryStorage = MemoryStorage(this)
         diaryStorage = DiaryStorage(this)
         impressionStorage = ImpressionStorage(this)
@@ -339,7 +360,7 @@ class ChatConversationActivity : AppCompatActivity() {
             if (successCount > 0) {
                 val msg = if (successCount == 1) "表情包已收藏！" else "已收藏 $successCount 张表情包！"
                 Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
-                refreshStickerGrid()
+                stickerPanelManager.refreshGrid()
             } else {
                 Toast.makeText(this, "导入失败", Toast.LENGTH_SHORT).show()
             }
@@ -491,165 +512,12 @@ class ChatConversationActivity : AppCompatActivity() {
 
     // ===== 图片气泡（右侧） =====
     private fun addImageBubble(imagePath: String, timeStr: String, caption: String = "") {
-        val dp = { value: Int -> (value * resources.displayMetrics.density).toInt() }
-
-        val wrapper = LinearLayout(this).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { bottomMargin = dp(8) }
-            gravity = Gravity.END
-        }
-
-        val column = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            )
-        }
-
-        val imageView = ImageView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(dp(180), LinearLayout.LayoutParams.WRAP_CONTENT)
-            adjustViewBounds = true
-            scaleType = ImageView.ScaleType.FIT_CENTER
-            setBackgroundResource(R.drawable.chat_bubble_user)
-            setPadding(dp(4), dp(4), dp(4), dp(4))
-            val file = File(imagePath)
-            if (file.exists()) {
-                val bitmap = BitmapFactory.decodeFile(imagePath)
-                setImageBitmap(bitmap)
-            }
-        }
-        column.addView(imageView)
-
-        // 如果有附带文字
-        if (caption.isNotEmpty()) {
-            val captionView = TextView(this).apply {
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
-                ).apply { topMargin = dp(4) }
-                maxWidth = dp(180)
-                this.text = MarkdownRenderer.render(caption)
-                setTextColor(c.textOnAccent)
-                textSize = 13f
-                setLineSpacing(0f, 1.3f)
-                setPadding(dp(10), dp(6), dp(10), dp(6))
-                setBackgroundResource(R.drawable.chat_bubble_user)
-            }
-            column.addView(captionView)
-        }
-
-        val time = TextView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { topMargin = dp(2) }
-            gravity = Gravity.END
-            this.text = timeStr
-            textSize = 9f
-            setTextColor(c.timeText)
-            setPadding(0, 0, dp(4), 0)
-        }
-        column.addView(time)
-        wrapper.addView(column)
-        messagesContainer.addView(wrapper)
-        scrollToBottom()
+        bubbleRenderer.addImageBubble(imagePath, timeStr, caption)
     }
 
     // ===== 多图气泡（右侧，网格排列，点击放大） =====
     private fun addMultiImageBubble(imagePaths: List<String>, timeStr: String, caption: String = "") {
-        val dp = { value: Int -> (value * resources.displayMetrics.density).toInt() }
-        val thumbSize = dp(90)
-        val gap = dp(4)
-        val columns = if (imagePaths.size == 2) 2 else 3
-
-        val wrapper = LinearLayout(this).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { bottomMargin = dp(8) }
-            gravity = Gravity.END
-        }
-
-        val column = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            )
-        }
-
-        // 用 GridLayout 排列缩略图
-        val grid = android.widget.GridLayout(this).apply {
-            columnCount = columns
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            )
-        }
-
-        for ((index, path) in imagePaths.withIndex()) {
-            val imageView = ImageView(this).apply {
-                layoutParams = android.widget.GridLayout.LayoutParams().apply {
-                    width = thumbSize
-                    height = thumbSize
-                    setMargins(if (index % columns != 0) gap else 0, if (index >= columns) gap else 0, 0, 0)
-                }
-                scaleType = ImageView.ScaleType.CENTER_CROP
-                val file = File(path)
-                if (file.exists()) {
-                    val bitmap = BitmapFactory.decodeFile(path)
-                    setImageBitmap(bitmap)
-                }
-                // 圆角
-                clipToOutline = true
-                outlineProvider = object : android.view.ViewOutlineProvider() {
-                    override fun getOutline(view: View, outline: android.graphics.Outline) {
-                        outline.setRoundRect(0, 0, view.width, view.height, dp(6).toFloat())
-                    }
-                }
-                // 点击放大
-                setOnClickListener { showFullImage(path) }
-            }
-            grid.addView(imageView)
-        }
-        column.addView(grid)
-
-        // 如果有附带文字
-        if (caption.isNotEmpty()) {
-            val captionView = TextView(this).apply {
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
-                ).apply { topMargin = dp(4) }
-                maxWidth = columns * thumbSize + (columns - 1) * gap
-                this.text = MarkdownRenderer.render(caption)
-                setTextColor(c.textOnAccent)
-                textSize = 13f
-                setLineSpacing(0f, 1.3f)
-                setPadding(dp(10), dp(6), dp(10), dp(6))
-                setBackgroundResource(R.drawable.chat_bubble_user)
-            }
-            column.addView(captionView)
-        }
-
-        val time = TextView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { topMargin = dp(2) }
-            gravity = Gravity.END
-            this.text = timeStr
-            textSize = 9f
-            setTextColor(c.timeText)
-            setPadding(0, 0, dp(4), 0)
-        }
-        column.addView(time)
-        wrapper.addView(column)
-        messagesContainer.addView(wrapper)
-        scrollToBottom()
+        bubbleRenderer.addMultiImageBubble(imagePaths, timeStr, caption)
     }
 
     // ===== 点击图片放大查看 =====
@@ -678,66 +546,17 @@ class ChatConversationActivity : AppCompatActivity() {
 
     /** 格式化时间间隔：3小时、1天3小时、3天 */
     private fun formatGapLabel(gapMs: Long): String {
-        val minutes = gapMs / 60000
-        val hours = minutes / 60
-        val days = hours / 24
-        val remainHours = hours % 24
-        return when {
-            days > 0 && remainHours > 0 -> "${days}天${remainHours}小时"
-            days > 0 -> "${days}天"
-            else -> "${hours}小时"
-        }
+        return bubbleRenderer.formatGapLabel(gapMs)
     }
 
     /** 换天分隔线——醒目 */
     private fun addDaySeparator(timestamp: Long) {
-        val dp = { value: Int -> (value * resources.displayMetrics.density).toInt() }
-        val dateLabel = formatDateLabel(timestamp)
-
-        val wrapper = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { topMargin = dp(12); bottomMargin = dp(12) }
-        }
-
-        val lineColor = c.borderMedium
-        val leftLine = View(this).apply {
-            layoutParams = LinearLayout.LayoutParams(0, dp(1), 1f).apply { marginEnd = dp(10) }
-            setBackgroundColor(lineColor)
-        }
-        val label = TextView(this).apply {
-            text = dateLabel
-            textSize = 11f
-            setTextColor(c.textSecondary)
-        }
-        val rightLine = View(this).apply {
-            layoutParams = LinearLayout.LayoutParams(0, dp(1), 1f).apply { marginStart = dp(10) }
-            setBackgroundColor(lineColor)
-        }
-
-        wrapper.addView(leftLine)
-        wrapper.addView(label)
-        wrapper.addView(rightLine)
-        messagesContainer.addView(wrapper)
+        bubbleRenderer.addDaySeparator(timestamp)
     }
 
     /** 时间间隔标记——朴素 */
     private fun addGapMarker(text: String) {
-        val dp = { value: Int -> (value * resources.displayMetrics.density).toInt() }
-        val label = TextView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { topMargin = dp(6); bottomMargin = dp(8) }
-            gravity = Gravity.CENTER
-            this.text = text
-            textSize = 9f
-            setTextColor(c.textHint)
-        }
-        messagesContainer.addView(label)
+        bubbleRenderer.addGapMarker(text)
     }
 
     // ===== 更新连接状态 =====
@@ -780,13 +599,10 @@ class ChatConversationActivity : AppCompatActivity() {
             expandedInputPanel.visibility = View.VISIBLE
             expandedInput.requestFocus()
             // 关掉可能冲突的面板
-            stickerPanel.visibility = View.GONE
+            stickerPanelManager.hide()
             findViewById<LinearLayout>(R.id.plusPanel).visibility = View.GONE
-            if (isBatchMode) {
-                isBatchMode = false
-                findViewById<TextView>(R.id.btnBatch).setTextColor(c.dateLabel)
-                findViewById<LinearLayout>(R.id.pendingArea).visibility = View.GONE
-                pendingItems.clear()
+            if (batchModeManager.isBatchMode) {
+                batchModeManager.exit()
             }
         } else {
             inputMessage.setText(expandedInput.text)
@@ -963,17 +779,7 @@ class ChatConversationActivity : AppCompatActivity() {
      * 点击后加载更早的消息
      */
     private fun addLoadMoreButton() {
-        val dp = { value: Int -> (value * resources.displayMetrics.density).toInt() }
-        val btn = TextView(this).apply {
-            text = "↑ 加载更早的消息"
-            textSize = 12f
-            setTextColor(c.accent)
-            gravity = Gravity.CENTER
-            setPadding(dp(12), dp(12), dp(12), dp(12))
-            tag = "load_more_btn"
-            setOnClickListener { loadEarlierMessages() }
-        }
-        messagesContainer.addView(btn, 0)
+        bubbleRenderer.addLoadMoreButton()
     }
 
     /**
@@ -1071,87 +877,14 @@ class ChatConversationActivity : AppCompatActivity() {
      * 创建一个 AI 气泡 View（不自动添加到容器，用于插入到指定位置）
      */
     private fun createAiBubbleView(msg: String, timeStr: String): View {
-        val dp = { value: Int -> (value * resources.displayMetrics.density).toInt() }
-        val wrapper = LinearLayout(this).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { bottomMargin = dp(8) }
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.START
-        }
-        val avatar = TextView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(dp(30), dp(30)).apply {
-                marginEnd = dp(7); topMargin = dp(2)
-            }
-            gravity = Gravity.CENTER
-            this.text = friendIcon
-            textSize = 12f
-            setTextColor(c.accentStrong)
-            setBackgroundResource(R.drawable.icon_bg)
-        }
-        val column = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            )
-        }
-        val bubble = TextView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            )
-            maxWidth = (resources.displayMetrics.widthPixels * 0.80).toInt()
-            this.text = MarkdownRenderer.render(msg)
-            setTextColor(c.textOnAccent)
-            textSize = 14f
-            setLineSpacing(0f, 1.35f)
-            setPadding(dp(11), dp(8), dp(11), dp(8))
-            setBackgroundResource(R.drawable.chat_bubble_ai)
-            setOnLongClickListener { showMessageMenu(msg, friendName); true }
-        }
-        val time = TextView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { topMargin = dp(2) }
-            this.text = timeStr
-            textSize = 9f
-            setTextColor(c.timeText)
-            setPadding(dp(4), 0, 0, 0)
-        }
-        column.addView(bubble)
-        column.addView(time)
-        wrapper.addView(avatar)
-        wrapper.addView(column)
-        return wrapper
+        return bubbleRenderer.createAiBubbleView(msg, timeStr)
     }
 
     /**
      * 在指定位置添加图片气泡
      */
     private fun addImageBubbleAt(imagePath: String, timeStr: String, caption: String, index: Int): View {
-        // 简化：历史加载时用文字代替图片，避免性能问题
-        val dp = { value: Int -> (value * resources.displayMetrics.density).toInt() }
-        val wrapper = LinearLayout(this).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { bottomMargin = dp(8) }
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.END
-        }
-        val bubble = TextView(this).apply {
-            text = "[图片]${if (caption.isNotEmpty()) " $caption" else ""}"
-            setTextColor(c.textSecondary)
-            textSize = 13f
-            setPadding(dp(11), dp(8), dp(11), dp(8))
-            setBackgroundResource(R.drawable.chat_bubble_user)
-        }
-        wrapper.addView(bubble)
-        messagesContainer.addView(wrapper, index)
-        return wrapper
+        return bubbleRenderer.addImageBubbleAt(imagePath, timeStr, caption, index)
     }
 
     /**
@@ -1234,8 +967,8 @@ class ChatConversationActivity : AppCompatActivity() {
 
                 // 应用状态变更
                 if (result.newStatus != null) currentAiStatus = result.newStatus!!
-                if (result.newName != null) friendName = result.newName!!
-                if (result.newIcon != null) friendIcon = result.newIcon!!
+                if (result.newName != null) { friendName = result.newName!!; bubbleRenderer.friendName = friendName }
+                if (result.newIcon != null) { friendIcon = result.newIcon!!; bubbleRenderer.friendIcon = friendIcon }
                 if (result.userBioContext != null) chatHistory.add(ChatMessage("system", result.userBioContext!!))
                 if (result.shouldDream) triggerDream(friendId)
  
@@ -1301,14 +1034,14 @@ class ChatConversationActivity : AppCompatActivity() {
         val imagePaths = pendingImagePaths.toList()  // 快照
 
         // 分条模式：文字和图片都蹦到待发区，不真正发送
-        if (isBatchMode) {
+        if (batchModeManager.isBatchMode) {
             if (imagePaths.isNotEmpty()) {
                 // 图片也进待发区
                 val caption = if (msg.isNotEmpty()) msg else ""
-                addToPendingImage(imagePaths, caption)
+                batchModeManager.addImage(imagePaths, caption)
                 return
             } else if (msg.isNotEmpty()) {
-                addToPending(msg)
+                batchModeManager.addText(msg)
                 return
             }
         }
@@ -1416,8 +1149,8 @@ class ChatConversationActivity : AppCompatActivity() {
 
                 // 应用状态变更
                 if (result.newStatus != null) currentAiStatus = result.newStatus!!
-                if (result.newName != null) friendName = result.newName!!
-                if (result.newIcon != null) friendIcon = result.newIcon!!
+                if (result.newName != null) { friendName = result.newName!!; bubbleRenderer.friendName = friendName }
+                if (result.newIcon != null) { friendIcon = result.newIcon!!; bubbleRenderer.friendIcon = friendIcon }
                 if (result.userBioContext != null) chatHistory.add(ChatMessage("system", result.userBioContext!!))
                 if (result.shouldDream) triggerDream(friendId)
 
@@ -1495,15 +1228,7 @@ class ChatConversationActivity : AppCompatActivity() {
 
     // ===== 长按消息菜单 =====
     private fun showMessageMenu(content: String, author: String) {
-        val options = arrayOf("复制", "引用回复")
-        AlertDialog.Builder(this)
-            .setItems(options) { _, which ->
-                when (which) {
-                    0 -> copyToClipboard(content)
-                    1 -> showQuotePreview(author, content)
-                }
-            }
-            .show()
+        bubbleRenderer.showMessageMenu(content, author)
     }
 
     // ===== 显示引用预览条 =====
@@ -1582,364 +1307,23 @@ class ChatConversationActivity : AppCompatActivity() {
 
     // ===== 思维链折叠块 =====
     private fun addThinkingBlock(thinking: String) {
-        val dp = { value: Int -> (value * resources.displayMetrics.density).toInt() }
-        val wrapper = LinearLayout(this).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { bottomMargin = dp(4) }
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.START
-        }
-        val spacer = View(this).apply {
-            layoutParams = LinearLayout.LayoutParams(dp(37), dp(1))
-        }
-        val thinkingLayout = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            )
-        }
-        val contentView = TextView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            )
-            maxWidth = (resources.displayMetrics.widthPixels * 0.75).toInt()
-            this.text = thinking
-            setTextColor(c.accent)
-            textSize = 12f
-            setLineSpacing(0f, 1.3f)
-            setPadding(dp(10), dp(6), dp(10), dp(6))
-            setBackgroundResource(R.drawable.chat_thinking_bg)
-            visibility = View.GONE
-        }
-        val toggleView = TextView(this).apply {
-            this.text = "💭 思考过程 ▸"
-            textSize = 11f
-            setTextColor(c.accent)
-            setPadding(dp(4), dp(2), dp(4), dp(2))
-            setOnClickListener {
-                if (contentView.visibility == View.GONE) {
-                    contentView.visibility = View.VISIBLE
-                    this.text = "💭 思考过程 ▾"
-                } else {
-                    contentView.visibility = View.GONE
-                    this.text = "💭 思考过程 ▸"
-                }
-            }
-        }
-        contentView.setOnLongClickListener { copyToClipboard(thinking); true }
-        thinkingLayout.addView(toggleView)
-        thinkingLayout.addView(contentView)
-        wrapper.addView(spacer)
-        wrapper.addView(thinkingLayout)
-        messagesContainer.addView(wrapper)
+        bubbleRenderer.addThinkingBlock(thinking)
     }
 
     // ===== 带引用的用户气泡 =====
     private fun addQuoteBubble(quoteAuthor: String, quoteContent: String, msg: String, timeStr: String): View {
-        val dp = { value: Int -> (value * resources.displayMetrics.density).toInt() }
-
-        val wrapper = LinearLayout(this).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { bottomMargin = dp(8) }
-            gravity = Gravity.END
-        }
-
-        val column = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            )
-        }
-
-        // 引用块
-        val quoteBlock = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            setBackgroundColor(c.accentBg)
-            setPadding(dp(10), dp(6), dp(10), dp(6))
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            )
-        }
-
-        val bar = View(this).apply {
-            layoutParams = LinearLayout.LayoutParams(dp(2), LinearLayout.LayoutParams.MATCH_PARENT).apply {
-                marginEnd = dp(6)
-            }
-            setBackgroundColor(c.accent)
-        }
-
-        val quoteText = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-        }
-
-        quoteText.addView(TextView(this).apply {
-            this.text = quoteAuthor
-            textSize = 10f
-            setTextColor(c.accentStrong)
-        })
-
-        val shortContent = if (quoteContent.length > 40) quoteContent.substring(0, 40) + "..." else quoteContent
-        quoteText.addView(TextView(this).apply {
-            this.text = shortContent
-            textSize = 11f
-            setTextColor(c.textSecondary)
-            maxLines = 2
-            maxWidth = (resources.displayMetrics.widthPixels * 0.65).toInt()
-        })
-
-        quoteBlock.addView(bar)
-        quoteBlock.addView(quoteText)
-        column.addView(quoteBlock)
-
-        // 正文气泡
-        val bubble = TextView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { topMargin = dp(3) }
-            maxWidth = (resources.displayMetrics.widthPixels * 0.82).toInt()
-            this.text = MarkdownRenderer.render(msg)
-            setTextColor(c.textOnAccent)
-            textSize = 14f
-            setLineSpacing(0f, 1.35f)
-            setPadding(dp(11), dp(8), dp(11), dp(8))
-            setBackgroundResource(R.drawable.chat_bubble_user)
-            setOnLongClickListener { showMessageMenu(msg, "我"); true }
-        }
-        column.addView(bubble)
-
-        val time = TextView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { topMargin = dp(2) }
-            gravity = Gravity.END
-            this.text = timeStr
-            textSize = 9f
-            setTextColor(c.timeText)
-            setPadding(0, 0, dp(4), 0)
-        }
-        column.addView(time)
-
-        wrapper.addView(column)
-        messagesContainer.addView(wrapper)
-        scrollToBottom()
-        return wrapper
+        return bubbleRenderer.addQuoteBubble(quoteAuthor, quoteContent, msg, timeStr)
     }
 
     // ===== 用户气泡 =====
     private fun addUserBubble(msg: String, timeStr: String): View {
-        val dp = { value: Int -> (value * resources.displayMetrics.density).toInt() }
-        val wrapper = LinearLayout(this).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { bottomMargin = dp(8) }
-            gravity = Gravity.END
-        }
-        val bubble = TextView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            )
-            maxWidth = (resources.displayMetrics.widthPixels * 0.82).toInt()
-            this.text = MarkdownRenderer.render(msg)
-            setTextColor(c.textOnAccent)
-            textSize = 14f
-            setLineSpacing(0f, 1.35f)
-            setPadding(dp(11), dp(8), dp(11), dp(8))
-            setBackgroundResource(R.drawable.chat_bubble_user)
-            setOnLongClickListener { showMessageMenu(msg, "我"); true }
-        }
-        val time = TextView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { topMargin = dp(2) }
-            gravity = Gravity.END
-            this.text = timeStr
-            textSize = 9f
-            setTextColor(c.timeText)
-            setPadding(0, 0, dp(4), 0)
-        }
-        val column = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            )
-        }
-        column.addView(bubble)
-        column.addView(time)
-        wrapper.addView(column)
-        messagesContainer.addView(wrapper)
-        scrollToBottom()
-        return wrapper
+        return bubbleRenderer.addUserBubble(msg, timeStr)
     }
 
     // ===== AI 气泡 =====
     private fun addAiBubble(msg: String, timeStr: String) {
-        // 处理分条消息
-        if (msg.contains("[SPLIT]")) {
-            val parts = msg.split("[SPLIT]").map { it.trim() }.filter { it.isNotEmpty() }
-            for (part in parts) {
-                renderAiSegmentStatic(part, timeStr)
-            }
-            return
-        }
-        renderAiSegmentStatic(msg, timeStr)
+        bubbleRenderer.addAiBubble(msg, timeStr)
     }
-
-    /** 静态渲染一段AI消息（加载历史时用，跟 renderAiSegment 一样但不带动画） */
-    private fun renderAiSegmentStatic(segment: String, timeStr: String) {
-        val stickerPattern = Regex("\\[STICKER_IMG:(.+?)]")
-        if (!segment.contains("[STICKER_IMG:")) {
-            addAiBubbleSingleStatic(segment, timeStr)
-            return
-        }
-        var remaining = segment
-        var match = stickerPattern.find(remaining)
-        while (match != null) {
-            val textBefore = remaining.substring(0, match.range.first).trim()
-            if (textBefore.isNotEmpty()) addAiBubbleSingleStatic(textBefore, timeStr)
-            val stickerPath = match.groupValues[1]
-            addAiImageBubble(stickerPath, timeStr)
-            remaining = remaining.substring(match.range.last + 1)
-            match = stickerPattern.find(remaining)
-        }
-        val textAfter = remaining.trim()
-        if (textAfter.isNotEmpty()) addAiBubbleSingleStatic(textAfter, timeStr)
-    }
-
-    private fun addAiBubbleSingleStatic(msg: String, timeStr: String) {
-        val dp = { value: Int -> (value * resources.displayMetrics.density).toInt() }
-        val wrapper = LinearLayout(this).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { bottomMargin = dp(8) }
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.START
-        }
-        val avatar = TextView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(dp(30), dp(30)).apply {
-                marginEnd = dp(7); topMargin = dp(2)
-            }
-            gravity = Gravity.CENTER
-            this.text = friendIcon
-            textSize = 12f
-            setTextColor(c.accentStrong)
-            setBackgroundResource(R.drawable.icon_bg)
-        }
-        val column = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            )
-        }
-        val bubble = TextView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            )
-            maxWidth = (resources.displayMetrics.widthPixels * 0.80).toInt()
-            this.text = MarkdownRenderer.render(msg)
-            setTextColor(c.textOnAccent)
-            textSize = 14f
-            setLineSpacing(0f, 1.35f)
-            setPadding(dp(11), dp(8), dp(11), dp(8))
-            setBackgroundResource(R.drawable.chat_bubble_ai)
-            setOnLongClickListener { showMessageMenu(msg, friendName); true }
-        }
-        val time = TextView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { topMargin = dp(2) }
-            this.text = timeStr
-            textSize = 9f
-            setTextColor(c.timeText)
-            setPadding(dp(4), 0, 0, 0)
-        }
-        column.addView(bubble)
-        column.addView(time)
-        wrapper.addView(avatar)
-        wrapper.addView(column)
-        messagesContainer.addView(wrapper)
-        scrollToBottom()
-    }
-
-    // ===== AI 发表情包（左侧，带头像） =====
-    private fun addAiImageBubble(imagePath: String, timeStr: String) {
-        val dp = { value: Int -> (value * resources.displayMetrics.density).toInt() }
-        val file = File(imagePath)
-        if (!file.exists()) return
-
-        val wrapper = LinearLayout(this).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { bottomMargin = dp(8) }
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.START
-        }
-        val avatar = TextView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(dp(30), dp(30)).apply {
-                marginEnd = dp(7); topMargin = dp(2)
-            }
-            gravity = Gravity.CENTER
-            this.text = friendIcon
-            textSize = 12f
-            setTextColor(c.accentStrong)
-            setBackgroundResource(R.drawable.icon_bg)
-        }
-        val column = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            )
-        }
-        val imageView = ImageView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(dp(120), dp(120))
-            scaleType = ImageView.ScaleType.CENTER_CROP
-            val bitmap = BitmapFactory.decodeFile(imagePath)
-            if (bitmap != null) setImageBitmap(bitmap)
-            clipToOutline = true
-            outlineProvider = object : android.view.ViewOutlineProvider() {
-                override fun getOutline(view: View, outline: android.graphics.Outline) {
-                    outline.setRoundRect(0, 0, view.width, view.height, dp(10).toFloat())
-                }
-            }
-            setOnClickListener { showFullImage(imagePath) }
-        }
-        val time = TextView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { topMargin = dp(2) }
-            this.text = timeStr
-            textSize = 9f
-            setTextColor(c.timeText)
-            setPadding(dp(4), 0, 0, 0)
-        }
-        column.addView(imageView)
-        column.addView(time)
-        wrapper.addView(avatar)
-        wrapper.addView(column)
-        messagesContainer.addView(wrapper)
-        scrollToBottom()
-    }
-
     /**
      *
      * 原理：
@@ -1952,15 +1336,6 @@ class ChatConversationActivity : AppCompatActivity() {
      * delay = 每次蹦字之间隔多少毫秒（越小越快）
      */
          // ===== 表情包面板：显示/隐藏 =====
-    // ===== 分条模式状态 =====
-    private var isBatchMode = false
-    // 待发消息：支持文字和图片
-    data class PendingItem(
-        val type: String,  // "text" 或 "image"
-        val text: String = "",
-        val imagePaths: List<String> = emptyList()
-    )
-    private val pendingItems = mutableListOf<PendingItem>()
 
     /**
      * 加号菜单：在输入栏上方显示/隐藏
@@ -1974,7 +1349,7 @@ class ChatConversationActivity : AppCompatActivity() {
             return
         }
 
-        stickerPanel.visibility = View.GONE
+        stickerPanelManager.hide()
         plusPanel.visibility = View.VISIBLE
 
         findViewById<LinearLayout>(R.id.plusBtnImage).setOnClickListener {
@@ -1996,124 +1371,14 @@ class ChatConversationActivity : AppCompatActivity() {
      * 切换分条模式
      */
     private fun toggleBatchMode() {
-        val btnBatch = findViewById<TextView>(R.id.btnBatch)
-        val pendingArea = findViewById<LinearLayout>(R.id.pendingArea)
-
-        isBatchMode = !isBatchMode
-
-        if (isBatchMode) {
-            btnBatch.setTextColor(c.accent)
-            pendingArea.visibility = View.VISIBLE
-            pendingItems.clear()
-            refreshPendingUI()
-            // 关掉其他面板
-            findViewById<LinearLayout>(R.id.plusPanel).visibility = View.GONE
-            stickerPanel.visibility = View.GONE
-            // 如果展开面板开着，先收起来
-            if (expandedInputPanel.visibility == View.VISIBLE) {
-                toggleExpandedInput(false)
-            }
-        } else {
-            btnBatch.setTextColor(c.dateLabel)
-            pendingArea.visibility = View.GONE
-            pendingItems.clear()
-        }
+        batchModeManager.toggle()
     }
-
-    /**
-     * 分条模式下按发送：消息蹦到待发区
-     */
-    private fun addToPending(text: String) {
-        pendingItems.add(PendingItem("text", text))
-        inputMessage.text.clear()
-        refreshPendingUI()
-    }
-
-    private fun addToPendingImage(paths: List<String>, caption: String) {
-        pendingItems.add(PendingItem("image", caption, paths))
-        inputMessage.text.clear()
-        removePendingPreview()
-        pendingImagePaths.clear()
-        refreshPendingUI()
-    }
-
-    /**
-     * 刷新待发区 UI
-     */
-    private fun refreshPendingUI() {
-        val container = findViewById<LinearLayout>(R.id.pendingMessages)
-        val countView = findViewById<TextView>(R.id.pendingCount)
-        container.removeAllViews()
-        countView.text = "待发送 (${pendingItems.size})"
-
-        val dp = { v: Int -> (v * resources.displayMetrics.density).toInt() }
-
-        for ((index, item) in pendingItems.withIndex()) {
-            val itemBg = android.graphics.drawable.GradientDrawable().apply {
-                setColor(c.card)
-                cornerRadius = dp(8).toFloat()
-                setStroke(1, c.border)
-            }
-            val row = LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-                background = itemBg
-                setPadding(dp(10), dp(6), dp(6), dp(6))
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
-                ).apply { bottomMargin = dp(4) }
-            }
-
-            if (item.type == "image") {
-                // 图片条目：显示缩略图 + 文字说明
-                val thumb = ImageView(this).apply {
-                    layoutParams = LinearLayout.LayoutParams(dp(32), dp(32)).apply { marginEnd = dp(8) }
-                    scaleType = ImageView.ScaleType.CENTER_CROP
-                    val bitmap = BitmapFactory.decodeFile(item.imagePaths.firstOrNull() ?: "")
-                    if (bitmap != null) setImageBitmap(bitmap)
-                }
-                row.addView(thumb)
-                val label = TextView(this).apply {
-                    text = if (item.text.isNotEmpty()) "📷 ${item.text}"
-                           else "📷 ${item.imagePaths.size}张图片"
-                    textSize = 12f; setTextColor(c.textPrimary)
-                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-                    maxLines = 1
-                }
-                row.addView(label)
-            } else {
-                val textView = TextView(this).apply {
-                    text = item.text; textSize = 12f; setTextColor(c.textPrimary)
-                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-                    maxLines = 2
-                }
-                row.addView(textView)
-            }
-
-            val deleteBtn = TextView(this).apply {
-                text = "✕"; textSize = 14f; setTextColor(c.textHint)
-                setPadding(dp(8), dp(4), dp(8), dp(4))
-                setOnClickListener {
-                    pendingItems.removeAt(index)
-                    refreshPendingUI()
-                }
-            }
-            row.addView(deleteBtn)
-            container.addView(row)
-        }
-    }
-
     /**
      * 发送全部待发消息
      */
     private fun sendAllPending() {
-        if (pendingItems.isEmpty()) return
-        val items = pendingItems.toList()
-        pendingItems.clear()
-        isBatchMode = false
-        findViewById<TextView>(R.id.btnBatch).setTextColor(c.dateLabel)
-        findViewById<LinearLayout>(R.id.pendingArea).visibility = View.GONE
+        if (batchModeManager.isEmpty()) return
+        val items = batchModeManager.getItemsAndClear()
 
         val handler = android.os.Handler(android.os.Looper.getMainLooper())
         var delay = 0L
@@ -2233,342 +1498,13 @@ class ChatConversationActivity : AppCompatActivity() {
     }
 
     private fun toggleStickerPanel() {
-        if (stickerPanel.visibility == View.VISIBLE) {
-            stickerPanel.visibility = View.GONE
-        } else {
-            stickerPanel.visibility = View.VISIBLE
-            refreshStickerGrid()
-        }
+        stickerPanelManager.toggle()
     }
- 
-    // ===== 刷新表情包网格（4列纵向网格 + 分组 + 管理模式） =====
-    private fun refreshStickerGrid() {
-        val dp = { value: Int -> (value * resources.displayMetrics.density).toInt() }
-        val columns = 4
-
-        // 1. 分组标签栏
-        stickerGroupTabs.removeAllViews()
-        val groups = stickerStorage.loadGroups()
-        if (groups.isNotEmpty()) {
-            val allCount = stickerStorage.count()
-            val allTab = makeGroupTab("全部($allCount)", currentStickerGroup == null, dp)
-            allTab.setOnClickListener { currentStickerGroup = null; refreshStickerGrid() }
-            stickerGroupTabs.addView(allTab)
-            for ((name, count) in groups) {
-                val tab = makeGroupTab("$name($count)", currentStickerGroup == name, dp)
-                tab.setOnClickListener { currentStickerGroup = name; refreshStickerGrid() }
-                tab.setOnLongClickListener { showGroupOptionsDialog(name); true }
-                stickerGroupTabs.addView(tab)
-            }
-        }
-
-        // 2. 管理按钮状态
-        findViewById<TextView>(R.id.btnManageSticker).apply {
-            text = if (isStickerManageMode) "完成" else "管理"
-            setTextColor(if (isStickerManageMode) c.accent else c.textSecondary)
-        }
-
-        // 3. 表情包网格（4列纵向）
-        stickerGrid.removeAllViews()
-        val stickers = if (currentStickerGroup != null) {
-            stickerStorage.loadByGroup(currentStickerGroup!!)
-        } else {
-            stickerStorage.loadStickers()
-        }
-
-        if (stickers.isEmpty()) {
-            val tip = TextView(this).apply {
-                text = if (currentStickerGroup != null) "「${currentStickerGroup}」里还没有表情包"
-                       else "还没有表情包哦，点右上角「＋ 导入」添加"
-                textSize = 12f; setTextColor(c.tipText)
-                setPadding(dp(8), dp(30), dp(8), dp(30))
-                gravity = Gravity.CENTER
-            }
-            stickerGrid.addView(tip)
-            stickerActionBar.visibility = View.GONE
-            return
-        }
-
-        // 按行排列
-        val thumbSize = dp(72)
-        var currentRow: LinearLayout? = null
-        for ((index, sticker) in stickers.withIndex()) {
-            if (index % columns == 0) {
-                currentRow = LinearLayout(this).apply {
-                    orientation = LinearLayout.HORIZONTAL
-                    layoutParams = LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.MATCH_PARENT,
-                        LinearLayout.LayoutParams.WRAP_CONTENT
-                    ).apply { bottomMargin = dp(6) }
-                }
-                stickerGrid.addView(currentRow)
-            }
-
-            val file = stickerStorage.getFile(sticker) ?: continue
-            val isSelected = sticker.id in selectedStickerIds
-
-            // 每个格子：图片 + 标签
-            val cell = LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-                gravity = Gravity.CENTER_HORIZONTAL
-                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-            }
-
-            val imgContainer = android.widget.FrameLayout(this).apply {
-                layoutParams = LinearLayout.LayoutParams(thumbSize, thumbSize).apply {
-                    gravity = Gravity.CENTER_HORIZONTAL
-                }
-            }
-
-            val imageView = ImageView(this).apply {
-                layoutParams = android.widget.FrameLayout.LayoutParams(thumbSize, thumbSize)
-                scaleType = ImageView.ScaleType.CENTER_CROP
-                val bg = android.graphics.drawable.GradientDrawable().apply {
-                    setColor(c.accentBg)
-                    cornerRadius = dp(8).toFloat()
-                    if (isSelected) setStroke(dp(3), c.accent)
-                    else setStroke(1, c.timeText)
-                }
-                background = bg
-                setPadding(dp(3), dp(3), dp(3), dp(3))
-                clipToOutline = true
-                outlineProvider = object : android.view.ViewOutlineProvider() {
-                    override fun getOutline(view: View, outline: android.graphics.Outline) {
-                        outline.setRoundRect(0, 0, view.width, view.height, dp(8).toFloat())
-                    }
-                }
-                val bitmap = BitmapFactory.decodeFile(file.absolutePath)
-                if (bitmap != null) setImageBitmap(bitmap)
-            }
-            imgContainer.addView(imageView)
-
-            // 管理模式勾选标记
-            if (isStickerManageMode && isSelected) {
-                val check = TextView(this).apply {
-                    layoutParams = android.widget.FrameLayout.LayoutParams(dp(20), dp(20)).apply {
-                        gravity = Gravity.TOP or Gravity.END
-                        topMargin = dp(2); marginEnd = dp(2)
-                    }
-                    text = "✓"; textSize = 11f; gravity = Gravity.CENTER
-                    setTextColor(0xFFFFFFFF.toInt())
-                    background = android.graphics.drawable.GradientDrawable().apply {
-                        setColor(c.accent); cornerRadius = dp(10).toFloat()
-                    }
-                }
-                imgContainer.addView(check)
-            }
-
-            cell.addView(imgContainer)
-
-            // 标签（如果有）
-            if (sticker.label.isNotEmpty()) {
-                val label = TextView(this).apply {
-                    text = sticker.label
-                    textSize = 9f
-                    setTextColor(c.textSecondary)
-                    gravity = Gravity.CENTER
-                    maxLines = 1
-                    setPadding(0, dp(2), 0, 0)
-                    layoutParams = LinearLayout.LayoutParams(thumbSize, LinearLayout.LayoutParams.WRAP_CONTENT)
-                }
-                cell.addView(label)
-            }
-
-            // 点击事件
-            if (isStickerManageMode) {
-                cell.setOnClickListener {
-                    if (sticker.id in selectedStickerIds) selectedStickerIds.remove(sticker.id)
-                    else selectedStickerIds.add(sticker.id)
-                    refreshStickerGrid()
-                }
-            } else {
-                cell.setOnClickListener { sendSticker(file) }
-                cell.setOnLongClickListener { showStickerOptionsDialog(sticker); true }
-            }
-
-            currentRow?.addView(cell)
-        }
-
-        // 补齐最后一行空位
-        val remainder = stickers.size % columns
-        if (remainder != 0 && currentRow != null) {
-            for (i in 0 until (columns - remainder)) {
-                val spacer = View(this).apply {
-                    layoutParams = LinearLayout.LayoutParams(0, 1, 1f)
-                }
-                currentRow.addView(spacer)
-            }
-        }
-
-        // 4. 管理模式底部操作栏
-        stickerActionBar.removeAllViews()
-        if (isStickerManageMode) {
-            stickerActionBar.visibility = View.VISIBLE
-            // 全选/取消全选按钮
-            val allSelected = selectedStickerIds.size == stickers.size && stickers.isNotEmpty()
-            stickerActionBar.addView(TextView(this).apply {
-                text = if (allSelected) "取消全选" else "全选"
-                textSize = 12f; setTextColor(c.accent)
-                setPadding(dp(8), dp(4), dp(12), dp(4))
-                setOnClickListener {
-                    if (allSelected) {
-                        selectedStickerIds.clear()
-                    } else {
-                        selectedStickerIds.addAll(stickers.map { it.id })
-                    }
-                    refreshStickerGrid()
-                }
-            })
-            stickerActionBar.addView(TextView(this).apply {
-                text = if (selectedStickerIds.isEmpty()) "点击选择" else "已选 ${selectedStickerIds.size} 张"
-                textSize = 12f; setTextColor(c.textSecondary)
-                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-            })
-            if (selectedStickerIds.isNotEmpty()) {
-                stickerActionBar.addView(TextView(this).apply {
-                    text = "标签"; textSize = 12f; setTextColor(c.accent)
-                    setPadding(dp(12), dp(4), dp(12), dp(4))
-                    setOnClickListener {
-                        val input = EditText(this@ChatConversationActivity).apply {
-                            hint = "给选中的表情包统一设标签"; setPadding(48, 32, 48, 32)
-                        }
-                        AlertDialog.Builder(this@ChatConversationActivity)
-                            .setTitle("批量设置标签").setView(input)
-                            .setPositiveButton("保存") { _, _ ->
-                                for (id in selectedStickerIds) stickerStorage.setLabel(id, input.text.toString().trim())
-                                refreshStickerGrid()
-                            }.setNegativeButton("取消", null).show()
-                    }
-                })
-                stickerActionBar.addView(TextView(this).apply {
-                    text = "移动"; textSize = 12f; setTextColor(c.accent)
-                    setPadding(dp(12), dp(4), dp(12), dp(4))
-                    setOnClickListener { showMoveToGroupDialog(selectedStickerIds.toList()) }
-                })
-                stickerActionBar.addView(TextView(this).apply {
-                    text = "删除"; textSize = 12f; setTextColor(c.errorText)
-                    setPadding(dp(12), dp(4), dp(12), dp(4))
-                    setOnClickListener {
-                        val count = selectedStickerIds.size
-                        AlertDialog.Builder(this@ChatConversationActivity)
-                            .setTitle("删除 $count 张表情包？")
-                            .setPositiveButton("删除") { _, _ ->
-                                stickerStorage.batchDelete(selectedStickerIds.toList())
-                                selectedStickerIds.clear(); refreshStickerGrid()
-                            }.setNegativeButton("取消", null).show()
-                    }
-                })
-            }
-        } else {
-            stickerActionBar.visibility = View.GONE
-        }
-    }
-
-    private fun makeGroupTab(text: String, selected: Boolean, dp: (Int) -> Int): TextView {
-        return TextView(this).apply {
-            this.text = text; textSize = 11f
-            setPadding(dp(10), dp(4), dp(10), dp(4))
-            val bg = android.graphics.drawable.GradientDrawable().apply {
-                cornerRadius = dp(12).toFloat()
-                if (selected) setColor(c.accent) else setColor(c.accentBg)
-            }
-            background = bg
-            setTextColor(if (selected) c.textOnAccent else c.textSecondary)
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { marginEnd = dp(6) }
-        }
-    }
-
-    private fun showStickerOptionsDialog(sticker: Sticker) {
-        val fresh = stickerStorage.findById(sticker.id) ?: sticker
-        val options = arrayOf(
-            "设置标签（当前：${fresh.label.ifEmpty { "无" }}）",
-            "移动到分组（当前：${fresh.group}）",
-            "删除"
-        )
-        AlertDialog.Builder(this).setItems(options) { _, which ->
-            when (which) {
-                0 -> {
-                    val input = EditText(this).apply {
-                        setText(fresh.label); hint = "简短描述，比如「思考」「嗯？」"; setPadding(48, 32, 48, 32)
-                    }
-                    AlertDialog.Builder(this).setTitle("设置标签").setView(input)
-                        .setPositiveButton("保存") { _, _ ->
-                            stickerStorage.setLabel(fresh.id, input.text.toString().trim())
-                            refreshStickerGrid()
-                        }.setNegativeButton("取消", null).show()
-                }
-                1 -> showMoveToGroupDialog(listOf(fresh.id))
-                2 -> {
-                    stickerStorage.deleteSticker(fresh.id); refreshStickerGrid()
-                    Toast.makeText(this, "已删除", Toast.LENGTH_SHORT).show()
-                }
-            }
-        }.show()
-    }
-
-    private fun showMoveToGroupDialog(stickerIds: List<String>) {
-        val groups = stickerStorage.loadGroups().map { it.first }.toMutableList()
-        groups.add("＋ 新建分组")
-        AlertDialog.Builder(this).setTitle("移动到")
-            .setItems(groups.toTypedArray()) { _, which ->
-                if (which == groups.size - 1) {
-                    val input = EditText(this).apply { hint = "分组名"; setPadding(48, 32, 48, 32) }
-                    AlertDialog.Builder(this).setTitle("新建分组").setView(input)
-                        .setPositiveButton("确定") { _, _ ->
-                            val name = input.text.toString().trim()
-                            if (name.isNotEmpty()) {
-                                stickerStorage.batchSetGroup(stickerIds, name)
-                                selectedStickerIds.clear(); refreshStickerGrid()
-                                Toast.makeText(this, "已移动到「$name」", Toast.LENGTH_SHORT).show()
-                            }
-                        }.setNegativeButton("取消", null).show()
-                } else {
-                    stickerStorage.batchSetGroup(stickerIds, groups[which])
-                    selectedStickerIds.clear(); refreshStickerGrid()
-                    Toast.makeText(this, "已移动到「${groups[which]}」", Toast.LENGTH_SHORT).show()
-                }
-            }.show()
-    }
-
-    private fun showGroupOptionsDialog(groupName: String) {
-        AlertDialog.Builder(this).setTitle("分组：$groupName")
-            .setItems(arrayOf("重命名", "删除分组（表情包移到未分类）")) { _, which ->
-                when (which) {
-                    0 -> {
-                        val input = EditText(this).apply { setText(groupName); setPadding(48, 32, 48, 32) }
-                        AlertDialog.Builder(this).setTitle("重命名分组").setView(input)
-                            .setPositiveButton("确定") { _, _ ->
-                                val n = input.text.toString().trim()
-                                if (n.isNotEmpty() && n != groupName) {
-                                    stickerStorage.renameGroup(groupName, n)
-                                    if (currentStickerGroup == groupName) currentStickerGroup = n
-                                    refreshStickerGrid()
-                                }
-                            }.setNegativeButton("取消", null).show()
-                    }
-                    1 -> {
-                        stickerStorage.deleteGroup(groupName)
-                        if (currentStickerGroup == groupName) currentStickerGroup = null
-                        refreshStickerGrid()
-                        Toast.makeText(this, "已删除分组", Toast.LENGTH_SHORT).show()
-                    }
-                }
-            }.show()
-    }
-
-    private fun showStickerManageDialog() {
-        isStickerManageMode = !isStickerManageMode
-        if (!isStickerManageMode) selectedStickerIds.clear()
-        refreshStickerGrid()
-    }
-
     // ===== 发送表情包（本质就是发图片） =====
     private fun sendSticker(stickerFile: File) {
         pendingImagePaths.clear()
         pendingImagePaths.add(stickerFile.absolutePath)
-        stickerPanel.visibility = View.GONE
+        stickerPanelManager.hide()
         sendMessage()
     }
     // ===== 关闭搜索面板 =====
@@ -2796,12 +1732,37 @@ $diaries
 [对用户的印象]
 $impression"""
 
-                val api = ApiHelper(apiUrl, apiKey, apiModel, apiType)
+                // 梦境 API 优先级：好友单独的梦境API → 全局梦境API → 不做梦
+                val friend = FriendStorage(this).getFriend(friendId)
+                val globalPrefs = getSharedPreferences("haven_prefs", MODE_PRIVATE)
+
+                val dreamUrl: String
+                val dreamKey: String
+                val dreamModel: String
+                val dreamType: String
+
+                if (friend != null && friend.dreamApiUrl.isNotEmpty() && friend.dreamApiKey.isNotEmpty()) {
+                    dreamUrl = friend.dreamApiUrl
+                    dreamKey = friend.dreamApiKey
+                    dreamModel = friend.dreamApiModel
+                    dreamType = friend.dreamApiType
+                } else if (globalPrefs.getString("dream_api_url", "")!!.isNotEmpty() &&
+                           globalPrefs.getString("dream_api_key", "")!!.isNotEmpty()) {
+                    dreamUrl = globalPrefs.getString("dream_api_url", "")!!
+                    dreamKey = globalPrefs.getString("dream_api_key", "")!!
+                    dreamModel = globalPrefs.getString("dream_api_model", "")!!
+                    dreamType = globalPrefs.getString("dream_api_type", "openai")!!
+                } else {
+                    // 没有梦境 API，不做梦
+                    return@Thread
+                }
+
+                val dreamApi = ApiHelper(dreamUrl, dreamKey, dreamModel, dreamType)
                 val dreamMessages = listOf(
                     ChatMessage("system", dreamSystemPrompt),
                     ChatMessage("user", "开始做梦")
                 )
-                val response = api.sendChat(dreamMessages)
+                val response = dreamApi.sendChat(dreamMessages)
                 val result = response.text.trim()
                 val sleepTime = dreamStorage.getSleepTime(friendId)
 
@@ -2843,152 +1804,7 @@ $impression"""
     private fun addSeenIndicator() = bubbleRenderer.addSeenIndicator()
 
     private fun addAiBubbleStreaming(msg: String, timeStr: String) {
-        // ===== 处理 [SPLIT] 分条消息 =====
-        if (msg.contains("[SPLIT]")) {
-            val parts = msg.split("[SPLIT]").map { it.trim() }.filter { it.isNotEmpty() }
-            if (parts.size > 1) {
-                val splitHandler = android.os.Handler(android.os.Looper.getMainLooper())
-                var delay = 0L
-                for (part in parts) {
-                    splitHandler.postDelayed({
-                        renderAiSegment(part, timeStr)
-                        scrollToBottom()
-                    }, delay)
-                    delay += 600L // 每条间隔 600ms
-                }
-                return
-            }
-        }
-        // 普通单条消息（可能包含内联表情包）
-        renderAiSegment(msg, timeStr)
-    }
-
-    /**
-     * 渲染一段 AI 消息——可能是纯文字、纯表情包、或文字+表情包混合
-     * [STICKER_IMG:/path] 标记会被渲染成图片气泡
-     */
-    private fun renderAiSegment(segment: String, timeStr: String) {
-        val stickerPattern = Regex("\\[STICKER_IMG:(.+?)]")
-
-        if (!segment.contains("[STICKER_IMG:")) {
-            // 纯文字
-            addAiBubbleSingle(segment, timeStr)
-            return
-        }
-
-        // 混合内容：按表情包标记拆分，交替渲染文字和图片
-        var remaining = segment
-        var match = stickerPattern.find(remaining)
-        while (match != null) {
-            val textBefore = remaining.substring(0, match.range.first).trim()
-            if (textBefore.isNotEmpty()) {
-                addAiBubbleSingle(textBefore, timeStr)
-            }
-            val stickerPath = match.groupValues[1]
-            addAiImageBubble(stickerPath, timeStr)
-            remaining = remaining.substring(match.range.last + 1)
-            match = stickerPattern.find(remaining)
-        }
-        // 表情包后面还有文字
-        val textAfter = remaining.trim()
-        if (textAfter.isNotEmpty()) {
-            addAiBubbleSingle(textAfter, timeStr)
-        }
-    }
-
-    private fun addAiBubbleSingle(msg: String, timeStr: String) {
-        val dp = { value: Int -> (value * resources.displayMetrics.density).toInt() }
-
-        // ===== 创建气泡布局（跟 addAiBubble 一模一样） =====
-        val wrapper = LinearLayout(this).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { bottomMargin = dp(8) }
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.START
-        }
-        val avatar = TextView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(dp(30), dp(30)).apply {
-                marginEnd = dp(7); topMargin = dp(2)
-            }
-            gravity = Gravity.CENTER
-            this.text = friendIcon
-            textSize = 12f
-            setTextColor(c.accentStrong)
-            setBackgroundResource(R.drawable.icon_bg)
-        }
-        val column = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            )
-        }
-        val bubble = TextView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            )
-            maxWidth = (resources.displayMetrics.widthPixels * 0.80).toInt()
-            // 一开始是空的，等下定时器会往里填字
-            this.text = ""
-            setTextColor(c.textOnAccent)
-            textSize = 14f
-            setLineSpacing(0f, 1.35f)
-            setPadding(dp(11), dp(8), dp(11), dp(8))
-            setBackgroundResource(R.drawable.chat_bubble_ai)
-            // 长按菜单用的是完整内容 msg，不是当前显示的部分
-            setOnLongClickListener { showMessageMenu(msg, friendName); true }
-        }
-        val time = TextView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { topMargin = dp(2) }
-            this.text = timeStr
-            textSize = 9f
-            setTextColor(c.timeText)
-            setPadding(dp(4), 0, 0, 0)
-        }
-
-        // 先把时间藏起来，打完字再显示
-        time.visibility = View.GONE
-
-        column.addView(bubble)
-        column.addView(time)
-        wrapper.addView(avatar)
-        wrapper.addView(column)
-        messagesContainer.addView(wrapper)
-        scrollToBottom()
-
-        // ===== 开始逐字显示 =====
-        var currentIndex = 0
-        // 每次显示 2 个字符，每 30 毫秒一次
-        // 这样一秒大约蹦 66 个字，阅读起来刚好舒服
-        val chunkSize = 2
-        val delay = 30L
-
-        val typingRunnable = object : Runnable {
-            override fun run() {
-                if (currentIndex < msg.length) {
-                    // 往后推进几个字
-                    currentIndex = minOf(currentIndex + chunkSize, msg.length)
-                    // 更新气泡里的文字（打字阶段先显示纯文本，不渲染 Markdown）
-                    bubble.text = msg.substring(0, currentIndex)
-                    scrollToBottom()
-                    // 继续下一次
-                    handler.postDelayed(this, delay)
-                } else {
-                    // 全部打完了！换成 Markdown 渲染版本
-                    bubble.text = MarkdownRenderer.render(msg)
-                    // 显示时间
-                    time.visibility = View.VISIBLE
-                    scrollToBottom()
-                }
-            }
-        }
-        handler.post(typingRunnable)
+        bubbleRenderer.addAiBubbleStreaming(msg, timeStr)
     }
     
     private fun addSystemTip(msg: String) = bubbleRenderer.addSystemTip(msg)
@@ -3028,121 +1844,22 @@ $impression"""
      * 带重试按钮时点击可以重新调 API
      */
     private fun addErrorBubble(errorMsg: String, retryAction: (() -> Unit)? = null) {
-        val dp = { value: Int -> (value * resources.displayMetrics.density).toInt() }
-        val container = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply {
-                topMargin = dp(4)
-                bottomMargin = dp(10)
-                marginStart = dp(40)
-                marginEnd = dp(40)
-            }
-            gravity = Gravity.CENTER
-            val gd = android.graphics.drawable.GradientDrawable().apply {
-                setColor(c.errorBg)
-                cornerRadius = dp(12).toFloat()
-            }
-            background = gd
-            setPadding(dp(16), dp(10), dp(16), dp(10))
-        }
-
-        val errorText = TextView(this).apply {
-            text = errorMsg
-            textSize = 12f
-            setTextColor(c.errorText)
-            gravity = Gravity.CENTER
-            setLineSpacing(0f, 1.3f)
-        }
-        container.addView(errorText)
-
-        if (retryAction != null) {
-            val retryText = TextView(this).apply {
-                text = "点击重试"
-                textSize = 12f
-                setTextColor(c.accent)
-                gravity = Gravity.CENTER
-                setPadding(0, dp(6), 0, 0)
-            }
-            container.addView(retryText)
-            container.setOnClickListener {
-                messagesContainer.removeView(container)
-                retryAction()
-            }
-        }
-
-        messagesContainer.addView(container)
-        scrollToBottom()
+        bubbleRenderer.addErrorBubble(errorMsg, retryAction)
     }
 
     private fun addTimeLabel(labelText: String) {
-        val dp = { value: Int -> (value * resources.displayMetrics.density).toInt() }
-        val label = TextView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { topMargin = dp(6); bottomMargin = dp(10) }
-            gravity = Gravity.CENTER
-            this.text = labelText
-            textSize = 10f
-            setTextColor(c.timeText)
-        }
-        messagesContainer.addView(label)
+        bubbleRenderer.addTimeLabel(labelText)
     }
 
     private fun formatDateLabel(timestamp: Long): String {
-        val msgDate = Calendar.getInstance().apply { timeInMillis = timestamp }
-        val today = Calendar.getInstance()
-        return when {
-            msgDate.get(Calendar.YEAR) == today.get(Calendar.YEAR) &&
-            msgDate.get(Calendar.DAY_OF_YEAR) == today.get(Calendar.DAY_OF_YEAR) -> "今天"
-            msgDate.get(Calendar.YEAR) == today.get(Calendar.YEAR) &&
-            msgDate.get(Calendar.DAY_OF_YEAR) == today.get(Calendar.DAY_OF_YEAR) - 1 -> "昨天"
-            msgDate.get(Calendar.YEAR) == today.get(Calendar.YEAR) ->
-                SimpleDateFormat("M月d日", Locale.CHINESE).format(Date(timestamp))
-            else ->
-                SimpleDateFormat("yyyy年M月d日", Locale.CHINESE).format(Date(timestamp))
-        }
+        return bubbleRenderer.formatDateLabel(timestamp)
     }
 
-    private var typingView: LinearLayout? = null
     private fun showTypingIndicator() {
-        val dp = { value: Int -> (value * resources.displayMetrics.density).toInt() }
-        val wrapper = LinearLayout(this).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { bottomMargin = dp(8) }
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.START
-        }
-        val avatar = TextView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(dp(30), dp(30)).apply {
-                marginEnd = dp(7); topMargin = dp(2)
-            }
-            gravity = Gravity.CENTER
-            this.text = friendIcon
-            textSize = 12f
-            setTextColor(c.accentStrong)
-            setBackgroundResource(R.drawable.icon_bg)
-        }
-        val bubble = TextView(this).apply {
-            this.text = "$friendName 正在输入..."
-            textSize = 12f
-            setTextColor(c.accent)
-            setPadding(dp(11), dp(8), dp(11), dp(8))
-            setBackgroundResource(R.drawable.chat_bubble_ai)
-        }
-        wrapper.addView(avatar)
-        wrapper.addView(bubble)
-        typingView = wrapper
-        messagesContainer.addView(wrapper)
-        scrollToBottom()
+        bubbleRenderer.showTypingIndicator()
     }
     private fun removeTypingIndicator() {
-        typingView?.let { messagesContainer.removeView(it); typingView = null }
+        bubbleRenderer.removeTypingIndicator()
     }
     private fun scrollToBottom() = bubbleRenderer.scrollToBottom()
 }

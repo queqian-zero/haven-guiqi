@@ -54,6 +54,10 @@ class FriendStorage(private val context: Context) {
                     apiKey = obj.optString("api_key", ""),
                     apiModel = obj.optString("api_model", ""),
                     apiType = obj.optString("api_type", "openai"),
+                    dreamApiUrl = obj.optString("dream_api_url", ""),
+                    dreamApiKey = obj.optString("dream_api_key", ""),
+                    dreamApiModel = obj.optString("dream_api_model", ""),
+                    dreamApiType = obj.optString("dream_api_type", "openai"),
                     createdAt = obj.optLong("created_at", System.currentTimeMillis())
                 ))
             }
@@ -78,6 +82,10 @@ class FriendStorage(private val context: Context) {
                 put("api_key", f.apiKey)
                 put("api_model", f.apiModel)
                 put("api_type", f.apiType)
+                put("dream_api_url", f.dreamApiUrl)
+                put("dream_api_key", f.dreamApiKey)
+                put("dream_api_model", f.dreamApiModel)
+                put("dream_api_type", f.dreamApiType)
                 put("created_at", f.createdAt)
             })
         }
@@ -149,5 +157,9 @@ data class Friend(
     val apiKey: String = "",
     val apiModel: String = "",
     val apiType: String = "openai", // "openai" / "claude" / "gemini"
+    val dreamApiUrl: String = "",  // 梦境 API（空则用全局梦境配置）
+    val dreamApiKey: String = "",
+    val dreamApiModel: String = "",
+    val dreamApiType: String = "openai",
     val createdAt: Long = System.currentTimeMillis()
 )
