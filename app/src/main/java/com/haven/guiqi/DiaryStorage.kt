@@ -157,9 +157,6 @@ class DiaryStorage(private val context: Context) {
             val content = match.groupValues[1].trim()
             if (content.isNotEmpty()) {
                 addDiary(friendId, content)
-                // 日记内容可能很长，提示只显示前 20 个字
-                val preview = if (content.length > 20) content.substring(0, 20) + "..." else content
-                actions.add("📔 写了日记: $preview")
             }
             text = text.replace(match.value, "")
         }

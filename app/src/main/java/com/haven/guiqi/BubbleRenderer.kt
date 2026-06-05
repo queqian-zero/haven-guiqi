@@ -578,10 +578,11 @@ class BubbleRenderer(
         if (msg.contains("[SPLIT]")) {
             val parts = msg.split("[SPLIT]").map { it.trim() }.filter { it.isNotEmpty() }
             if (parts.size > 1) {
+                // 分条：每条静态渲染，不打字，只做延迟出现
                 var delay = 0L
                 for (part in parts) {
                     handler.postDelayed({
-                        renderAiSegment(part, timeStr)
+                        renderAiSegmentStatic(part, timeStr)
                         scrollToBottom()
                     }, delay)
                     delay += 600L
@@ -589,6 +590,7 @@ class BubbleRenderer(
                 return
             }
         }
+        // 单条：打字效果
         renderAiSegment(msg, timeStr)
     }
 

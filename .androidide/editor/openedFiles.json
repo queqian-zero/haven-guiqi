@@ -5,13 +5,13 @@
       "selection": {
         "end": {
           "column": 1,
-          "index": 32077,
-          "line": 804
+          "index": 32142,
+          "line": 806
         },
         "start": {
           "column": 1,
-          "index": 32077,
-          "line": 804
+          "index": 32142,
+          "line": 806
         }
       }
     },
@@ -20,13 +20,13 @@
       "selection": {
         "end": {
           "column": 1,
-          "index": 71817,
-          "line": 1864
+          "index": 72046,
+          "line": 1869
         },
         "start": {
           "column": 1,
-          "index": 71817,
-          "line": 1864
+          "index": 72046,
+          "line": 1869
         }
       }
     },
@@ -119,7 +119,22 @@
           "line": 637
         }
       }
+    },
+    {
+      "file": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/java/com/haven/guiqi/DiaryStorage.kt",
+      "selection": {
+        "end": {
+          "column": 1,
+          "index": 8597,
+          "line": 279
+        },
+        "start": {
+          "column": 1,
+          "index": 8597,
+          "line": 279
+        }
+      }
     }
   ],
-  "selectedFile": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/java/com/haven/guiqi/ChatSettingsActivity.kt"
+  "selectedFile": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/java/com/haven/guiqi/ChatConversationActivity.kt"
 }

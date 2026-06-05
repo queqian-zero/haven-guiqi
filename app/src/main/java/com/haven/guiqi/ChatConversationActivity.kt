@@ -265,6 +265,7 @@ class ChatConversationActivity : AppCompatActivity() {
         inputMessage.setOnKeyListener { _, keyCode, event ->
             if (keyCode == android.view.KeyEvent.KEYCODE_ENTER && event.action == android.view.KeyEvent.ACTION_DOWN) {
                 sendMessage()
+                inputMessage.post { inputMessage.text.clear() }
                 true
             } else {
                 false
@@ -1039,9 +1040,13 @@ class ChatConversationActivity : AppCompatActivity() {
                 // 图片也进待发区
                 val caption = if (msg.isNotEmpty()) msg else ""
                 batchModeManager.addImage(imagePaths, caption)
+                inputMessage.text.clear()
+                pendingImagePaths.clear()
+                removePendingPreview()
                 return
             } else if (msg.isNotEmpty()) {
                 batchModeManager.addText(msg)
+                inputMessage.text.clear()
                 return
             }
         }
