@@ -105,6 +105,26 @@ class ChatSettingsActivity : AppCompatActivity() {
             if (friend != null) showApiConfigDialog(friend)
         }
 
+        // 梦境 API
+        if (friend != null && friend.dreamApiUrl.isNotEmpty()) {
+            addInfoRow("梦境模型", friend.dreamApiModel)
+        } else {
+            val globalDreamUrl = getSharedPreferences("haven_prefs", MODE_PRIVATE)
+                .getString("dream_api_url", "") ?: ""
+            if (globalDreamUrl.isNotEmpty()) {
+                addInfoRow("梦境", "使用全局梦境 API")
+            } else {
+                addInfoRow("梦境", "未配置（不会做梦）")
+            }
+        }
+
+        addClickItem(
+            "配置梦境 API",
+            "做梦用的模型，跟聊天不同才有意外感"
+        ) {
+            if (friend != null) showDreamApiConfigDialog(friend)
+        }
+
         // ===== 聊天设置区 =====
         addSectionTitle("聊天设置")
 
@@ -387,6 +407,40 @@ class ChatSettingsActivity : AppCompatActivity() {
         }
         layout.addView(inputModel)
 
+        val fetchBtn = TextView(this).apply {
+            this.text = "🔍 拉取可用模型"
+            textSize = 13f
+            setTextColor(c.accent)
+            setPadding(0, dp(6), 0, dp(4))
+            setOnClickListener {
+                val url = inputUrl.text.toString().trim()
+                val key = inputKey.text.toString().trim()
+                if (url.isEmpty() || key.isEmpty()) {
+                    Toast.makeText(this@ChatSettingsActivity, "请先填写地址和密钥", Toast.LENGTH_SHORT).show()
+                    return@setOnClickListener
+                }
+                this.text = "⏳ 拉取中..."
+                this.isEnabled = false
+                fetchModels(url, key, selectedType) { models ->
+                    runOnUiThread {
+                        this.text = "🔍 拉取可用模型"
+                        this.isEnabled = true
+                        if (models.isEmpty()) {
+                            Toast.makeText(this@ChatSettingsActivity, "没有拉取到模型，检查地址和密钥", Toast.LENGTH_SHORT).show()
+                        } else {
+                            AlertDialog.Builder(this@ChatSettingsActivity)
+                                .setTitle("选择模型 (${models.size})")
+                                .setItems(models.toTypedArray()) { _, which ->
+                                    inputModel.setText(models[which])
+                                }
+                                .show()
+                        }
+                    }
+                }
+            }
+        }
+        layout.addView(fetchBtn)
+
         AlertDialog.Builder(this)
             .setTitle("${friend.name} 的 API 配置")
             .setView(layout)
@@ -409,5 +463,176 @@ class ChatSettingsActivity : AppCompatActivity() {
             }
             .setNegativeButton("取消", null)
             .show()
+    }
+
+    // ===== 配置梦境 API =====
+    private fun showDreamApiConfigDialog(friend: Friend) {
+        val dp = { value: Int -> (value * resources.displayMetrics.density).toInt() }
+
+        val layout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(16), dp(20), dp(8))
+        }
+
+        var selectedType = friend.dreamApiType
+        val typeNames = arrayOf("OpenAI 格式（GPT/DeepSeek/中转站）", "Claude 原生", "Gemini 原生")
+        val typeValues = arrayOf("openai", "claude", "gemini")
+        val currentTypeIndex = typeValues.indexOf(selectedType).coerceAtLeast(0)
+
+        val typeBtn = TextView(this).apply {
+            this.text = "API 类型: ${typeNames[currentTypeIndex]}"
+            textSize = 14f
+            setTextColor(c.textPrimary)
+            setPadding(0, 0, 0, dp(12))
+        }
+        typeBtn.setOnClickListener {
+            AlertDialog.Builder(this)
+                .setTitle("选择 API 类型")
+                .setItems(typeNames) { _, which ->
+                    selectedType = typeValues[which]
+                    typeBtn.text = "API 类型: ${typeNames[which]}"
+                }
+                .show()
+        }
+        layout.addView(typeBtn)
+
+        layout.addView(TextView(this).apply {
+            this.text = "做梦用不同的模型，梦里才会有意外。\n留空则不做梦（或使用全局梦境配置）。"
+            textSize = 11f
+            setTextColor(c.textSecondary)
+            setPadding(0, 0, 0, dp(12))
+        })
+
+        val inputUrl = EditText(this).apply {
+            this.hint = "梦境 API 地址"
+            setText(friend.dreamApiUrl)
+            textSize = 14f
+            setTextColor(c.textPrimary)
+            setHintTextColor(c.textHint)
+        }
+        layout.addView(inputUrl)
+
+        val inputKey = EditText(this).apply {
+            this.hint = "梦境 API 密钥"
+            setText(friend.dreamApiKey)
+            textSize = 14f
+            setTextColor(c.textPrimary)
+            setHintTextColor(c.textHint)
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or
+                    android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+        }
+        layout.addView(inputKey)
+
+        val inputModel = EditText(this).apply {
+            this.hint = "梦境模型名称"
+            setText(friend.dreamApiModel)
+            textSize = 14f
+            setTextColor(c.textPrimary)
+            setHintTextColor(c.textHint)
+        }
+        layout.addView(inputModel)
+
+        val fetchBtn = TextView(this).apply {
+            this.text = "🔍 拉取可用模型"
+            textSize = 13f
+            setTextColor(c.accent)
+            setPadding(0, dp(6), 0, dp(4))
+            setOnClickListener {
+                val url = inputUrl.text.toString().trim()
+                val key = inputKey.text.toString().trim()
+                if (url.isEmpty() || key.isEmpty()) {
+                    Toast.makeText(this@ChatSettingsActivity, "请先填写地址和密钥", Toast.LENGTH_SHORT).show()
+                    return@setOnClickListener
+                }
+                this.text = "⏳ 拉取中..."
+                this.isEnabled = false
+                fetchModels(url, key, selectedType) { models ->
+                    runOnUiThread {
+                        this.text = "🔍 拉取可用模型"
+                        this.isEnabled = true
+                        if (models.isEmpty()) {
+                            Toast.makeText(this@ChatSettingsActivity, "没有拉取到模型，检查地址和密钥", Toast.LENGTH_SHORT).show()
+                        } else {
+                            AlertDialog.Builder(this@ChatSettingsActivity)
+                                .setTitle("选择梦境模型 (${models.size})")
+                                .setItems(models.toTypedArray()) { _, which ->
+                                    inputModel.setText(models[which])
+                                }
+                                .show()
+                        }
+                    }
+                }
+            }
+        }
+        layout.addView(fetchBtn)
+
+        AlertDialog.Builder(this)
+            .setTitle("${friend.name} 的梦境 API")
+            .setView(layout)
+            .setPositiveButton("保存") { _, _ ->
+                FriendStorage(this).updateFriend(friend.copy(
+                    dreamApiUrl = inputUrl.text.toString().trim(),
+                    dreamApiKey = inputKey.text.toString().trim(),
+                    dreamApiModel = inputModel.text.toString().trim(),
+                    dreamApiType = selectedType
+                ))
+                Toast.makeText(this, "梦境 API 已保存 🌙", Toast.LENGTH_SHORT).show()
+                buildSettings()
+            }
+            .setNeutralButton("清除配置") { _, _ ->
+                FriendStorage(this).updateFriend(friend.copy(
+                    dreamApiUrl = "", dreamApiKey = "", dreamApiModel = "", dreamApiType = "openai"
+                ))
+                Toast.makeText(this, "已清除梦境配置", Toast.LENGTH_SHORT).show()
+                buildSettings()
+            }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    // ===== 拉取可用模型 =====
+    private fun fetchModels(apiUrl: String, apiKey: String, apiType: String, onResult: (List<String>) -> Unit) {
+        Thread {
+            try {
+                val baseUrl = apiUrl.trimEnd('/')
+                val modelsUrl = when {
+                    baseUrl.endsWith("/v1") -> "$baseUrl/models"
+                    baseUrl.contains("/v1/") -> baseUrl.substringBefore("/v1/") + "/v1/models"
+                    else -> "$baseUrl/v1/models"
+                }
+                val conn = java.net.URL(modelsUrl).openConnection() as java.net.HttpURLConnection
+                conn.requestMethod = "GET"
+                conn.connectTimeout = 10000
+                conn.readTimeout = 10000
+                when (apiType) {
+                    "claude" -> {
+                        conn.setRequestProperty("x-api-key", apiKey)
+                        conn.setRequestProperty("anthropic-version", "2023-06-01")
+                    }
+                    else -> {
+                        conn.setRequestProperty("Authorization", "Bearer $apiKey")
+                    }
+                }
+                if (conn.responseCode == 200) {
+                    val body = conn.inputStream.bufferedReader().readText()
+                    val json = org.json.JSONObject(body)
+                    val models = mutableListOf<String>()
+                    val data = json.optJSONArray("data")
+                    if (data != null) {
+                        for (i in 0 until data.length()) {
+                            val id = data.getJSONObject(i).optString("id", "")
+                            if (id.isNotEmpty()) models.add(id)
+                        }
+                    }
+                    models.sort()
+                    onResult(models)
+                } else {
+                    onResult(emptyList())
+                }
+                conn.disconnect()
+            } catch (e: Exception) {
+                onResult(emptyList())
+            }
+        }.start()
     }
 }
