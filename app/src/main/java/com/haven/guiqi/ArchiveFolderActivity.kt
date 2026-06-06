@@ -91,6 +91,16 @@ class ArchiveFolderActivity : AppCompatActivity() {
         friendName = intent.getStringExtra("friend_name") ?: "好友"
         folderType = intent.getStringExtra("folder_type") ?: "memory"
 
+        // 梦境走专属页面
+        if (folderType == "dream") {
+            val dreamIntent = android.content.Intent(this, DreamArchiveActivity::class.java)
+            dreamIntent.putExtra("friend_id", friendId)
+            dreamIntent.putExtra("friend_name", friendName)
+            startActivity(dreamIntent)
+            finish()
+            return
+        }
+
         // 根据类型设置标题和颜色
         when (folderType) {
             "memory" -> {

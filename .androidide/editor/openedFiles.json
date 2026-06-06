@@ -1,47 +1,17 @@
 {
   "allFiles": [
     {
-      "file": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/java/com/haven/guiqi/BubbleRenderer.kt",
-      "selection": {
-        "end": {
-          "column": 1,
-          "index": 32142,
-          "line": 806
-        },
-        "start": {
-          "column": 1,
-          "index": 32142,
-          "line": 806
-        }
-      }
-    },
-    {
       "file": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/java/com/haven/guiqi/ChatConversationActivity.kt",
       "selection": {
         "end": {
           "column": 1,
-          "index": 72046,
-          "line": 1869
+          "index": 72454,
+          "line": 1878
         },
         "start": {
           "column": 1,
-          "index": 72046,
-          "line": 1869
-        }
-      }
-    },
-    {
-      "file": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/res/drawable/dialog_bg.xml",
-      "selection": {
-        "end": {
-          "column": 0,
-          "index": 0,
-          "line": 0
-        },
-        "start": {
-          "column": 0,
-          "index": 0,
-          "line": 0
+          "index": 72454,
+          "line": 1878
         }
       }
     },
@@ -50,91 +20,16 @@
       "selection": {
         "end": {
           "column": 1,
-          "index": 5476,
-          "line": 141
+          "index": 5567,
+          "line": 142
         },
         "start": {
           "column": 1,
-          "index": 5476,
-          "line": 141
-        }
-      }
-    },
-    {
-      "file": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/java/com/haven/guiqi/FriendStorage.kt",
-      "selection": {
-        "end": {
-          "column": 1,
-          "index": 5312,
-          "line": 164
-        },
-        "start": {
-          "column": 1,
-          "index": 5312,
-          "line": 164
-        }
-      }
-    },
-    {
-      "file": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/java/com/haven/guiqi/StickerPanelManager.kt",
-      "selection": {
-        "end": {
-          "column": 1,
-          "index": 14786,
-          "line": 323
-        },
-        "start": {
-          "column": 1,
-          "index": 14786,
-          "line": 323
-        }
-      }
-    },
-    {
-      "file": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/java/com/haven/guiqi/BatchModeManager.kt",
-      "selection": {
-        "end": {
-          "column": 1,
-          "index": 4563,
-          "line": 129
-        },
-        "start": {
-          "column": 1,
-          "index": 4563,
-          "line": 129
-        }
-      }
-    },
-    {
-      "file": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/java/com/haven/guiqi/ChatSettingsActivity.kt",
-      "selection": {
-        "end": {
-          "column": 1,
-          "index": 23611,
-          "line": 637
-        },
-        "start": {
-          "column": 1,
-          "index": 23611,
-          "line": 637
-        }
-      }
-    },
-    {
-      "file": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/java/com/haven/guiqi/DiaryStorage.kt",
-      "selection": {
-        "end": {
-          "column": 1,
-          "index": 8597,
-          "line": 279
-        },
-        "start": {
-          "column": 1,
-          "index": 8597,
-          "line": 279
+          "index": 5567,
+          "line": 142
         }
       }
     }
   ],
-  "selectedFile": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/java/com/haven/guiqi/ChatConversationActivity.kt"
+  "selectedFile": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/java/com/haven/guiqi/SystemPromptBuilder.kt"
 }

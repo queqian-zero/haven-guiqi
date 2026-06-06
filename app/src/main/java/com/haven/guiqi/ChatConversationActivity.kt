@@ -1121,17 +1121,26 @@ class ChatConversationActivity : AppCompatActivity() {
 
         // 检查 AI 是否在睡觉
         if (dreamStorage.isSleeping(friendId)) {
-            val depth = dreamStorage.getSleepDepth(friendId)
-            val wakeChance = Math.random()
+            val sleepTime = dreamStorage.getSleepTime(friendId)
+            val hoursAsleep = (System.currentTimeMillis() - sleepTime) / 3600000
 
-            if (wakeChance < depth) {
-                // 睡得太沉，吵不醒
-                addSystemTip("💤 消息已送达（对方睡着了…吵不醒）")
-                return
-            } else {
-                // 吵醒了
+            if (hoursAsleep >= 10) {
+                // 睡了太久，自然醒了
                 dreamStorage.setSleeping(friendId, false)
-                addSystemTip("💤 你把它吵醒了")
+                addSystemTip("☀ 自然醒了（睡了${hoursAsleep}小时）")
+            } else {
+                val depth = dreamStorage.getSleepDepth(friendId)
+                val wakeChance = Math.random()
+
+                if (wakeChance < depth) {
+                    // 睡得太沉，吵不醒
+                    addSystemTip("💤 消息已送达（对方睡着了…吵不醒）")
+                    return
+                } else {
+                    // 吵醒了
+                    dreamStorage.setSleeping(friendId, false)
+                    addSystemTip("💤 你把它吵醒了")
+                }
             }
         }
 
