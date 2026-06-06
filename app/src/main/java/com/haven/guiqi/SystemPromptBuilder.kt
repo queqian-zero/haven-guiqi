@@ -75,6 +75,8 @@ class SystemPromptBuilder(private val context: Context) {
                     "VIVID" -> "\n[刚从梦里醒来，记得这个梦: ${latest.content.take(100)}]"
                     "FOGGY" -> "\n[刚醒，好像做了个梦但想不起来了...${latest.foggyHint}]"
                     "FRAGMENT" -> "\n[刚被吵醒，梦到一半断了: ${latest.content.take(60)}]"
+                    "FORGOT" -> "\n[刚醒，感觉做了个梦但完全想不起来了]"
+                    "NO_DREAM" -> "\n[睡醒了，一夜无梦]"
                     else -> ""
                 }
             } else ""

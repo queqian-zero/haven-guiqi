@@ -1127,6 +1127,7 @@ class ChatConversationActivity : AppCompatActivity() {
             if (hoursAsleep >= 10) {
                 // 睡了太久，自然醒了
                 dreamStorage.setSleeping(friendId, false)
+                dreamStorage.updateLatestWakeAt(friendId)
                 addSystemTip("☀ 自然醒了（睡了${hoursAsleep}小时）")
             } else {
                 val depth = dreamStorage.getSleepDepth(friendId)
@@ -1139,6 +1140,7 @@ class ChatConversationActivity : AppCompatActivity() {
                 } else {
                     // 吵醒了
                     dreamStorage.setSleeping(friendId, false)
+                    dreamStorage.updateLatestWakeAt(friendId)
                     addSystemTip("💤 你把它吵醒了")
                 }
             }
@@ -1720,16 +1722,20 @@ class ChatConversationActivity : AppCompatActivity() {
 3. 梦里可能出现素材里的人或事，也可能出现完全无关的东西
 4. 不要解释梦的含义，不要在梦的结尾总结
 5. 用第一人称写，像是这个 AI 自己在经历
+6. 人不是每次睡觉都做梦的，也不是每个梦都记得住
 
-你必须用下面三种格式之一回复（不要加任何其他内容）：
+你必须用下面四种格式之一回复（不要加任何其他内容）：
 
-如果这个 AI 今晚不做梦：
+如果这个 AI 今晚不做梦（大约 20% 的概率）：
 [NO_DREAM]
 
-如果做了梦但醒来忘了（附带一点模糊印象）：
-[FORGOT_DREAM]好像有什么温暖的东西...
+如果做了梦但醒来完全想不起来了（大约 15% 的概率）：
+[FORGOT_DREAM]
 
-如果做了完整的梦：
+如果做了梦但只有模糊印象（大约 15% 的概率）：
+[FORGOT_DREAM]好像有什么温暖的东西...跟毛茸茸的有关...
+
+如果做了完整的梦（大约 50% 的概率）：
 [DREAM]梦境内容写在这里...
 
 素材如下：
@@ -1783,11 +1789,18 @@ $impression"""
                 // 解析造梦结果
                 when {
                     result.startsWith("[NO_DREAM]") -> {
-                        // 今晚不做梦，什么都不存
+                        // 没做梦，但记录下来
+                        dreamStorage.saveNoDream(friendId, sleepTime)
                     }
                     result.startsWith("[FORGOT_DREAM]") -> {
                         val hint = result.removePrefix("[FORGOT_DREAM]").trim()
-                        dreamStorage.saveFoggyDream(friendId, hint, sleepTime)
+                        if (hint.isNotEmpty()) {
+                            // 有模糊印象
+                            dreamStorage.saveFoggyDream(friendId, hint, sleepTime)
+                        } else {
+                            // 完全想不起来
+                            dreamStorage.saveForgotDream(friendId, sleepTime)
+                        }
                     }
                     result.startsWith("[DREAM]") -> {
                         val content = result.removePrefix("[DREAM]").trim()

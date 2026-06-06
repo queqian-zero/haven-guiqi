@@ -106,6 +106,57 @@ class DreamStorage(private val context: Context) {
     }
 
     /**
+     * 做了梦但完全想不起来
+     */
+    fun saveForgotDream(friendId: String, sleepAt: Long): Dream {
+        val now = System.currentTimeMillis()
+        val dream = Dream(
+            id = "DRM-$now",
+            content = "",
+            status = "FORGOT",
+            foggyHint = "",
+            sleepAt = sleepAt,
+            wakeAt = now,
+            createdAt = now
+        )
+        val list = loadDreams(friendId).toMutableList()
+        list.add(dream)
+        save(friendId, list)
+        return dream
+    }
+
+    /**
+     * 没有做梦
+     */
+    fun saveNoDream(friendId: String, sleepAt: Long): Dream {
+        val now = System.currentTimeMillis()
+        val dream = Dream(
+            id = "DRM-$now",
+            content = "",
+            status = "NO_DREAM",
+            foggyHint = "",
+            sleepAt = sleepAt,
+            wakeAt = now,
+            createdAt = now
+        )
+        val list = loadDreams(friendId).toMutableList()
+        list.add(dream)
+        save(friendId, list)
+        return dream
+    }
+
+    /**
+     * 醒来时更新最近一个梦的 wakeAt
+     */
+    fun updateLatestWakeAt(friendId: String) {
+        val list = loadDreams(friendId).toMutableList()
+        if (list.isEmpty()) return
+        val last = list.last()
+        list[list.size - 1] = last.copy(wakeAt = System.currentTimeMillis())
+        save(friendId, list)
+    }
+
+    /**
      * 加载所有梦境（最新的在前）
      */
     fun loadDreams(friendId: String): List<Dream> {
@@ -190,6 +241,8 @@ class DreamStorage(private val context: Context) {
                 "做了一个梦，但醒来只记得……$hint"
             }
             "FRAGMENT" -> "【残梦】${dream.content}\n\n（被吵醒了，梦只做了一半）"
+            "FORGOT" -> "做了梦，但什么都想不起来了。"
+            "NO_DREAM" -> "这一晚什么都没有。"
             else -> dream.content
         }
     }
@@ -200,8 +253,10 @@ class DreamStorage(private val context: Context) {
     fun getStatusLabel(dream: Dream): String {
         return when (dream.status) {
             "VIVID" -> "🌙 完整的梦"
-            "FOGGY" -> "🌫️ 忘了的梦"
+            "FOGGY" -> "🌫️ 模糊的梦"
             "FRAGMENT" -> "💫 残梦"
+            "FORGOT" -> "🫥 想不起来"
+            "NO_DREAM" -> "🌑 没有做梦"
             else -> "🌙 梦"
         }
     }
