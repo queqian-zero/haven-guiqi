@@ -82,7 +82,7 @@ class DesktopActivity : AppCompatActivity() {
     // 默认顺序
     private val defaultIcons = listOf(
         AppIcon("chat", "聊天", "chat"),
-        AppIcon("sms", "短信", "sms"),
+        AppIcon("nest", "小窝", "nest"),
         AppIcon("archive", "馆藏", "archive"),
         AppIcon("world", "世界", "world"),
         AppIcon("workshop", "工坊", "workshop"),
@@ -655,7 +655,7 @@ class DesktopActivity : AppCompatActivity() {
                 val intent = Intent(this, ChatActivity::class.java)
                 startActivity(intent)
             }
-            "sms" -> Toast.makeText(this, "短信 - 求挽留模式开发中", Toast.LENGTH_SHORT).show()
+            "nest" -> Toast.makeText(this, "小窝 - 正在搭建中 🪹", Toast.LENGTH_SHORT).show()
             "archive" -> {
                 startActivity(Intent(this, ArchiveActivity::class.java))
             }
@@ -764,16 +764,18 @@ class DesktopActivity : AppCompatActivity() {
                     }
                     canvas.drawPath(path, paint)
                 }
-                "sms" -> {
-                    canvas.drawRoundRect(RectF(6*u,2*u,22*u,13*u), 2*u, 2*u, paint)
-                    val front = Path().apply {
-                        addRoundRect(RectF(2*u,9*u,18*u,19*u), 2*u, 2*u, Path.Direction.CW)
-                        moveTo(2*u,19*u); lineTo(2*u,22*u); lineTo(6*u,19*u)
-                    }
-                    canvas.drawPath(front, paint)
-                    canvas.drawCircle(7*u,14*u,0.7f*u,fillPaint)
-                    canvas.drawCircle(10*u,14*u,0.7f*u,fillPaint)
-                    canvas.drawCircle(13*u,14*u,0.7f*u,fillPaint)
+                "nest" -> {
+                    // 小窗户，里面透出暖光
+                    canvas.drawRoundRect(RectF(4*u,3*u,20*u,20*u), 1.5f*u, 1.5f*u, paint)
+                    // 窗户十字格
+                    canvas.drawLine(12*u,3*u,12*u,20*u, paint)
+                    canvas.drawLine(4*u,11.5f*u,20*u,11.5f*u, paint)
+                    // 窗台
+                    canvas.drawLine(2*u,20*u,22*u,20*u, paint)
+                    // 窗台上的小杯子
+                    canvas.drawRoundRect(RectF(14.5f*u,16.5f*u,17.5f*u,19.5f*u), 0.5f*u, 0.5f*u, fillPaint)
+                    // 左下窗格里的小光点（暖光）
+                    canvas.drawCircle(8*u,15.5f*u,1.2f*u,fillPaint)
                 }
                 "archive" -> {
                     canvas.drawRoundRect(RectF(3*u,2*u,21*u,22*u), 2*u, 2*u, paint)
