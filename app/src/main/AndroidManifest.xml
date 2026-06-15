@@ -34,6 +34,7 @@
         <activity android:name=".ArchiveDetailActivity" />
         <activity android:name=".ArchiveFolderActivity" />
         <activity android:name=".DreamArchiveActivity" />
+        <activity android:name=".BookReaderActivity" />
         <activity android:name=".FriendDetailActivity" />
         <activity android:name=".ClockActivity" />
         <activity android:name=".ClockHistoryActivity" />

@@ -2,13 +2,17 @@ package com.haven.guiqi
 
 import android.content.Intent
 import android.graphics.drawable.GradientDrawable
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
 import android.widget.LinearLayout
+import android.widget.ScrollView
 import android.widget.TextView
+import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
@@ -38,6 +42,43 @@ class ArchiveActivity : AppCompatActivity() {
 
     /** 当前主题色 */
     private val c get() = ThemeHelper.getColors(this)
+    private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
+
+    /** 文件选择器 */
+    private val filePickerLauncher = registerForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? ->
+        if (uri == null) return@registerForActivityResult
+        try {
+            val inputStream = contentResolver.openInputStream(uri) ?: return@registerForActivityResult
+            val rawBytes = inputStream.readBytes()
+            inputStream.close()
+
+            // 尝试 UTF-8，失败就用 GBK
+            val content = try {
+                val text = rawBytes.toString(Charsets.UTF_8)
+                // 检查是否有乱码（大量连续的替换字符）
+                if (text.count { it == '\uFFFD' } > text.length / 10) {
+                    rawBytes.toString(charset("GBK"))
+                } else {
+                    text
+                }
+            } catch (_: Exception) {
+                try { rawBytes.toString(charset("GBK")) }
+                catch (_: Exception) { rawBytes.toString(Charsets.UTF_8) }
+            }
+
+            // 去掉 BOM
+            val cleanContent = content.trimStart('\uFEFF')
+
+            val fileName = uri.lastPathSegment?.substringAfterLast("/")?.removeSuffix(".txt") ?: "未命名"
+            val book = BookStorage(this).importTxt(fileName, cleanContent)
+            Toast.makeText(this, "导入成功：${book.title}（${book.chapters.size}章）", Toast.LENGTH_SHORT).show()
+            loadBookShelf()
+        } catch (e: Exception) {
+            Toast.makeText(this, "导入失败：${e.message}", Toast.LENGTH_SHORT).show()
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -81,12 +122,13 @@ class ArchiveActivity : AppCompatActivity() {
         tabLibrary.setOnClickListener { switchTab(false) }
         tabArchive.setOnClickListener { switchTab(true) }
 
-        switchTab(true)
+        switchTab(false)
     }
 
     override fun onResume() {
         super.onResume()
         loadCabinets()
+        if (libraryPage.visibility == View.VISIBLE) loadBookShelf()
     }
 
     private fun switchTab(isArchive: Boolean) {
@@ -101,6 +143,7 @@ class ArchiveActivity : AppCompatActivity() {
             tabArchive.setTextColor(c.textHint)
             libraryPage.visibility = View.VISIBLE
             archivePage.visibility = View.GONE
+            loadBookShelf()
         }
     }
 
@@ -293,5 +336,206 @@ class ArchiveActivity : AppCompatActivity() {
         drawer.addView(avatar)
 
         return drawer
+    }
+
+    // ===== 书城：书架 UI =====
+
+    private fun loadBookShelf() {
+        libraryPage.removeAllViews()
+        libraryPage.gravity = Gravity.NO_GRAVITY
+
+        // 顶部：导入按钮
+        val topBar = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.END
+            setPadding(dp(16), dp(8), dp(16), dp(8))
+        }
+        val importBtn = TextView(this).apply {
+            text = "＋ 导入"
+            textSize = 13f
+            setTextColor(c.accent)
+            setPadding(dp(12), dp(6), dp(12), dp(6))
+            background = GradientDrawable().apply {
+                cornerRadius = dp(12).toFloat()
+                setStroke(1, c.accent)
+            }
+            setOnClickListener {
+                filePickerLauncher.launch(arrayOf("text/plain"))
+            }
+        }
+        topBar.addView(importBtn)
+        libraryPage.addView(topBar)
+
+        // 加载书籍
+        val books = BookStorage(this).loadBooks()
+
+        if (books.isEmpty()) {
+            libraryPage.addView(TextView(this).apply {
+                text = "书架是空的\n点右上角「＋ 导入」添加书籍"
+                textSize = 13f
+                setTextColor(c.textHint)
+                gravity = Gravity.CENTER
+                setPadding(dp(20), dp(80), dp(20), dp(80))
+                setLineSpacing(0f, 1.5f)
+            })
+            return
+        }
+
+        // 每行放 4-5 本书
+        val booksPerShelf = 4
+        val shelves = books.chunked(booksPerShelf)
+
+        for (shelfBooks in shelves) {
+            // 书架层板
+            val shelfRow = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.BOTTOM
+                setPadding(dp(16), dp(8), dp(16), 0)
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                )
+            }
+
+            for (book in shelfBooks) {
+                shelfRow.addView(buildBookSpine(book))
+            }
+
+            libraryPage.addView(shelfRow)
+
+            // 木头层板
+            libraryPage.addView(View(this).apply {
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, dp(4)
+                ).apply { marginStart = dp(12); marginEnd = dp(12) }
+                background = GradientDrawable().apply {
+                    setColor(c.folderDiary) // 棕色
+                    cornerRadius = dp(2).toFloat()
+                }
+            })
+        }
+    }
+
+    private fun buildBookSpine(book: BookStorage.Book): View {
+        // 厚度根据章节数：最少 dp(28)，每章加 dp(3)，最多 dp(60)
+        val chapterCount = book.chapters.size
+        val thickness = (28 + chapterCount * 3).coerceIn(28, 60)
+        // 高度稍微随机，基础 dp(90) 上下浮动
+        val baseHeight = 90 + (book.id.hashCode() % 15)
+        val height = baseHeight.coerceIn(82, 105)
+
+        val spine = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            layoutParams = LinearLayout.LayoutParams(dp(thickness), dp(height)).apply {
+                marginEnd = dp(6)
+            }
+            background = GradientDrawable().apply {
+                setColor(book.spineColor)
+                cornerRadius = dp(3).toFloat()
+            }
+            setPadding(dp(3), dp(6), dp(3), dp(6))
+            setOnClickListener { showBookDetail(book) }
+            setOnLongClickListener {
+                android.app.AlertDialog.Builder(this@ArchiveActivity)
+                    .setTitle("删除「${book.title}」？")
+                    .setPositiveButton("删除") { _, _ ->
+                        BookStorage(this@ArchiveActivity).deleteBook(book.id)
+                        loadBookShelf()
+                    }
+                    .setNegativeButton("取消", null)
+                    .show()
+                true
+            }
+        }
+
+        // 书名竖排
+        val title = book.title
+        val displayTitle = if (title.length > 6) title.substring(0, 6) + "…" else title
+        val titleView = TextView(this).apply {
+            text = displayTitle.toList().joinToString("\n")
+            textSize = 9f
+            setTextColor(0xDDFFFFFF.toInt())
+            gravity = Gravity.CENTER
+            setLineSpacing(0f, 0.85f)
+        }
+        spine.addView(titleView)
+
+        return spine
+    }
+
+    private fun showBookDetail(book: BookStorage.Book) {
+        val layout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(24), dp(20), dp(24), dp(16))
+        }
+
+        // 书的封面（用书脊颜色做一个矩形）
+        val cover = LinearLayout(this).apply {
+            layoutParams = LinearLayout.LayoutParams(dp(120), dp(160)).apply {
+                gravity = Gravity.CENTER_HORIZONTAL
+                bottomMargin = dp(16)
+            }
+            gravity = Gravity.CENTER
+            background = GradientDrawable().apply {
+                setColor(book.spineColor)
+                cornerRadius = dp(6).toFloat()
+            }
+            setPadding(dp(10), dp(12), dp(10), dp(12))
+        }
+        val coverTitle = TextView(this).apply {
+            text = book.title
+            textSize = 14f
+            setTextColor(0xDDFFFFFF.toInt())
+            gravity = Gravity.CENTER
+            setLineSpacing(0f, 1.3f)
+        }
+        cover.addView(coverTitle)
+        layout.addView(cover)
+
+        // 书名
+        layout.addView(TextView(this).apply {
+            text = book.title
+            textSize = 16f
+            setTextColor(c.textPrimary)
+            gravity = Gravity.CENTER
+            setPadding(0, 0, 0, dp(4))
+        })
+
+        // 作者
+        if (book.author.isNotEmpty()) {
+            layout.addView(TextView(this).apply {
+                text = book.author
+                textSize = 12f
+                setTextColor(c.textSecondary)
+                gravity = Gravity.CENTER
+                setPadding(0, 0, 0, dp(8))
+            })
+        }
+
+        // 信息
+        val dateStr = java.text.SimpleDateFormat("yyyy/MM/dd", java.util.Locale.getDefault())
+            .format(java.util.Date(book.createdAt))
+        val progress = if (book.chapters.isNotEmpty())
+            "读到第 ${book.lastChapter + 1}/${book.chapters.size} 章" else "还没开始读"
+
+        layout.addView(TextView(this).apply {
+            text = "共 ${book.chapters.size} 章 · 导入于 $dateStr\n$progress"
+            textSize = 11f
+            setTextColor(c.textHint)
+            gravity = Gravity.CENTER
+            setLineSpacing(0f, 1.4f)
+            setPadding(0, 0, 0, dp(12))
+        })
+
+        android.app.AlertDialog.Builder(this)
+            .setView(layout)
+            .setPositiveButton("开始阅读") { _, _ ->
+                val intent = Intent(this, BookReaderActivity::class.java)
+                intent.putExtra("book_id", book.id)
+                startActivity(intent)
+            }
+            .setNegativeButton("放回去", null)
+            .show()
     }
 }
