@@ -44,40 +44,99 @@ class ArchiveActivity : AppCompatActivity() {
     private val c get() = ThemeHelper.getColors(this)
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
 
-    /** 文件选择器 */
+    /** 读取文件并自动处理编码 */
+    private fun readFileContent(uri: Uri): String {
+        val inputStream = contentResolver.openInputStream(uri) ?: return ""
+        val rawBytes = inputStream.readBytes()
+        inputStream.close()
+        val content = try {
+            val text = rawBytes.toString(Charsets.UTF_8)
+            if (text.count { it == '\uFFFD' } > text.length / 10) {
+                rawBytes.toString(charset("GBK"))
+            } else { text }
+        } catch (_: Exception) {
+            try { rawBytes.toString(charset("GBK")) }
+            catch (_: Exception) { rawBytes.toString(Charsets.UTF_8) }
+        }
+        return content.trimStart('\uFEFF')
+    }
+
+    /** 从 URI 提取文件名 */
+    private fun getFileName(uri: Uri): String {
+        return uri.lastPathSegment?.substringAfterLast("/")?.removeSuffix(".txt") ?: "未命名"
+    }
+
+    /** 多文件选择器 */
     private val filePickerLauncher = registerForActivityResult(
-        ActivityResultContracts.OpenDocument()
-    ) { uri: Uri? ->
-        if (uri == null) return@registerForActivityResult
+        ActivityResultContracts.OpenMultipleDocuments()
+    ) { uris: List<Uri> ->
+        if (uris.isEmpty()) return@registerForActivityResult
         try {
-            val inputStream = contentResolver.openInputStream(uri) ?: return@registerForActivityResult
-            val rawBytes = inputStream.readBytes()
-            inputStream.close()
-
-            // 尝试 UTF-8，失败就用 GBK
-            val content = try {
-                val text = rawBytes.toString(Charsets.UTF_8)
-                // 检查是否有乱码（大量连续的替换字符）
-                if (text.count { it == '\uFFFD' } > text.length / 10) {
-                    rawBytes.toString(charset("GBK"))
-                } else {
-                    text
-                }
-            } catch (_: Exception) {
-                try { rawBytes.toString(charset("GBK")) }
-                catch (_: Exception) { rawBytes.toString(Charsets.UTF_8) }
+            if (uris.size == 1) {
+                // 单个文件直接导入
+                val content = readFileContent(uris[0])
+                val fileName = getFileName(uris[0])
+                val book = BookStorage(this).importTxt(fileName, content)
+                Toast.makeText(this, "导入成功：${book.title}（${book.chapters.size}章）", Toast.LENGTH_SHORT).show()
+                loadBookShelf()
+            } else {
+                // 多个文件，问合并还是分开
+                android.app.AlertDialog.Builder(this)
+                    .setTitle("选了 ${uris.size} 个文件")
+                    .setItems(arrayOf(
+                        "合并成一本书（每个文件变一章）",
+                        "分开导入（每个文件一本书）"
+                    )) { _, which ->
+                        when (which) {
+                            0 -> mergeImport(uris)
+                            1 -> separateImport(uris)
+                        }
+                    }.show()
             }
-
-            // 去掉 BOM
-            val cleanContent = content.trimStart('\uFEFF')
-
-            val fileName = uri.lastPathSegment?.substringAfterLast("/")?.removeSuffix(".txt") ?: "未命名"
-            val book = BookStorage(this).importTxt(fileName, cleanContent)
-            Toast.makeText(this, "导入成功：${book.title}（${book.chapters.size}章）", Toast.LENGTH_SHORT).show()
-            loadBookShelf()
         } catch (e: Exception) {
             Toast.makeText(this, "导入失败：${e.message}", Toast.LENGTH_SHORT).show()
         }
+    }
+
+    /** 合并导入：弹窗输入书名，多文件合成一本 */
+    private fun mergeImport(uris: List<Uri>) {
+        val input = android.widget.EditText(this).apply {
+            hint = "输入书名"
+            setPadding(48, 32, 48, 32)
+        }
+        android.app.AlertDialog.Builder(this)
+            .setTitle("合并成一本书")
+            .setView(input)
+            .setPositiveButton("导入") { _, _ ->
+                try {
+                    val title = input.text.toString().trim().ifEmpty { "合集" }
+                    val files = uris.sortedBy { getFileName(it) }.map { uri ->
+                        getFileName(uri) to readFileContent(uri)
+                    }
+                    val book = BookStorage(this).importMultipleTxt(title, files)
+                    Toast.makeText(this, "导入成功：${book.title}（${book.chapters.size}章）", Toast.LENGTH_SHORT).show()
+                    loadBookShelf()
+                } catch (e: Exception) {
+                    Toast.makeText(this, "导入失败：${e.message}", Toast.LENGTH_SHORT).show()
+                }
+            }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    /** 分开导入：每个文件一本书 */
+    private fun separateImport(uris: List<Uri>) {
+        var count = 0
+        for (uri in uris) {
+            try {
+                val content = readFileContent(uri)
+                val fileName = getFileName(uri)
+                BookStorage(this).importTxt(fileName, content)
+                count++
+            } catch (_: Exception) { }
+        }
+        Toast.makeText(this, "导入了 $count 本书", Toast.LENGTH_SHORT).show()
+        loadBookShelf()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -381,9 +440,29 @@ class ArchiveActivity : AppCompatActivity() {
             return
         }
 
-        // 每行放 4-5 本书
-        val booksPerShelf = 4
-        val shelves = books.chunked(booksPerShelf)
+        // 按宽度动态填满每排，不固定几本
+        val screenWidth = resources.displayMetrics.widthPixels
+        val shelfPadding = dp(32)  // 左右各 16dp
+        val maxShelfWidth = screenWidth - shelfPadding
+
+        val shelves = mutableListOf<MutableList<BookStorage.Book>>()
+        var currentShelf = mutableListOf<BookStorage.Book>()
+        var currentWidth = 0
+
+        for (book in books) {
+            val chapterCount = book.chapters.size
+            val thickness = (18 + Math.sqrt(chapterCount.toDouble()) * 1.2).toInt().coerceIn(18, 56)
+            val bookWidth = dp(thickness) + dp(2)  // 书宽 + 间距
+
+            if (currentWidth + bookWidth > maxShelfWidth && currentShelf.isNotEmpty()) {
+                shelves.add(currentShelf)
+                currentShelf = mutableListOf()
+                currentWidth = 0
+            }
+            currentShelf.add(book)
+            currentWidth += bookWidth
+        }
+        if (currentShelf.isNotEmpty()) shelves.add(currentShelf)
 
         for (shelfBooks in shelves) {
             // 书架层板
@@ -417,18 +496,18 @@ class ArchiveActivity : AppCompatActivity() {
     }
 
     private fun buildBookSpine(book: BookStorage.Book): View {
-        // 厚度根据章节数：最少 dp(28)，每章加 dp(3)，最多 dp(60)
         val chapterCount = book.chapters.size
-        val thickness = (28 + chapterCount * 3).coerceIn(28, 60)
-        // 高度稍微随机，基础 dp(90) 上下浮动
-        val baseHeight = 90 + (book.id.hashCode() % 15)
-        val height = baseHeight.coerceIn(82, 105)
+        // 厚度用 sqrt 但系数小、上限高，让 300 章和 900 章明显不同
+        val thickness = (18 + Math.sqrt(chapterCount.toDouble()) * 1.2).toInt().coerceIn(18, 56)
+        // 高度稍微随机
+        val baseHeight = 85 + (book.id.hashCode() % 12)
+        val height = baseHeight.coerceIn(80, 98)
 
         val spine = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
             layoutParams = LinearLayout.LayoutParams(dp(thickness), dp(height)).apply {
-                marginEnd = dp(6)
+                marginEnd = dp(2)
             }
             background = GradientDrawable().apply {
                 setColor(book.spineColor)
