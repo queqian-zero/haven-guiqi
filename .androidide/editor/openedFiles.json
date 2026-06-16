@@ -29,7 +29,22 @@
           "line": 204
         }
       }
+    },
+    {
+      "file": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/java/com/haven/guiqi/BookReaderActivity.kt",
+      "selection": {
+        "end": {
+          "column": 1,
+          "index": 10428,
+          "line": 271
+        },
+        "start": {
+          "column": 1,
+          "index": 10428,
+          "line": 271
+        }
+      }
     }
   ],
-  "selectedFile": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/java/com/haven/guiqi/ArchiveActivity.kt"
+  "selectedFile": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/java/com/haven/guiqi/BookReaderActivity.kt"
 }
