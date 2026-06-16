@@ -1,77 +1,32 @@
 {
   "allFiles": [
     {
-      "file": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/java/com/haven/guiqi/BookStorage.kt",
-      "selection": {
-        "end": {
-          "column": 1,
-          "index": 5769,
-          "line": 177
-        },
-        "start": {
-          "column": 1,
-          "index": 5769,
-          "line": 177
-        }
-      }
-    },
-    {
       "file": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/java/com/haven/guiqi/ArchiveActivity.kt",
       "selection": {
         "end": {
           "column": 1,
-          "index": 21965,
-          "line": 619
+          "index": 25919,
+          "line": 726
         },
         "start": {
           "column": 1,
-          "index": 21965,
-          "line": 619
+          "index": 25919,
+          "line": 726
         }
       }
     },
     {
-      "file": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/java/com/haven/guiqi/BookReaderActivity.kt",
+      "file": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/java/com/haven/guiqi/BookStorage.kt",
       "selection": {
         "end": {
           "column": 1,
-          "index": 7150,
-          "line": 187
+          "index": 7048,
+          "line": 204
         },
         "start": {
           "column": 1,
-          "index": 7150,
-          "line": 187
-        }
-      }
-    },
-    {
-      "file": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/res/layout/activity_book_reader.xml",
-      "selection": {
-        "end": {
-          "column": 15,
-          "index": 3907,
-          "line": 117
-        },
-        "start": {
-          "column": 15,
-          "index": 3907,
-          "line": 117
-        }
-      }
-    },
-    {
-      "file": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/AndroidManifest.xml",
-      "selection": {
-        "end": {
-          "column": 11,
-          "index": 3161,
-          "line": 69
-        },
-        "start": {
-          "column": 11,
-          "index": 3161,
-          "line": 69
+          "index": 7048,
+          "line": 204
         }
       }
     }

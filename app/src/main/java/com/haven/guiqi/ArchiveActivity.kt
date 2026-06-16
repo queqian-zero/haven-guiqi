@@ -401,6 +401,26 @@ class ArchiveActivity : AppCompatActivity() {
 
     private fun loadBookShelf() {
         libraryPage.removeAllViews()
+        libraryPage.gravity = Gravity.CENTER
+
+        // 加载提示
+        val loadingText = TextView(this).apply {
+            text = "📚 书架整理中..."
+            textSize = 14f
+            setTextColor(c.textHint)
+            gravity = Gravity.CENTER
+        }
+        libraryPage.addView(loadingText)
+
+        // 后台加载，不卡 UI
+        Thread {
+            val books = BookStorage(this).loadBooksMeta()
+            runOnUiThread { buildShelfUI(books) }
+        }.start()
+    }
+
+    private fun buildShelfUI(books: List<BookStorage.Book>) {
+        libraryPage.removeAllViews()
         libraryPage.gravity = Gravity.NO_GRAVITY
 
         // 顶部：导入按钮
@@ -424,9 +444,6 @@ class ArchiveActivity : AppCompatActivity() {
         }
         topBar.addView(importBtn)
         libraryPage.addView(topBar)
-
-        // 加载书籍
-        val books = BookStorage(this).loadBooks()
 
         if (books.isEmpty()) {
             libraryPage.addView(TextView(this).apply {
@@ -614,7 +631,97 @@ class ArchiveActivity : AppCompatActivity() {
                 intent.putExtra("book_id", book.id)
                 startActivity(intent)
             }
+            .setNeutralButton("编辑") { _, _ -> showEditBookDialog(book) }
             .setNegativeButton("放回去", null)
+            .show()
+    }
+
+    private fun showEditBookDialog(book: BookStorage.Book) {
+        val layout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(24), dp(20), dp(24), dp(12))
+        }
+
+        val inputTitle = android.widget.EditText(this).apply {
+            setText(book.title)
+            hint = "书名"
+            textSize = 14f
+            setTextColor(c.textPrimary)
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+        }
+        layout.addView(inputTitle)
+
+        val inputAuthor = android.widget.EditText(this).apply {
+            setText(book.author)
+            hint = "作者（可留空）"
+            textSize = 14f
+            setTextColor(c.textPrimary)
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+        }
+        layout.addView(inputAuthor)
+
+        // 书脊颜色选择
+        layout.addView(TextView(this).apply {
+            text = "书脊颜色"
+            textSize = 12f
+            setTextColor(c.textSecondary)
+            setPadding(dp(12), dp(16), 0, dp(6))
+        })
+
+        val colors = intArrayOf(
+            0xFF8B4513.toInt(), 0xFFA0522D.toInt(), 0xFF6B3A2A.toInt(),
+            0xFF2F4F4F.toInt(), 0xFF483D8B.toInt(), 0xFF556B2F.toInt(),
+            0xFF8B0000.toInt(), 0xFF4A3728.toInt(), 0xFF2E4057.toInt(),
+            0xFF5D4037.toInt(), 0xFF795548.toInt(), 0xFF4E342E.toInt()
+        )
+        var selectedColor = book.spineColor
+
+        val colorRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(dp(8), 0, dp(8), dp(8))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        }
+
+        fun refreshColorRow() {
+            colorRow.removeAllViews()
+            for (color in colors) {
+                val dot = View(this).apply {
+                    layoutParams = LinearLayout.LayoutParams(dp(26), dp(26)).apply {
+                        marginEnd = dp(6); bottomMargin = dp(4)
+                    }
+                    background = GradientDrawable().apply {
+                        setColor(color)
+                        cornerRadius = dp(13).toFloat()
+                        if (color == selectedColor) setStroke(dp(3), c.accent)
+                    }
+                    setOnClickListener {
+                        selectedColor = color
+                        refreshColorRow()
+                    }
+                }
+                colorRow.addView(dot)
+            }
+        }
+        refreshColorRow()
+        layout.addView(colorRow)
+
+        android.app.AlertDialog.Builder(this)
+            .setTitle("编辑书籍信息")
+            .setView(layout)
+            .setPositiveButton("保存") { _, _ ->
+                val newTitle = inputTitle.text.toString().trim().ifEmpty { book.title }
+                val newAuthor = inputAuthor.text.toString().trim()
+                // 从存储重新读完整数据再改，防止覆盖章节内容
+                val fullBook = BookStorage(this).getBook(book.id) ?: book
+                val updated = fullBook.copy(title = newTitle, author = newAuthor, spineColor = selectedColor)
+                BookStorage(this).saveBook(updated)
+                loadBookShelf()
+                Toast.makeText(this, "已更新", Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton("取消", null)
             .show()
     }
 }

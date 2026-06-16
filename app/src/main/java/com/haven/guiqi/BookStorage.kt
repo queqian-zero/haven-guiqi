@@ -32,7 +32,34 @@ class BookStorage(private val context: Context) {
         val createdAt: Long = System.currentTimeMillis()
     )
 
-    /** 加载所有书 */
+    /** 加载所有书（只读元数据，不读章节内容，用于书架显示） */
+    fun loadBooksMeta(): List<Book> {
+        val books = mutableListOf<Book>()
+        val files = dir.listFiles { f -> f.extension == "json" } ?: return books
+        for (file in files.sortedByDescending { it.lastModified() }) {
+            try {
+                val json = JSONObject(file.readText())
+                val chaptersArr = json.optJSONArray("chapters") ?: JSONArray()
+                // 只统计章节数，不读内容
+                val emptyChapters = (0 until chaptersArr.length()).map {
+                    Chapter(chaptersArr.getJSONObject(it).optString("title", ""), "")
+                }
+                books.add(Book(
+                    id = json.getString("id"),
+                    title = json.optString("title", "未命名"),
+                    author = json.optString("author", ""),
+                    chapters = emptyChapters,
+                    spineColor = json.optInt("spine_color", 0xFF8B4513.toInt()),
+                    lastChapter = json.optInt("last_chapter", 0),
+                    lastPosition = json.optInt("last_position", 0),
+                    createdAt = json.optLong("created_at", System.currentTimeMillis())
+                ))
+            } catch (_: Exception) { }
+        }
+        return books
+    }
+
+    /** 加载所有书（含完整内容） */
     fun loadBooks(): List<Book> {
         val books = mutableListOf<Book>()
         val files = dir.listFiles { f -> f.extension == "json" } ?: return books
