@@ -139,6 +139,8 @@ class DesktopActivity : AppCompatActivity() {
         // 检查电池优化白名单
         checkBatteryOptimization()
         checkAccessibilityService()
+        // 请求通知权限（Android 13+）
+        checkNotificationPermission()
 
         // ===== 绑定普通模式元素 =====
         normalDesktop = findViewById(R.id.normalDesktop)
@@ -941,6 +943,15 @@ class DesktopActivity : AppCompatActivity() {
      * 无障碍服务不容易被杀，能守护 HavenService。
      * 只在电池白名单搞定之后才提醒，避免一次弹两个弹窗。
      */
+    private fun checkNotificationPermission() {
+        if (android.os.Build.VERSION.SDK_INT >= 33) {
+            if (checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)
+                != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 1001)
+            }
+        }
+    }
+
     private fun checkAccessibilityService() {
         // 电池白名单还没搞定的话先不提醒这个
         val pm = getSystemService(POWER_SERVICE) as PowerManager
