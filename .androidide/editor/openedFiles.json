@@ -44,7 +44,22 @@
           "line": 271
         }
       }
+    },
+    {
+      "file": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/java/com/haven/guiqi/ChatConversationActivity.kt",
+      "selection": {
+        "end": {
+          "column": 1,
+          "index": 74660,
+          "line": 1927
+        },
+        "start": {
+          "column": 1,
+          "index": 74660,
+          "line": 1927
+        }
+      }
     }
   ],
-  "selectedFile": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/java/com/haven/guiqi/BookReaderActivity.kt"
+  "selectedFile": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/java/com/haven/guiqi/ChatConversationActivity.kt"
 }

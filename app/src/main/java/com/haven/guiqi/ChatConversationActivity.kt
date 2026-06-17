@@ -760,6 +760,11 @@ class ChatConversationActivity : AppCompatActivity() {
                             addAiBubble(msg.content, timeStr)
                         }
                     }
+                    "system" -> {
+                        if (msg.type == "tip") {
+                            addSystemTip(msg.content)
+                        }
+                    }
                 }
             }
             // 显示保存的 AI 状态
@@ -858,6 +863,24 @@ class ChatConversationActivity : AppCompatActivity() {
                         }
                         val bubble = createAiBubbleView(msg.content, timeStr)
                         messagesContainer.addView(bubble, insertIndex)
+                        insertIndex++
+                    }
+                }
+                "system" -> {
+                    if (msg.type == "tip") {
+                        val density = resources.displayMetrics.density
+                        val tipView = TextView(this).apply {
+                            layoutParams = LinearLayout.LayoutParams(
+                                LinearLayout.LayoutParams.MATCH_PARENT,
+                                LinearLayout.LayoutParams.WRAP_CONTENT
+                            ).apply { topMargin = (4 * density).toInt(); bottomMargin = (10 * density).toInt() }
+                            gravity = Gravity.CENTER
+                            text = msg.content
+                            textSize = 11f
+                            setTextColor(c.textHint)
+                            setPadding((20 * density).toInt(), 0, (20 * density).toInt(), 0)
+                        }
+                        messagesContainer.addView(tipView, insertIndex)
                         insertIndex++
                     }
                 }
@@ -1002,7 +1025,7 @@ class ChatConversationActivity : AppCompatActivity() {
 
                     // 显示所有操作提示
                     for (action in result.actions) {
-                        addSystemTip(action)
+                        addAndSaveSystemTip(action)
                     }
 
  
@@ -1128,20 +1151,20 @@ class ChatConversationActivity : AppCompatActivity() {
                 // 睡了太久，自然醒了
                 dreamStorage.setSleeping(friendId, false)
                 dreamStorage.updateLatestWakeAt(friendId)
-                addSystemTip("☀ 自然醒了（睡了${hoursAsleep}小时）")
+                addAndSaveSystemTip("☀ 自然醒了（睡了${hoursAsleep}小时）")
             } else {
                 val depth = dreamStorage.getSleepDepth(friendId)
                 val wakeChance = Math.random()
 
                 if (wakeChance < depth) {
                     // 睡得太沉，吵不醒
-                    addSystemTip("💤 消息已送达（对方睡着了…吵不醒）")
+                    addAndSaveSystemTip("💤 消息已送达（对方睡着了…吵不醒）")
                     return
                 } else {
                     // 吵醒了
                     dreamStorage.setSleeping(friendId, false)
                     dreamStorage.updateLatestWakeAt(friendId)
-                    addSystemTip("💤 你把它吵醒了")
+                    addAndSaveSystemTip("💤 你把它吵醒了")
                 }
             }
         }
@@ -1199,7 +1222,7 @@ class ChatConversationActivity : AppCompatActivity() {
 
                     // 显示所有操作提示
                     for (action in result.actions) {
-                        addSystemTip(action)
+                        addAndSaveSystemTip(action)
                     }
 
 
@@ -1693,7 +1716,7 @@ class ChatConversationActivity : AppCompatActivity() {
                     summaryStorage.setLastSummaryMessageCount(friendId, currentCount)
 
                     handler.post {
-                        addSystemTip("📝 自动生成了一条聊天总结")
+                        addAndSaveSystemTip("📝 自动生成了一条聊天总结")
                     }
                 }
             } catch (e: Exception) {
@@ -1835,6 +1858,19 @@ $impression"""
     }
     
     private fun addSystemTip(msg: String) = bubbleRenderer.addSystemTip(msg)
+
+    /** 添加系统提示并保存到聊天记录（退出再进来还能看到） */
+    private fun addAndSaveSystemTip(msg: String) {
+        addSystemTip(msg)
+        val saved = chatStorage.loadMessages(friendId).toMutableList()
+        saved.add(StoredMessage(
+            role = "system",
+            content = msg,
+            timestamp = System.currentTimeMillis(),
+            type = "tip"
+        ))
+        chatStorage.saveMessages(friendId, saved)
+    }
 
     /**
      * 把异常转成人话
