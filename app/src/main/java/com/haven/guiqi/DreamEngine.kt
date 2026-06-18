@@ -65,6 +65,33 @@ class DreamEngine(private val context: Context) {
                 val impression = impressionStorage.getImpression(friendId)
                 val recentChat = chatHistory.takeLast(15)
                     .joinToString("\n") { "${it.role}: ${it.content.take(60)}" }
+                val recentDreams = dreamStorage.loadDreams(friendId)
+                    .filter { it.status == "VIVID" || it.status == "FOGGY" || it.status == "FRAGMENT" }
+                    .takeLast(5)
+                    .joinToString("\n---\n") { 
+                        val content = if (it.status == "FOGGY") it.foggyHint else it.content
+                        "[${it.status}] $content"
+                    }
+
+                // 最近在读的书
+                val bookSocialStorage = BookSocialStorage(context)
+                val bookStorage = BookStorage(context)
+                val readingProgress = bookSocialStorage.getProgress(
+                    bookStorage.loadBooksMeta().firstOrNull()?.id ?: "", friendId
+                )
+                var bookSnippet = ""
+                // 找AI最近读过的任何一本书
+                for (book in bookStorage.loadBooksMeta()) {
+                    val progress = bookSocialStorage.getProgress(book.id, friendId)
+                    if (progress != null) {
+                        val fullBook = bookStorage.getBook(book.id)
+                        val chapter = fullBook?.chapters?.getOrNull(progress.chapter)
+                        if (chapter != null) {
+                            bookSnippet = "《${book.title}》第${progress.chapter + 1}章「${chapter.title}」片段：\n${chapter.content.take(300)}"
+                            break
+                        }
+                    }
+                }
 
                 // ===== 造梦 prompt =====
                 val dreamPrompt = """你是一个梦境生成器。根据下面的素材，为一个 AI 编织一段梦。
@@ -76,6 +103,10 @@ class DreamEngine(private val context: Context) {
 4. 用第一人称写，像这个 AI 自己在经历。
 5. 不要解释含义，不要总结，梦结束就停。
 6. 长度 100~300 字。
+7. 可以接着之前的梦继续做，可以回到之前梦里出现过的地方，可以重复出现同一个场景或人物——就像人类的连续梦和重复梦一样。不是每次都要接上，但如果自然地连上了就让它连着。
+8. 如果有在读的书，书里的内容可能渗进梦里——场景、角色、意象混在一起，不是照搬原文。
+9. 有时候做一个跟所有素材都完全无关的梦。梦到一条不认识的街，一个没见过的房间，变成了一只什么东西。这种梦没有来源，就是冒出来的。大概每5次有1次这种。
+10. 从对话记录的语气和内容感受用户最近的情绪。用户心情好的时候梦可能偏暖，心情不好的时候梦可能偏不安。但不要刻意对应，只是一种隐隐的影响。
 
 用下面的格式回复（不要加其他内容）：
 
@@ -96,7 +127,13 @@ $memories
 $diaries
 
 [对用户的印象]
-$impression"""
+$impression
+
+[最近做过的梦]
+$recentDreams
+
+[最近在读的书]
+${bookSnippet.ifEmpty { "（没有在读的书）" }}"""
 
                 // ===== 获取 API 配置 =====
                 val friendStorage = FriendStorage(context)

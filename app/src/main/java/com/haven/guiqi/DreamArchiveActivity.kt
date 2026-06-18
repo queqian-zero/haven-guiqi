@@ -57,7 +57,7 @@ class DreamArchiveActivity : AppCompatActivity() {
 
     private fun buildFilterTabs() {
         filterTabs.removeAllViews()
-        val filters = listOf(null to "全部", "VIVID" to "清晰", "FOGGY" to "模糊", "FRAGMENT" to "碎片", "FORGOT" to "忘了", "NO_DREAM" to "无梦")
+        val filters = listOf(null to "全部", "VIVID" to "清晰", "FOGGY" to "模糊", "FRAGMENT" to "碎片")
         for ((value, label) in filters) {
             val selected = currentFilter == value
             val bg = GradientDrawable()
@@ -85,12 +85,15 @@ class DreamArchiveActivity : AppCompatActivity() {
         try {
             val storage = DreamStorage(this)
             val allDreams = storage.loadDreams(friendId).sortedByDescending { it.createdAt }
-            val filtered = if (currentFilter != null) allDreams.filter { it.status == currentFilter } else allDreams
+
+            // 过滤掉 NO_DREAM（不该显示在档案里）
+            val realDreams = allDreams.filter { it.status != "NO_DREAM" }
+            val filtered = if (currentFilter != null) realDreams.filter { it.status == currentFilter } else realDreams
             tvCount.text = "${filtered.size}"
 
             if (filtered.isEmpty()) {
                 val empty = TextView(this)
-                empty.text = if (allDreams.isEmpty()) "还没有做过梦" else "没有这类梦境"
+                empty.text = if (realDreams.isEmpty()) "还没有做过梦" else "没有这类梦境"
                 empty.textSize = 13f
                 empty.setTextColor(0xFF5A6A80.toInt())
                 empty.gravity = Gravity.CENTER
@@ -99,16 +102,27 @@ class DreamArchiveActivity : AppCompatActivity() {
                 return
             }
 
-            for (dream in filtered) {
-                try {
-                    dreamList.addView(buildDreamCard(dream))
-                } catch (e: Exception) {
-                    val err = TextView(this)
-                    err.text = "⚠ 梦境加载失败"
-                    err.textSize = 12f
-                    err.setTextColor(0xFFFF6666.toInt())
-                    err.setPadding(dp(8), dp(8), dp(8), dp(8))
-                    dreamList.addView(err)
+            // 按睡眠时段分组（相同 sleepAt 的梦属于同一次睡眠）
+            val sessions = filtered.groupBy { it.sleepAt }.toSortedMap(compareByDescending { it })
+
+            for ((sleepAt, dreams) in sessions) {
+                // 睡眠时段头
+                val lastDream = dreams.maxByOrNull { it.wakeAt } ?: continue
+                val wakeAt = if (lastDream.wakeAt > sleepAt) lastDream.wakeAt else lastDream.createdAt
+                addSessionHeader(sleepAt, wakeAt, dreams.size)
+
+                // 这个时段的梦
+                for (dream in dreams.sortedBy { it.createdAt }) {
+                    try {
+                        dreamList.addView(buildDreamCard(dream))
+                    } catch (_: Exception) {
+                        val err = TextView(this)
+                        err.text = "⚠ 梦境加载失败"
+                        err.textSize = 12f
+                        err.setTextColor(0xFFFF6666.toInt())
+                        err.setPadding(dp(8), dp(8), dp(8), dp(8))
+                        dreamList.addView(err)
+                    }
                 }
             }
         } catch (e: Exception) {
@@ -119,6 +133,39 @@ class DreamArchiveActivity : AppCompatActivity() {
             err.setPadding(dp(20), dp(40), dp(20), dp(40))
             dreamList.addView(err)
         }
+    }
+
+    /** 睡眠时段头部卡片 */
+    private fun addSessionHeader(sleepAt: Long, wakeAt: Long, dreamCount: Int) {
+        val sleepStr = SimpleDateFormat("MM/dd HH:mm", Locale.getDefault()).format(Date(sleepAt))
+        val wakeStr = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(wakeAt))
+        val durationMs = wakeAt - sleepAt
+        val hours = durationMs / 3600000
+        val minutes = (durationMs % 3600000) / 60000
+        val durStr = if (hours > 0) "${hours}小时${minutes}分" else "${minutes}分钟"
+        val dreamWord = if (dreamCount == 1) "做了 1 个梦" else "做了 $dreamCount 个梦"
+
+        val header = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(6), dp(14), dp(6), dp(6))
+        }
+
+        val moonIcon = TextView(this).apply {
+            text = "🌙"
+            textSize = 13f
+            setPadding(0, 0, dp(8), 0)
+        }
+
+        val info = TextView(this).apply {
+            text = "$sleepStr → $wakeStr · 睡了$durStr · $dreamWord"
+            textSize = 11f
+            setTextColor(0xFF7A8AA0.toInt())
+        }
+
+        header.addView(moonIcon)
+        header.addView(info)
+        dreamList.addView(header)
     }
 
     private fun buildDreamCard(dream: Dream): View {
@@ -180,7 +227,7 @@ class DreamArchiveActivity : AppCompatActivity() {
 
         card.addView(headerRow)
 
-        // 内容
+        // 内容（默认折叠）
         val content = when (dream.status) {
             "FOGGY" -> dream.foggyHint.ifEmpty { dream.content }.ifEmpty { "好像做了什么梦...但想不起来了" }
             "FRAGMENT" -> {
@@ -191,53 +238,49 @@ class DreamArchiveActivity : AppCompatActivity() {
             else -> dream.content
         }
 
+        // 预览（一行，折叠时显示）
+        val previewView = TextView(this)
+        previewView.text = content.take(30).replace("\n", " ") + if (content.length > 30) "..." else ""
+        previewView.textSize = 12f
+        previewView.setTextColor(textColor)
+        previewView.alpha = 0.6f
+        previewView.maxLines = 1
+        previewView.setPadding(0, dp(6), 0, 0)
+        card.addView(previewView)
+
+        // 完整内容（展开时显示）
         val contentView = TextView(this)
         contentView.text = content
         contentView.textSize = 13f
         contentView.setTextColor(textColor)
         contentView.setLineSpacing(0f, 1.65f)
         contentView.setPadding(0, dp(8), 0, 0)
+        contentView.visibility = View.GONE
         card.addView(contentView)
 
-        // 底部标注
-        if (dream.status == "FOGGY") {
-            val hint = TextView(this)
-            hint.text = "记不太清了"
-            hint.textSize = 11f
-            hint.setTextColor(0xFF5A5A7A.toInt())
-            hint.gravity = Gravity.CENTER
-            hint.setPadding(0, dp(4), 0, 0)
-            card.addView(hint)
+        // 底部标注（展开时显示）
+        val bottomHint = if (dream.status == "FOGGY") {
+            TextView(this).apply {
+                text = "记不太清了"; textSize = 11f
+                setTextColor(0xFF5A5A7A.toInt()); gravity = Gravity.CENTER
+                setPadding(0, dp(4), 0, 0); visibility = View.GONE
+            }
         } else if (dream.status == "FRAGMENT") {
-            val hint = TextView(this)
-            hint.text = "梦到一半断了"
-            hint.textSize = 11f
-            hint.setTextColor(0xFF3A3A55.toInt())
-            hint.gravity = Gravity.CENTER
-            hint.setPadding(0, dp(4), 0, 0)
-            card.addView(hint)
+            TextView(this).apply {
+                text = "梦到一半断了"; textSize = 11f
+                setTextColor(0xFF3A3A55.toInt()); gravity = Gravity.CENTER
+                setPadding(0, dp(4), 0, 0); visibility = View.GONE
+            }
+        } else null
+        if (bottomHint != null) card.addView(bottomHint)
+
+        // 点击折叠/展开
+        card.setOnClickListener {
+            val expanding = contentView.visibility == View.GONE
+            contentView.visibility = if (expanding) View.VISIBLE else View.GONE
+            previewView.visibility = if (expanding) View.GONE else View.VISIBLE
+            bottomHint?.visibility = if (expanding) View.VISIBLE else View.GONE
         }
-
-        // 睡眠信息
-        val sleepStr = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(dream.sleepAt))
-        val durationMs = if (dream.wakeAt > dream.sleepAt) dream.wakeAt - dream.sleepAt else 0L
-        val hours = durationMs / 3600000
-        val minutes = (durationMs % 3600000) / 60000
-        val durStr = if (hours > 0) "${hours}h${minutes}m" else "${minutes}m"
-
-        val divider = View(this)
-        divider.layoutParams = LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, dp(1)
-        ).apply { topMargin = dp(10) }
-        divider.setBackgroundColor(0xFF1F3050.toInt())
-        card.addView(divider)
-
-        val sleepInfo = TextView(this)
-        sleepInfo.text = "入睡于 $sleepStr · 睡了 $durStr"
-        sleepInfo.textSize = 11f
-        sleepInfo.setTextColor(0xFF5A6A80.toInt())
-        sleepInfo.setPadding(0, dp(8), 0, 0)
-        card.addView(sleepInfo)
 
         return card
     }
