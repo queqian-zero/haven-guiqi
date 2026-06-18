@@ -337,11 +337,56 @@ class ArchiveFolderActivity : AppCompatActivity() {
                 LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply { bottomMargin = dp(10) }
 
-            // 长按复制内容
+            // 长按操作
             setOnLongClickListener {
-                val clipboard = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                clipboard.setPrimaryClip(android.content.ClipData.newPlainText("archive", item.content))
-                Toast.makeText(this@ArchiveFolderActivity, "已复制", Toast.LENGTH_SHORT).show()
+                if (folderType == "trash") {
+                    // 废纸篓：恢复或永久删除
+                    android.app.AlertDialog.Builder(this@ArchiveFolderActivity)
+                        .setTitle("这条要怎么处理？")
+                        .setItems(arrayOf("恢复", "永久删除", "复制内容")) { _, which ->
+                            when (which) {
+                                0 -> {
+                                    val restored = if (item.id.startsWith("MEM")) {
+                                        MemoryStorage(this@ArchiveFolderActivity).restoreFromTrash(friendId, item.id)
+                                    } else {
+                                        DiaryStorage(this@ArchiveFolderActivity).restoreFromTrash(friendId, item.id)
+                                    }
+                                    if (restored) {
+                                        Toast.makeText(this@ArchiveFolderActivity, "已恢复", Toast.LENGTH_SHORT).show()
+                                        renderPage()
+                                    }
+                                }
+                                1 -> {
+                                    android.app.AlertDialog.Builder(this@ArchiveFolderActivity)
+                                        .setTitle("确定永久删除？")
+                                        .setMessage("删了就真没了。")
+                                        .setPositiveButton("删除") { _, _ ->
+                                            val deleted = if (item.id.startsWith("MEM")) {
+                                                MemoryStorage(this@ArchiveFolderActivity).permanentDelete(friendId, item.id)
+                                            } else {
+                                                DiaryStorage(this@ArchiveFolderActivity).permanentDelete(friendId, item.id)
+                                            }
+                                            if (deleted) {
+                                                Toast.makeText(this@ArchiveFolderActivity, "已永久删除", Toast.LENGTH_SHORT).show()
+                                                renderPage()
+                                            }
+                                        }
+                                        .setNegativeButton("算了", null)
+                                        .show()
+                                }
+                                2 -> {
+                                    val clipboard = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                                    clipboard.setPrimaryClip(android.content.ClipData.newPlainText("archive", item.content))
+                                    Toast.makeText(this@ArchiveFolderActivity, "已复制", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        }
+                        .show()
+                } else {
+                    val clipboard = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                    clipboard.setPrimaryClip(android.content.ClipData.newPlainText("archive", item.content))
+                    Toast.makeText(this@ArchiveFolderActivity, "已复制", Toast.LENGTH_SHORT).show()
+                }
                 true
             }
         }

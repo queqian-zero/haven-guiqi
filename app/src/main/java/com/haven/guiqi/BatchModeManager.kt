@@ -27,7 +27,9 @@ class BatchModeManager(
     data class PendingItem(
         val type: String,  // "text" 或 "image"
         val text: String = "",
-        val imagePaths: List<String> = emptyList()
+        val imagePaths: List<String> = emptyList(),
+        val quoteAuthor: String? = null,
+        val quoteContent: String? = null
     )
 
     var isBatchMode = false
@@ -64,6 +66,11 @@ class BatchModeManager(
 
     fun addText(text: String) {
         items.add(PendingItem("text", text))
+        refreshUI()
+    }
+
+    fun addTextWithQuote(text: String, quoteAuthor: String, quoteContent: String) {
+        items.add(PendingItem("text", text, quoteAuthor = quoteAuthor, quoteContent = quoteContent))
         refreshUI()
     }
 
@@ -113,11 +120,21 @@ class BatchModeManager(
                     maxLines = 1
                 })
             } else {
-                row.addView(TextView(activity).apply {
-                    text = item.text; textSize = 12f; setTextColor(c.textPrimary)
+                val textContainer = LinearLayout(activity).apply {
+                    orientation = LinearLayout.VERTICAL
                     layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-                    maxLines = 2
+                }
+                if (item.quoteAuthor != null) {
+                    textContainer.addView(TextView(activity).apply {
+                        val short = item.quoteContent?.take(20) ?: ""
+                        text = "↩ ${item.quoteAuthor}: $short"
+                        textSize = 10f; setTextColor(c.accent); maxLines = 1
+                    })
+                }
+                textContainer.addView(TextView(activity).apply {
+                    text = item.text; textSize = 12f; setTextColor(c.textPrimary); maxLines = 2
                 })
+                row.addView(textContainer)
             }
             row.addView(TextView(activity).apply {
                 text = "✕"; textSize = 14f; setTextColor(c.textHint)

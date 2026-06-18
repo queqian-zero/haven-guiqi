@@ -1,8 +1,6 @@
 package com.haven.guiqi
 
 import android.app.AlertDialog
-import android.content.ClipData
-import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
@@ -70,11 +68,8 @@ class ChatConversationActivity : AppCompatActivity() {
     private lateinit var summaryStorage: ChatSummaryStorage
     // AI 状态指示器（显示在名字旁边）
     private var currentAiStatus = ""
-    // 搜索相关
-    private lateinit var searchPanel: LinearLayout
-    private lateinit var searchInput: EditText
-    private lateinit var searchResults: LinearLayout
-    private lateinit var searchResultsScroll: ScrollView
+    // 搜索
+    private lateinit var searchManager: SearchManager
 
 
     private val handler = Handler(Looper.getMainLooper())
@@ -204,51 +199,21 @@ class ChatConversationActivity : AppCompatActivity() {
         impressionStorage = ImpressionStorage(this)
         dreamStorage = DreamStorage(this)
         summaryStorage = ChatSummaryStorage(this)
-                // 搜索面板
-        searchPanel = findViewById(R.id.searchPanel)
-        searchInput = findViewById(R.id.searchInput)
-        searchResults = findViewById(R.id.searchResults)
-        searchResultsScroll = findViewById(R.id.searchResultsScroll)
- 
-        // 搜索按钮
-        findViewById<TextView>(R.id.btnSearch).setOnClickListener {
-            if (searchPanel.visibility == View.VISIBLE) {
-                closeSearch()
-            } else {
-                searchPanel.visibility = View.VISIBLE
-                searchInput.requestFocus()
-                // 弹出键盘
-                val imm = getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager
-                imm.showSoftInput(searchInput, 0)
-            }
-        }
- 
-        // 取消按钮
-        findViewById<TextView>(R.id.btnCloseSearch).setOnClickListener { closeSearch() }
- 
-        // 输入时实时搜索（每次文字变化都搜）
-        searchInput.addTextChangedListener(object : android.text.TextWatcher {
-            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
-            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
-            override fun afterTextChanged(s: android.text.Editable?) {
-                val keyword = s?.toString()?.trim() ?: ""
-                if (keyword.isEmpty()) {
-                    searchResultsScroll.visibility = View.GONE
-                    searchResults.removeAllViews()
-                } else {
-                    performSearch(keyword)
-                }
-            }
-        })
- 
-        // 键盘搜索键
-        searchInput.setOnEditorActionListener { _, actionId, _ ->
-            if (actionId == android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH) {
-                val keyword = searchInput.text.toString().trim()
-                if (keyword.isNotEmpty()) performSearch(keyword)
-                true
-            } else false
-        }
+                // 搜索
+        searchManager = SearchManager(
+            this,
+            findViewById(R.id.searchPanel),
+            findViewById(R.id.searchInput),
+            findViewById(R.id.searchResults),
+            findViewById(R.id.searchResultsScroll),
+            chatStorage,
+            friendId,
+            friendName
+        )
+        searchManager.setupListeners(
+            findViewById(R.id.btnSearch),
+            findViewById(R.id.btnCloseSearch)
+        )
 
         loadApiConfig()
 
@@ -508,27 +473,12 @@ class ChatConversationActivity : AppCompatActivity() {
         imagePreviewContainer.visibility = View.GONE
     }
 
-    // ===== 图片转 base64 =====
-    private fun imageToBase64(file: File): String = ImageHelper.toBase64(file)
-
-    // ===== 图片气泡（右侧） =====
-    private fun addImageBubble(imagePath: String, timeStr: String, caption: String = "") {
-        bubbleRenderer.addImageBubble(imagePath, timeStr, caption)
-    }
-
-    // ===== 多图气泡（右侧，网格排列，点击放大） =====
-    private fun addMultiImageBubble(imagePaths: List<String>, timeStr: String, caption: String = "") {
-        bubbleRenderer.addMultiImageBubble(imagePaths, timeStr, caption)
-    }
-
-    // ===== 点击图片放大查看 =====
-    private fun showFullImage(imagePath: String) = ImageHelper.showFullImage(this, imagePath)
     private fun checkDateSeparator(timestamp: Long) {
         val dateStr = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date(timestamp))
 
         // 换天分隔——醒目横线
         if (dateStr != lastMessageDate) {
-            addDaySeparator(timestamp)
+            bubbleRenderer.addDaySeparator(timestamp)
             lastMessageDate = dateStr
         }
         // 同一天内，距上条消息超过 1 小时——朴素间隔标记
@@ -536,28 +486,13 @@ class ChatConversationActivity : AppCompatActivity() {
             val gapMs = timestamp - lastMessageTimestamp
             val gapMinutes = gapMs / 60000
             if (gapMinutes >= 60) {
-                val gapLabel = formatGapLabel(gapMs)
+                val gapLabel = bubbleRenderer.formatGapLabel(gapMs)
                 val timeLabel = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(timestamp))
-                addGapMarker("距上条消息 $gapLabel · $timeLabel")
+                bubbleRenderer.addGapMarker("距上条消息 $gapLabel · $timeLabel")
             }
         }
 
         lastMessageTimestamp = timestamp
-    }
-
-    /** 格式化时间间隔：3小时、1天3小时、3天 */
-    private fun formatGapLabel(gapMs: Long): String {
-        return bubbleRenderer.formatGapLabel(gapMs)
-    }
-
-    /** 换天分隔线——醒目 */
-    private fun addDaySeparator(timestamp: Long) {
-        bubbleRenderer.addDaySeparator(timestamp)
-    }
-
-    /** 时间间隔标记——朴素 */
-    private fun addGapMarker(text: String) {
-        bubbleRenderer.addGapMarker(text)
     }
 
     // ===== 更新连接状态 =====
@@ -659,12 +594,12 @@ class ChatConversationActivity : AppCompatActivity() {
         allSavedMessages = chatStorage.loadMessages(friendId)
         if (allSavedMessages.isEmpty()) {
             lastMessageDate = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
-            addDaySeparator(System.currentTimeMillis())
+            bubbleRenderer.addDaySeparator(System.currentTimeMillis())
             if (apiUrl.isEmpty() || apiKey.isEmpty() || apiModel.isEmpty()) {
-                addSystemTip("还没有配置 API 哦~\n请先去桌面 → 设置 → 填写 API 地址、密钥和模型名称")
+                bubbleRenderer.addSystemTip("还没有配置 API 哦~\n请先去桌面 → 设置 → 填写 API 地址、密钥和模型名称")
                 setStatus("unconfigured")
             } else {
-                addSystemTip("API 已就绪，开始聊天吧 ♡")
+                bubbleRenderer.addSystemTip("API 已就绪，开始聊天吧 ♡")
                 setStatus("online")
             }
         } else {
@@ -679,13 +614,13 @@ class ChatConversationActivity : AppCompatActivity() {
 
                 // 给 AI 的上下文也插入时间标记
                 if (dateStr != prevDateStr && prevDateStr.isNotEmpty()) {
-                    val dayLabel = formatDateLabel(msg.timestamp)
+                    val dayLabel = bubbleRenderer.formatDateLabel(msg.timestamp)
                     chatHistory.add(ChatMessage("system", "[日期变更: $dayLabel]"))
                 } else if (prevTimestamp > 0) {
                     val gapMs = msg.timestamp - prevTimestamp
                     val gapMinutes = gapMs / 60000
                     if (gapMinutes >= 60) {
-                        val gapLabel = formatGapLabel(gapMs)
+                        val gapLabel = bubbleRenderer.formatGapLabel(gapMs)
                         val gapTime = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(msg.timestamp))
                         chatHistory.add(ChatMessage("system", "[距上条消息 $gapLabel · $gapTime]"))
                     }
@@ -717,7 +652,7 @@ class ChatConversationActivity : AppCompatActivity() {
             // 只渲染最近 50 条消息的气泡（性能优化）
             val recentMessages = if (allSavedMessages.size > messagesPerPage) {
                 // 顶部加一个"加载更多"按钮
-                addLoadMoreButton()
+                bubbleRenderer.addLoadMoreButton()
                 allSavedMessages.takeLast(messagesPerPage)
             } else {
                 allSavedMessages
@@ -744,25 +679,25 @@ class ChatConversationActivity : AppCompatActivity() {
                             } else listOf(msg.imagePath)
 
                             if (allPaths.size > 1) {
-                                addMultiImageBubble(allPaths, timeStr, caption)
+                                bubbleRenderer.addMultiImageBubble(allPaths, timeStr, caption)
                             } else {
-                                addImageBubble(msg.imagePath, timeStr, caption)
+                                bubbleRenderer.addImageBubble(msg.imagePath, timeStr, caption)
                             }
                         } else {
-                            addUserBubble(msg.content, timeStr)
+                            bubbleRenderer.addUserBubble(msg.content, timeStr)
                         }
                     }
                                         "assistant" -> {
                         if (msg.content.trim() == "[SEEN]") {
-                            addSeenIndicator()
+                            bubbleRenderer.addSeenIndicator()
                         } else {
-                            if (msg.thinking.isNotEmpty()) addThinkingBlock(msg.thinking)
-                            addAiBubble(msg.content, timeStr)
+                            if (msg.thinking.isNotEmpty()) bubbleRenderer.addThinkingBlock(msg.thinking)
+                            bubbleRenderer.addAiBubble(msg.content, timeStr)
                         }
                     }
                     "system" -> {
                         if (msg.type == "tip") {
-                            addSystemTip(msg.content)
+                            bubbleRenderer.addSystemTip(msg.content)
                         }
                     }
                 }
@@ -778,14 +713,6 @@ class ChatConversationActivity : AppCompatActivity() {
                 setStatus("online")
             }
         }
-    }
-
-    /**
-     * 在顶部加一个"加载更多"按钮
-     * 点击后加载更早的消息
-     */
-    private fun addLoadMoreButton() {
-        bubbleRenderer.addLoadMoreButton()
     }
 
     /**
@@ -843,11 +770,11 @@ class ChatConversationActivity : AppCompatActivity() {
             when (msg.role) {
                 "user" -> {
                     if (msg.imagePath.isNotEmpty()) {
-                        val bubble = addImageBubbleAt(msg.imagePath, timeStr,
+                        val bubble = bubbleRenderer.addImageBubbleAt(msg.imagePath, timeStr,
                             msg.content.let { if (it == "[图片]") "" else it }, insertIndex)
                         insertIndex++
                     } else {
-                        val bubble = addUserBubble(msg.content, timeStr)
+                        val bubble = bubbleRenderer.addUserBubble(msg.content, timeStr)
                         // 移到正确位置
                         messagesContainer.removeView(bubble)
                         messagesContainer.addView(bubble, insertIndex)
@@ -861,7 +788,7 @@ class ChatConversationActivity : AppCompatActivity() {
                         if (msg.thinking.isNotEmpty()) {
                             // 历史加载时跳过思维链，太多了会卡
                         }
-                        val bubble = createAiBubbleView(msg.content, timeStr)
+                        val bubble = bubbleRenderer.createAiBubbleView(msg.content, timeStr)
                         messagesContainer.addView(bubble, insertIndex)
                         insertIndex++
                     }
@@ -891,24 +818,10 @@ class ChatConversationActivity : AppCompatActivity() {
 
         // 如果还有更早的消息，重新加按钮
         if (startIndex > 0) {
-            addLoadMoreButton()
+            bubbleRenderer.addLoadMoreButton()
         }
 
         Toast.makeText(this, "加载了 $loadCount 条消息", Toast.LENGTH_SHORT).show()
-    }
-
-    /**
-     * 创建一个 AI 气泡 View（不自动添加到容器，用于插入到指定位置）
-     */
-    private fun createAiBubbleView(msg: String, timeStr: String): View {
-        return bubbleRenderer.createAiBubbleView(msg, timeStr)
-    }
-
-    /**
-     * 在指定位置添加图片气泡
-     */
-    private fun addImageBubbleAt(imagePath: String, timeStr: String, caption: String, index: Int): View {
-        return bubbleRenderer.addImageBubbleAt(imagePath, timeStr, caption, index)
     }
 
     /**
@@ -947,7 +860,7 @@ class ChatConversationActivity : AppCompatActivity() {
                 val timeStr = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date(now))
  
                 checkDateSeparator(now)
-                addUserBubble(part, timeStr)
+                bubbleRenderer.addUserBubble(part, timeStr)
                 chatStorage.appendMessage(friendId, StoredMessage("user", part, now))
                 chatHistory.add(ChatMessage("user", "[$timeStr] $part"))
  
@@ -975,7 +888,7 @@ class ChatConversationActivity : AppCompatActivity() {
     private fun callApiForReply() {
         val userBubbleView = messagesContainer.getChildAt(messagesContainer.childCount - 1)
         setStatus("sending")
-        showTypingIndicator()
+        bubbleRenderer.showTypingIndicator()
         Thread {
             try {
                 val api = ApiHelper(apiUrl, apiKey, apiModel, apiType)
@@ -1009,7 +922,7 @@ class ChatConversationActivity : AppCompatActivity() {
                 }
  
                 handler.post {
-                    removeTypingIndicator()
+                    bubbleRenderer.removeTypingIndicator()
                     setStatus("online")
 
                     // 更新顶部状态显示
@@ -1030,10 +943,10 @@ class ChatConversationActivity : AppCompatActivity() {
 
  
                     if (isSeen) {
-                        addSeenIndicator()
+                        bubbleRenderer.addSeenIndicator()
                     } else {
-                        if (response.thinking.isNotEmpty()) addThinkingBlock(response.thinking)
-                        addAiBubbleStreaming(cleanText, replyTimeStr)
+                        if (response.thinking.isNotEmpty()) bubbleRenderer.addThinkingBlock(response.thinking)
+                        bubbleRenderer.addAiBubbleStreaming(cleanText, replyTimeStr)
 
                         // 发送通知
                         NotificationHelper(this@ChatConversationActivity).sendChatNotification(
@@ -1044,9 +957,9 @@ class ChatConversationActivity : AppCompatActivity() {
             } catch (e: Exception) {
                 val friendlyMsg = getErrorMessage(e)
                 handler.post {
-                    removeTypingIndicator()
+                    bubbleRenderer.removeTypingIndicator()
                     setStatus("error", friendlyMsg)
-                    addErrorBubble(friendlyMsg) { callApiForReply() }
+                    bubbleRenderer.addErrorBubble(friendlyMsg) { callApiForReply() }
                 }
             }
         }.start()
@@ -1068,7 +981,12 @@ class ChatConversationActivity : AppCompatActivity() {
                 removePendingPreview()
                 return
             } else if (msg.isNotEmpty()) {
-                batchModeManager.addText(msg)
+                if (pendingQuoteAuthor != null && pendingQuoteContent != null) {
+                    batchModeManager.addTextWithQuote(msg, pendingQuoteAuthor!!, pendingQuoteContent!!)
+                    removeQuotePreview()
+                } else {
+                    batchModeManager.addText(msg)
+                }
                 inputMessage.text.clear()
                 return
             }
@@ -1097,9 +1015,9 @@ class ChatConversationActivity : AppCompatActivity() {
         if (imagePaths.isNotEmpty()) {
             // ===== 发图片（支持多张，可能带文字） =====
             if (imagePaths.size == 1) {
-                addImageBubble(imagePaths[0], timeStr, msg)
+                bubbleRenderer.addImageBubble(imagePaths[0], timeStr, msg)
             } else {
-                addMultiImageBubble(imagePaths, timeStr, msg)
+                bubbleRenderer.addMultiImageBubble(imagePaths, timeStr, msg)
             }
 
             val displayContent = if (msg.isNotEmpty()) msg else {
@@ -1116,7 +1034,7 @@ class ChatConversationActivity : AppCompatActivity() {
                 type = "image", extras = extrasJson
             ))
 
-            val base64List = imagePaths.map { imageToBase64(File(it)) }
+            val base64List = imagePaths.map { ImageHelper.toBase64(File(it)) }
             val apiContent = if (msg.isNotEmpty()) msg else {
                 "[用户发送了${if (imagePaths.size > 1) "${imagePaths.size}张" else "一张"}图片]"
             }
@@ -1129,13 +1047,13 @@ class ChatConversationActivity : AppCompatActivity() {
 
             if (quoteAuthor != null && quoteContent != null) {
                 // 带引用的消息：先显示引用块再显示气泡
-                addQuoteBubble(quoteAuthor, quoteContent, msg, timeStr)
+                bubbleRenderer.addQuoteBubble(quoteAuthor, quoteContent, msg, timeStr)
                 val shortQuote = if (quoteContent.length > 50) quoteContent.substring(0, 50) + "..." else quoteContent
                 chatStorage.appendMessage(friendId, StoredMessage("user", "「回复 $quoteAuthor: $shortQuote」\n$msg", now))
                 chatHistory.add(ChatMessage("user", "[$timeStr] [引用 $quoteAuthor 说的: $shortQuote]\n$msg"))
                 removeQuotePreview()
             } else {
-                addUserBubble(msg, timeStr)
+                bubbleRenderer.addUserBubble(msg, timeStr)
                 chatStorage.appendMessage(friendId, StoredMessage("user", msg, now))
                 chatHistory.add(ChatMessage("user", "[$timeStr] $msg"))
             }
@@ -1172,7 +1090,7 @@ class ChatConversationActivity : AppCompatActivity() {
         // 调用 API
         val userBubbleView = messagesContainer.getChildAt(messagesContainer.childCount - 1)
         setStatus("sending")
-        showTypingIndicator()
+        bubbleRenderer.showTypingIndicator()
         Thread {
             try {
                 val api = ApiHelper(apiUrl, apiKey, apiModel, apiType)
@@ -1206,7 +1124,7 @@ class ChatConversationActivity : AppCompatActivity() {
                 }
 
                 handler.post {
-                    removeTypingIndicator()
+                    bubbleRenderer.removeTypingIndicator()
                     setStatus("online")
 
                     // 更新顶部状态显示
@@ -1227,10 +1145,10 @@ class ChatConversationActivity : AppCompatActivity() {
 
 
                     if (isSeen) {
-                        addSeenIndicator()
+                        bubbleRenderer.addSeenIndicator()
                     } else {
-                        if (response.thinking.isNotEmpty()) addThinkingBlock(response.thinking)
-                        addAiBubbleStreaming(cleanText, replyTimeStr)
+                        if (response.thinking.isNotEmpty()) bubbleRenderer.addThinkingBlock(response.thinking)
+                        bubbleRenderer.addAiBubbleStreaming(cleanText, replyTimeStr)
 
                         // 发送通知
                         NotificationHelper(this@ChatConversationActivity).sendChatNotification(
@@ -1242,7 +1160,7 @@ class ChatConversationActivity : AppCompatActivity() {
             } catch (e: Exception) {
                 val friendlyMsg = getErrorMessage(e)
                 handler.post {
-                    removeTypingIndicator()
+                    bubbleRenderer.removeTypingIndicator()
                     // 发送失败时撤回
                     messagesContainer.removeView(userBubbleView)
                     if (chatHistory.isNotEmpty()) chatHistory.removeAt(chatHistory.size - 1)
@@ -1253,21 +1171,10 @@ class ChatConversationActivity : AppCompatActivity() {
                     }
                     if (imagePaths.isEmpty()) inputMessage.setText(msg)
                     setStatus("error", friendlyMsg)
-                    addErrorBubble(friendlyMsg)
+                    bubbleRenderer.addErrorBubble(friendlyMsg)
                 }
             }
         }.start()
-    }
-
-    private fun copyToClipboard(content: String) {
-        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        clipboard.setPrimaryClip(ClipData.newPlainText("chat_message", content))
-        Toast.makeText(this, "已复制", Toast.LENGTH_SHORT).show()
-    }
-
-    // ===== 长按消息菜单 =====
-    private fun showMessageMenu(content: String, author: String) {
-        bubbleRenderer.showMessageMenu(content, author)
     }
 
     // ===== 显示引用预览条 =====
@@ -1344,37 +1251,7 @@ class ChatConversationActivity : AppCompatActivity() {
         quotePreviewContainer.visibility = View.GONE
     }
 
-    // ===== 思维链折叠块 =====
-    private fun addThinkingBlock(thinking: String) {
-        bubbleRenderer.addThinkingBlock(thinking)
-    }
-
-    // ===== 带引用的用户气泡 =====
-    private fun addQuoteBubble(quoteAuthor: String, quoteContent: String, msg: String, timeStr: String): View {
-        return bubbleRenderer.addQuoteBubble(quoteAuthor, quoteContent, msg, timeStr)
-    }
-
-    // ===== 用户气泡 =====
-    private fun addUserBubble(msg: String, timeStr: String): View {
-        return bubbleRenderer.addUserBubble(msg, timeStr)
-    }
-
-    // ===== AI 气泡 =====
-    private fun addAiBubble(msg: String, timeStr: String) {
-        bubbleRenderer.addAiBubble(msg, timeStr)
-    }
-    /**
-     *
-     * 原理：
-     * 1. 先创建一个空的气泡（跟 addAiBubble 一样的外观）
-     * 2. 用 handler.postDelayed 定时往气泡里追加文字
-     * 3. 每次追加几个字，间隔很短，看起来就像在打字
-     * 4. 全部显示完之后，把纯文本替换成 Markdown 渲染后的版本
-     *
-     * chunkSize = 每次蹦几个字（越大越快）
-     * delay = 每次蹦字之间隔多少毫秒（越小越快）
-     */
-         // ===== 表情包面板：显示/隐藏 =====
+    // ===== 表情包面板：显示/隐藏 =====
 
     /**
      * 加号菜单：在输入栏上方显示/隐藏
@@ -1422,54 +1299,57 @@ class ChatConversationActivity : AppCompatActivity() {
         val handler = android.os.Handler(android.os.Looper.getMainLooper())
         var delay = 0L
 
-        // 引用只附在第一条上
-        val quoteAuthor = pendingQuoteAuthor
-        val quoteContent = pendingQuoteContent
+        // 清掉全局引用状态（引用已经存在各条item里了）
         removeQuotePreview()
 
         // 收集所有文字内容给 API
         val allTextForApi = StringBuilder()
-        if (quoteAuthor != null && quoteContent != null) {
-            allTextForApi.append("[引用 $quoteAuthor: $quoteContent]\n")
-        }
 
         // 按顺序一条条蹦出去
         for ((index, item) in items.withIndex()) {
+            // 先收集文字给 API（在 postDelayed 外面，保证顺序）
+            if (item.quoteAuthor != null && item.quoteContent != null) {
+                allTextForApi.append("[引用 ${item.quoteAuthor}: ${item.quoteContent}]\n")
+            }
+            if (item.type == "text") {
+                allTextForApi.append(item.text).append("\n")
+            } else if (item.text.isNotEmpty()) {
+                allTextForApi.append(item.text).append("\n")
+            }
+
             handler.postDelayed({
                 val now = System.currentTimeMillis()
                 val timeStr = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date(now))
                 checkDateSeparator(now)
 
                 if (item.type == "image") {
-                    // 图片条目
                     if (item.imagePaths.size == 1) {
-                        addImageBubble(item.imagePaths[0], timeStr, item.text)
+                        bubbleRenderer.addImageBubble(item.imagePaths[0], timeStr, item.text)
                     } else {
-                        addMultiImageBubble(item.imagePaths, timeStr, item.text)
+                        bubbleRenderer.addMultiImageBubble(item.imagePaths, timeStr, item.text)
                     }
                     val displayContent = if (item.text.isNotEmpty()) item.text else "[${item.imagePaths.size}张图片]"
                     chatStorage.appendMessage(friendId, StoredMessage(
                         "user", displayContent, now, imagePath = item.imagePaths[0], type = "image"
                     ))
-                    val base64List = item.imagePaths.map { imageToBase64(File(it)) }
+                    val base64List = item.imagePaths.map { ImageHelper.toBase64(File(it)) }
                     chatHistory.add(ChatMessage("user",
                         if (item.text.isNotEmpty()) item.text else "[用户发送了图片]", base64List))
                 } else {
-                    // 文字条目
-                    if (index == 0 && quoteAuthor != null && quoteContent != null) {
-                        addQuoteBubble(quoteAuthor, quoteContent, item.text, timeStr)
+                    // 文字条目：检查这条自己有没有带引用
+                    if (item.quoteAuthor != null && item.quoteContent != null) {
+                        bubbleRenderer.addQuoteBubble(item.quoteAuthor, item.quoteContent, item.text, timeStr)
                         chatStorage.appendMessage(friendId, StoredMessage(
-                            "user", "「回复 $quoteAuthor」\n${item.text}", now, type = "quote"
+                            "user", "「回复 ${item.quoteAuthor}」\n${item.text}", now, type = "quote"
                         ))
                     } else {
-                        addUserBubble(item.text, timeStr)
+                        bubbleRenderer.addUserBubble(item.text, timeStr)
                         chatStorage.appendMessage(friendId, StoredMessage("user", item.text, now))
                     }
                 }
 
                 // 最后一条发完，统一调 API
                 if (index == items.size - 1) {
-                    // 文字条目合并成一条给 API
                     val textContent = allTextForApi.toString()
                     if (textContent.isNotEmpty()) {
                         chatHistory.add(ChatMessage("user", textContent))
@@ -1478,60 +1358,6 @@ class ChatConversationActivity : AppCompatActivity() {
                 }
             }, delay)
 
-            // 收集文字给 API
-            if (item.type == "text") {
-                allTextForApi.append(item.text).append("\n")
-            } else if (item.text.isNotEmpty()) {
-                allTextForApi.append(item.text).append("\n")
-            }
-
-            delay += 300L
-        }
-    }
-
-    /**
-     * 批量发送消息：一条条蹦出去，但只调一次 API
-     */
-    private fun sendBatchMessages(texts: List<String>) {
-        val handler = android.os.Handler(android.os.Looper.getMainLooper())
-        val allText = texts.joinToString("\n")
-        var delay = 0L
-
-        // 引用只附在第一条上
-        val quoteAuthor = pendingQuoteAuthor
-        val quoteContent = pendingQuoteContent
-        removeQuotePreview()
-
-        for ((index, text) in texts.withIndex()) {
-            handler.postDelayed({
-                val now = System.currentTimeMillis()
-                val timeStr = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(now))
-                checkDateSeparator(now)
-
-                if (index == 0 && quoteAuthor != null && quoteContent != null) {
-                    // 第一条带引用
-                    addQuoteBubble(quoteAuthor, quoteContent, text, timeStr)
-                    chatStorage.appendMessage(friendId, StoredMessage(
-                        "user", text, now,
-                        type = "quote",
-                        extras = JSONObject().apply {
-                            put("quote_author", quoteAuthor)
-                            put("quote_content", quoteContent)
-                        }.toString()
-                    ))
-                } else {
-                    addUserBubble(text, timeStr)
-                    chatStorage.appendMessage(friendId, StoredMessage("user", text, now))
-                }
-
-                if (index == texts.size - 1) {
-                    val apiText = if (quoteAuthor != null && quoteContent != null) {
-                        "「引用 $quoteAuthor: $quoteContent」\n$allText"
-                    } else allText
-                    chatHistory.add(ChatMessage("user", apiText))
-                    callApiForReply()
-                }
-            }, delay)
             delay += 300L
         }
     }
@@ -1546,132 +1372,6 @@ class ChatConversationActivity : AppCompatActivity() {
         stickerPanelManager.hide()
         sendMessage()
     }
-    // ===== 关闭搜索面板 =====
-    private fun closeSearch() {
-        searchPanel.visibility = View.GONE
-        searchInput.text.clear()
-        searchResults.removeAllViews()
-        searchResultsScroll.visibility = View.GONE
-        // 收起键盘
-        val imm = getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager
-        imm.hideSoftInputFromWindow(searchInput.windowToken, 0)
-    }
- 
-    /**
-     * 执行搜索：从存储的聊天记录里找包含关键词的消息
-     *
-     * 原理很简单：
-     * 1. 从 ChatStorage 里读取所有消息
-     * 2. 过滤出包含关键词的消息（不区分大小写）
-     * 3. 渲染成一个个卡片显示在搜索结果区域
-     * 4. 每个卡片显示：谁说的、什么时候说的、说了什么（关键词高亮）
-     */
-    private fun performSearch(keyword: String) {
-        val dp = { value: Int -> (value * resources.displayMetrics.density).toInt() }
-        searchResults.removeAllViews()
- 
-        val allMessages = chatStorage.loadMessages(friendId)
-        val matches = allMessages.filter {
-            it.content.contains(keyword, ignoreCase = true) && it.content != "[SEEN]"
-        }
- 
-        if (matches.isEmpty()) {
-            val tip = TextView(this).apply {
-                text = "没有找到相关记录"
-                textSize = 12f
-                setTextColor(c.tipText)
-                setPadding(dp(4), dp(12), dp(4), dp(12))
-            }
-            searchResults.addView(tip)
-            searchResultsScroll.visibility = View.VISIBLE
- 
-            // 限制搜索结果最大高度为屏幕的 40%
-            val maxH = (resources.displayMetrics.heightPixels * 0.4).toInt()
-            searchResultsScroll.layoutParams.height = maxH
-            return
-        }
- 
-        // 限制搜索结果最大高度为屏幕的 40%
-        val maxH = (resources.displayMetrics.heightPixels * 0.4).toInt()
-        searchResultsScroll.layoutParams.height = maxH
-        searchResultsScroll.visibility = View.VISIBLE
- 
-        // 最多显示 50 条结果，避免太卡
-        val showList = if (matches.size > 50) matches.takeLast(50) else matches
- 
-        for (msg in showList) {
-            val card = LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-                setPadding(dp(10), dp(8), dp(10), dp(8))
-                setBackgroundColor(c.divider)
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
-                ).apply { bottomMargin = dp(4) }
-            }
- 
-            // 第一行：角色 + 时间
-            val header = TextView(this).apply {
-                val role = if (msg.role == "user") "我" else friendName
-                val time = SimpleDateFormat("yyyy/MM/dd HH:mm", Locale.getDefault())
-                    .format(java.util.Date(msg.timestamp))
-                text = "$role · $time"
-                textSize = 10f
-                setTextColor(c.accent)
-            }
- 
-            // 第二行：消息内容（关键词高亮）
-            val content = TextView(this).apply {
-                // 截取消息，太长的话只显示关键词附近的片段
-                val fullText = msg.content
-                val displayText = if (fullText.length > 120) {
-                    val idx = fullText.indexOf(keyword, ignoreCase = true)
-                    val start = maxOf(0, idx - 40)
-                    val end = minOf(fullText.length, idx + keyword.length + 40)
-                    (if (start > 0) "..." else "") +
-                        fullText.substring(start, end) +
-                        (if (end < fullText.length) "..." else "")
-                } else fullText
- 
-                // 高亮关键词
-                val spannable = android.text.SpannableString(displayText)
-                var searchStart = 0
-                val lowerDisplay = displayText.lowercase()
-                val lowerKeyword = keyword.lowercase()
-                while (true) {
-                    val idx = lowerDisplay.indexOf(lowerKeyword, searchStart)
-                    if (idx == -1) break
-                    spannable.setSpan(
-                        android.text.style.ForegroundColorSpan(c.highlightColor),
-                        idx, idx + keyword.length,
-                        android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
-                    )
-                    searchStart = idx + keyword.length
-                }
- 
-                this.text = spannable
-                textSize = 13f
-                setTextColor(c.textSecondary)
-                setPadding(0, dp(4), 0, 0)
-                maxLines = 3
-            }
- 
-            card.addView(header)
-            card.addView(content)
-            searchResults.addView(card)
-        }
- 
-        // 顶部显示搜索数量
-        val countTip = TextView(this).apply {
-            text = "找到 ${matches.size} 条记录" +
-                    (if (matches.size > 50) "（显示最近 50 条）" else "")
-            textSize = 10f
-            setTextColor(c.textHint)
-            setPadding(dp(4), dp(4), dp(4), dp(8))
-        }
-        searchResults.addView(countTip, 0)
-    }
-
     // ===== 已读不回：在最后一条消息下面显示「已读」 =====
 
     /**
@@ -1851,17 +1551,9 @@ $impression"""
         }.start()
     }
 
-    private fun addSeenIndicator() = bubbleRenderer.addSeenIndicator()
-
-    private fun addAiBubbleStreaming(msg: String, timeStr: String) {
-        bubbleRenderer.addAiBubbleStreaming(msg, timeStr)
-    }
-    
-    private fun addSystemTip(msg: String) = bubbleRenderer.addSystemTip(msg)
-
     /** 添加系统提示并保存到聊天记录（退出再进来还能看到） */
     private fun addAndSaveSystemTip(msg: String) {
-        addSystemTip(msg)
+        bubbleRenderer.addSystemTip(msg)
         val saved = chatStorage.loadMessages(friendId).toMutableList()
         saved.add(StoredMessage(
             role = "system",
@@ -1872,57 +1564,21 @@ $impression"""
         chatStorage.saveMessages(friendId, saved)
     }
 
-    /**
-     * 把异常转成人话
-     */
+    /** 把异常转成人话 */
     private fun getErrorMessage(e: Exception): String {
         val msg = e.message?.lowercase() ?: ""
         val name = e.javaClass.simpleName.lowercase()
         return when {
-            name.contains("unknownhost") ->
-                "网络不通，检查一下 Wi-Fi？"
-            name.contains("connect") && name.contains("exception") ->
-                "连不上服务器，API 地址可能有误"
-            name.contains("sockettimeout") || name.contains("timeout") ->
-                "连接超时了，网络可能不太稳"
-            msg.contains("401") || msg.contains("unauthorized") || msg.contains("invalid") && msg.contains("key") ->
-                "API 密钥无效或已过期"
-            msg.contains("403") || msg.contains("forbidden") ->
-                "API 密钥没有这个模型的权限"
-            msg.contains("404") || msg.contains("not found") || msg.contains("not_found") ->
-                "模型名称没找到，去设置检查一下？"
-            msg.contains("429") || msg.contains("rate") || msg.contains("too many") ->
-                "请求太频繁了，歇一会儿再说"
-            msg.contains("500") || msg.contains("502") || msg.contains("503") || msg.contains("overloaded") ->
-                "服务器暂时不可用，过一会儿再试"
-            msg.contains("thinking") ->
-                "模型不支持思维链，可以去设置换一个模型试试"
-            else ->
-                "发送失败了（${e.message?.take(50) ?: "未知错误"}）"
+            name.contains("unknownhost") -> "网络不通，检查一下 Wi-Fi？"
+            name.contains("connect") && name.contains("exception") -> "连不上服务器，API 地址可能有误"
+            name.contains("sockettimeout") || name.contains("timeout") -> "连接超时了，网络可能不太稳"
+            msg.contains("401") || msg.contains("unauthorized") || msg.contains("invalid") && msg.contains("key") -> "API 密钥无效或已过期"
+            msg.contains("403") || msg.contains("forbidden") -> "API 密钥没有这个模型的权限"
+            msg.contains("404") || msg.contains("not found") || msg.contains("not_found") -> "模型名称没找到，去设置检查一下？"
+            msg.contains("429") || msg.contains("rate") || msg.contains("too many") -> "请求太频繁了，歇一会儿再说"
+            msg.contains("500") || msg.contains("502") || msg.contains("503") || msg.contains("overloaded") -> "服务器暂时不可用，过一会儿再试"
+            msg.contains("thinking") -> "模型不支持思维链，可以去设置换一个模型试试"
+            else -> "发送失败了（${e.message?.take(50) ?: "未知错误"}）"
         }
     }
-
-    /**
-     * 在聊天里显示一条错误提示
-     * 带重试按钮时点击可以重新调 API
-     */
-    private fun addErrorBubble(errorMsg: String, retryAction: (() -> Unit)? = null) {
-        bubbleRenderer.addErrorBubble(errorMsg, retryAction)
-    }
-
-    private fun addTimeLabel(labelText: String) {
-        bubbleRenderer.addTimeLabel(labelText)
-    }
-
-    private fun formatDateLabel(timestamp: Long): String {
-        return bubbleRenderer.formatDateLabel(timestamp)
-    }
-
-    private fun showTypingIndicator() {
-        bubbleRenderer.showTypingIndicator()
-    }
-    private fun removeTypingIndicator() {
-        bubbleRenderer.removeTypingIndicator()
-    }
-    private fun scrollToBottom() = bubbleRenderer.scrollToBottom()
 }

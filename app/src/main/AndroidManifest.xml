@@ -38,6 +38,9 @@
         <activity android:name=".FriendDetailActivity" />
         <activity android:name=".ClockActivity" />
         <activity android:name=".ClockHistoryActivity" />
+        <activity android:name=".NestActivity"
+            android:configChanges="orientation|screenSize"
+            android:screenOrientation="unspecified" />
         <service
             android:name=".HavenService"
             android:enabled="true"

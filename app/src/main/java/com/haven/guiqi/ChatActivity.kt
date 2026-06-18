@@ -63,6 +63,8 @@ class ChatActivity : AppCompatActivity() {
     private lateinit var friendStorage: FriendStorage
     private lateinit var chatStorage: ChatStorage
     private lateinit var footprintStorage: FootprintStorage
+    private lateinit var friendTabManager: FriendTabManager
+    private lateinit var profileTabManager: ProfileTabManager
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -121,6 +123,13 @@ class ChatActivity : AppCompatActivity() {
         friendStorage = FriendStorage(this)
         chatStorage = ChatStorage(this)
         footprintStorage = FootprintStorage(this)
+        friendTabManager = FriendTabManager(this, friendsList, friendStorage, chatStorage) {
+            refreshMessagesList()
+        }
+        profileTabManager = ProfileTabManager(this, profileContainer, friendStorage, chatStorage,
+            onExport = { startExport() },
+            onImport = { startImport() }
+        )
 
         // ===== 标签切换 =====
         btnTabMessages.setOnClickListener { switchTab(0) }
@@ -138,7 +147,7 @@ class ChatActivity : AppCompatActivity() {
 
         // ===== 来信页加号按钮 =====
         findViewById<TextView>(R.id.btnAddFromMessages).setOnClickListener {
-            showAddFriendDialog()
+            friendTabManager.showAddFriendDialog()
         }
 
         // ===== 足迹发布按钮 =====
@@ -151,8 +160,8 @@ class ChatActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         refreshMessagesList()
-        refreshFriendsList()
-        refreshProfile()
+        friendTabManager.refresh()
+        profileTabManager.refresh()
         refreshFootprints()
     }
 
@@ -230,54 +239,7 @@ class ChatActivity : AppCompatActivity() {
         }
     }
 
-    // ===== 刷新好友列表 =====
-    private fun refreshFriendsList() {
-        friendsList.removeAllViews()
-        val dp = { value: Int -> (value * resources.displayMetrics.density).toInt() }
-        val friends = friendStorage.loadFriends()
-
-        // 按分组显示
-        val groups = friends.groupBy { it.group }
-        for ((groupName, groupFriends) in groups) {
-            // 分组标题
-            val groupTitle = TextView(this).apply {
-                this.text = "- $groupName -"
-                textSize = 10f
-                setTextColor(c.dateLabel)
-                setPadding(dp(4), dp(8), dp(4), dp(8))
-                letterSpacing = 0.2f
-            }
-            friendsList.addView(groupTitle)
-
-            for (f in groupFriends) {
-                addFriendCard(f)
-            }
-        }
-
-        if (friends.isEmpty()) {
-            addEmptyHint(friendsList, "点下面的按钮添加第一个好友吧~")
-        }
-
-        // 添加好友按钮
-        val addBtn = TextView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply {
-                topMargin = dp(16)
-            }
-            gravity = Gravity.CENTER
-            this.text = "＋ 添加新好友"
-            textSize = 11f
-            setTextColor(c.accent)
-            setPadding(dp(12), dp(10), dp(12), dp(10))
-            background = getDrawable(R.drawable.chat_card_bg)
-        }
-        addBtn.setOnClickListener { showAddFriendDialog() }
-        friendsList.addView(addBtn)
-    }
-
-    // ===== 来信卡片 =====
+    // ===== 刷新"我的"页面 =====
     private fun addMessageCard(friend: Friend, lastMessage: String, time: String) {
         val dp = { value: Int -> (value * resources.displayMetrics.density).toInt() }
 
@@ -372,7 +334,7 @@ class ChatActivity : AppCompatActivity() {
         infoLayout.addView(tvLastMsg)
 
         // 续火花
-        val streak = calculateStreak(friend.id)
+        val streak = friendTabManager.calculateStreak(friend.id)
         if (streak > 0) {
             val streakView = TextView(this).apply {
                 this.text = "🔥 $streak 天"
@@ -398,588 +360,6 @@ class ChatActivity : AppCompatActivity() {
         }
 
         messagesList.addView(card)
-    }
-
-    // ===== 好友卡片 =====
-    private fun addFriendCard(friend: Friend) {
-        val dp = { value: Int -> (value * resources.displayMetrics.density).toInt() }
-
-        val card = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            background = getDrawable(R.drawable.chat_card_bg)
-            setPadding(dp(14), dp(12), dp(14), dp(12))
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply {
-                bottomMargin = dp(8)
-            }
-        }
-
-        val avatar = TextView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(dp(42), dp(42)).apply {
-                marginEnd = dp(12)
-            }
-            gravity = Gravity.CENTER
-            this.text = friend.icon
-            textSize = 16f
-            setTextColor(c.accentStrong)
-            setBackgroundResource(R.drawable.icon_bg)
-        }
-
-        val infoLayout = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            layoutParams = LinearLayout.LayoutParams(
-                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f
-            )
-        }
-
-        val tvName = TextView(this).apply {
-            this.text = friend.name
-            textSize = 14f
-            setTextColor(c.textPrimary)
-        }
-
-        val detailRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply {
-                topMargin = dp(4)
-            }
-        }
-
-        val tvGroup = TextView(this).apply {
-            this.text = friend.group
-            textSize = 9f
-            setTextColor(c.accent)
-            setPadding(dp(8), dp(2), dp(8), dp(2))
-            background = getDrawable(R.drawable.chat_card_bg)
-        }
-
-        val tvCode = TextView(this).apply {
-            this.text = friend.id
-            textSize = 9f
-            setTextColor(c.dateLabel)
-            setPadding(dp(8), 0, 0, 0)
-        }
-
-        detailRow.addView(tvGroup)
-        detailRow.addView(tvCode)
-
-        // 续火花
-        val streak = calculateStreak(friend.id)
-        if (streak > 0) {
-            val tvStreak = TextView(this).apply {
-                this.text = "🔥$streak"
-                textSize = 9f
-                setTextColor(c.warning)
-                setPadding(dp(8), 0, 0, 0)
-            }
-            detailRow.addView(tvStreak)
-        }
-
-        infoLayout.addView(tvName)
-        infoLayout.addView(detailRow)
-
-        val arrow = TextView(this).apply {
-            this.text = "›"
-            textSize = 18f
-            setTextColor(c.timeText)
-            setPadding(dp(8), dp(8), dp(4), dp(8))
-            // 点击箭头进入好友详情
-            setOnClickListener {
-                val intent = Intent(this@ChatActivity, FriendDetailActivity::class.java)
-                intent.putExtra("friend_id", friend.id)
-                startActivity(intent)
-            }
-        }
-
-        card.addView(avatar)
-        card.addView(infoLayout)
-        card.addView(arrow)
-
-        // 点击进入聊天
-        card.setOnClickListener {
-            val intent = Intent(this, ChatConversationActivity::class.java)
-            intent.putExtra("friend_id", friend.id)
-            intent.putExtra("friend_name", friend.name)
-            intent.putExtra("friend_icon", friend.icon)
-            startActivity(intent)
-        }
-
-        // 长按弹出编辑/删除菜单
-        card.setOnLongClickListener {
-            showFriendOptions(friend)
-            true
-        }
-
-        friendsList.addView(card)
-    }
-
-    // ===== 添加好友对话框 =====
-    private fun showAddFriendDialog() {
-        val dp = { value: Int -> (value * resources.displayMetrics.density).toInt() }
-
-        val input = EditText(this).apply {
-            hint = "输入好友名称"
-            setPadding(dp(16), dp(12), dp(16), dp(12))
-            textSize = 15f
-        }
-
-        AlertDialog.Builder(this)
-            .setTitle("添加新好友")
-            .setView(input)
-            .setPositiveButton("添加") { _, _ ->
-                val name = input.text.toString().trim()
-                if (name.isNotEmpty()) {
-                    val friend = friendStorage.addFriend(name)
-                    Toast.makeText(this, "已添加「${friend.name}」\n编码: ${friend.id}", Toast.LENGTH_SHORT).show()
-                    refreshMessagesList()
-                    refreshFriendsList()
-                } else {
-                    Toast.makeText(this, "名称不能为空", Toast.LENGTH_SHORT).show()
-                }
-            }
-            .setNegativeButton("取消", null)
-            .show()
-    }
-
-    // ===== 好友选项菜单（长按触发） =====
-    private fun showFriendOptions(friend: Friend) {
-        val options = arrayOf("编辑名称", "修改分组", "配置 API", "删除好友")
-        AlertDialog.Builder(this)
-            .setTitle(friend.name)
-            .setItems(options) { _, which ->
-                when (which) {
-                    0 -> showEditNameDialog(friend)
-                    1 -> showEditGroupDialog(friend)
-                    2 -> showApiConfigDialog(friend)
-                    3 -> showDeleteConfirm(friend)
-                }
-            }
-            .show()
-    }
-
-    // ===== 编辑名称 =====
-    private fun showEditNameDialog(friend: Friend) {
-        val dp = { value: Int -> (value * resources.displayMetrics.density).toInt() }
-
-        val input = EditText(this).apply {
-            setText(friend.name)
-            setPadding(dp(16), dp(12), dp(16), dp(12))
-            textSize = 15f
-        }
-
-        AlertDialog.Builder(this)
-            .setTitle("编辑名称")
-            .setView(input)
-            .setPositiveButton("保存") { _, _ ->
-                val newName = input.text.toString().trim()
-                if (newName.isNotEmpty()) {
-                    friendStorage.updateFriend(friend.copy(name = newName))
-                    refreshMessagesList()
-                    refreshFriendsList()
-                }
-            }
-            .setNegativeButton("取消", null)
-            .show()
-    }
-
-    // ===== 编辑分组 =====
-    private fun showEditGroupDialog(friend: Friend) {
-        val dp = { value: Int -> (value * resources.displayMetrics.density).toInt() }
-
-        val input = EditText(this).apply {
-            setText(friend.group)
-            setPadding(dp(16), dp(12), dp(16), dp(12))
-            textSize = 15f
-        }
-
-        AlertDialog.Builder(this)
-            .setTitle("修改分组")
-            .setView(input)
-            .setPositiveButton("保存") { _, _ ->
-                val newGroup = input.text.toString().trim()
-                if (newGroup.isNotEmpty()) {
-                    friendStorage.updateFriend(friend.copy(group = newGroup))
-                    refreshMessagesList()
-                    refreshFriendsList()
-                }
-            }
-            .setNegativeButton("取消", null)
-            .show()
-    }
-
-    // ===== 配置好友专属 API =====
-    private fun showApiConfigDialog(friend: Friend) {
-        val dp = { value: Int -> (value * resources.displayMetrics.density).toInt() }
-
-        // 创建表单布局
-        val layout = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(20), dp(16), dp(20), dp(8))
-        }
-
-        // API 类型选择按钮
-        var selectedType = friend.apiType
-        val typeNames = arrayOf("OpenAI 格式（GPT/DeepSeek/中转站）", "Claude 原生", "Gemini 原生")
-        val typeValues = arrayOf("openai", "claude", "gemini")
-        val currentTypeIndex = typeValues.indexOf(selectedType).coerceAtLeast(0)
-
-        val typeBtn = TextView(this).apply {
-            this.text = "API 类型: ${typeNames[currentTypeIndex]}"
-            textSize = 14f
-            setPadding(0, 0, 0, dp(12))
-        }
-        typeBtn.setOnClickListener {
-            AlertDialog.Builder(this)
-                .setTitle("选择 API 类型")
-                .setItems(typeNames) { _, which ->
-                    selectedType = typeValues[which]
-                    typeBtn.text = "API 类型: ${typeNames[which]}"
-                }
-                .show()
-        }
-        layout.addView(typeBtn)
-
-        // 提示文字
-        val hint = TextView(this).apply {
-            this.text = "留空则使用全局配置（设置页的配置）"
-            textSize = 11f
-            setTextColor(c.textSecondary)
-            setPadding(0, 0, 0, dp(12))
-        }
-        layout.addView(hint)
-
-        // API 地址
-        val inputUrl = EditText(this).apply {
-            this.hint = "API 地址"
-            setText(friend.apiUrl)
-            textSize = 14f
-        }
-        layout.addView(inputUrl)
-
-        // API 密钥
-        val inputKey = EditText(this).apply {
-            this.hint = "API 密钥"
-            setText(friend.apiKey)
-            textSize = 14f
-            inputType = android.text.InputType.TYPE_CLASS_TEXT or
-                    android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
-        }
-        layout.addView(inputKey)
-
-        // 模型名
-        val inputModel = EditText(this).apply {
-            this.hint = "模型名称"
-            setText(friend.apiModel)
-            textSize = 14f
-        }
-        layout.addView(inputModel)
-
-        AlertDialog.Builder(this)
-            .setTitle("${friend.name} 的 API 配置")
-            .setView(layout)
-            .setPositiveButton("保存") { _, _ ->
-                friendStorage.updateFriend(friend.copy(
-                    apiUrl = inputUrl.text.toString().trim(),
-                    apiKey = inputKey.text.toString().trim(),
-                    apiModel = inputModel.text.toString().trim(),
-                    apiType = selectedType
-                ))
-                Toast.makeText(this, "API 配置已保存 ♡", Toast.LENGTH_SHORT).show()
-                refreshFriendsList()
-            }
-            .setNeutralButton("清除配置") { _, _ ->
-                friendStorage.updateFriend(friend.copy(
-                    apiUrl = "", apiKey = "", apiModel = "", apiType = "openai"
-                ))
-                Toast.makeText(this, "已清除，将使用全局配置", Toast.LENGTH_SHORT).show()
-                refreshFriendsList()
-            }
-            .setNegativeButton("取消", null)
-            .show()
-    }
-
-    // ===== 删除确认 =====
-    private fun showDeleteConfirm(friend: Friend) {
-        AlertDialog.Builder(this)
-            .setTitle("删除好友")
-            .setMessage("确定要删除「${friend.name}」吗？\n聊天记录也会一起删除，无法恢复。")
-            .setPositiveButton("删除") { _, _ ->
-                friendStorage.deleteFriend(friend.id)
-                Toast.makeText(this, "已删除「${friend.name}」", Toast.LENGTH_SHORT).show()
-                refreshMessagesList()
-                refreshFriendsList()
-            }
-            .setNegativeButton("取消", null)
-            .show()
-    }
-
-    // ===== 刷新"我的"页面 =====
-    private fun refreshProfile() {
-        profileContainer.removeAllViews()
-        val dp = { value: Int -> (value * resources.displayMetrics.density).toInt() }
-        val prefs = getSharedPreferences("haven_prefs", MODE_PRIVATE)
-        val userName = prefs.getString("user_name", "") ?: ""
-
-        // ===== 头像区 =====
-        val avatarSection = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER
-            setPadding(0, dp(20), 0, dp(20))
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            )
-        }
-
-        val avatarCircle = TextView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(dp(64), dp(64))
-            gravity = Gravity.CENTER
-            this.text = if (userName.isNotEmpty()) userName.first().toString() else "?"
-            textSize = 26f
-            setTextColor(c.accentStrong)
-            setBackgroundResource(R.drawable.icon_bg)
-        }
-
-        val nameText = TextView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { topMargin = dp(10) }
-            this.text = if (userName.isNotEmpty()) userName else "点击设置名字"
-            textSize = 18f
-            setTextColor(if (userName.isNotEmpty()) c.textPrimary else c.tipText)
-        }
-
-        val subtitle = TextView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { topMargin = dp(4) }
-            this.text = "这里是你的归栖"
-            textSize = 11f
-            setTextColor(c.dateLabel)
-        }
-
-        avatarSection.addView(avatarCircle)
-        avatarSection.addView(nameText)
-        avatarSection.addView(subtitle)
-        avatarSection.setOnClickListener { showEditUserNameDialog() }
-        profileContainer.addView(avatarSection)
-
-        // ===== 统计卡片 =====
-        val friends = friendStorage.loadFriends()
-        var totalMessages = 0
-        for (f in friends) {
-            totalMessages += chatStorage.loadMessages(f.id).size
-        }
-
-        val statsCard = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            background = getDrawable(R.drawable.chat_card_bg)
-            setPadding(dp(16), dp(14), dp(16), dp(14))
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { bottomMargin = dp(16) }
-        }
-
-        fun statItem(number: String, label: String): LinearLayout {
-            return LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-                gravity = Gravity.CENTER
-                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-            }.also { layout ->
-                layout.addView(TextView(this).apply {
-                    this.text = number
-                    textSize = 20f
-                    setTextColor(c.textPrimary)
-                    gravity = Gravity.CENTER
-                })
-                layout.addView(TextView(this).apply {
-                    this.text = label
-                    textSize = 10f
-                    setTextColor(c.tipText)
-                    gravity = Gravity.CENTER
-                    layoutParams = LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.WRAP_CONTENT,
-                        LinearLayout.LayoutParams.WRAP_CONTENT
-                    ).apply { topMargin = dp(3) }
-                })
-            }
-        }
-
-        statsCard.addView(statItem("${friends.size}", "好友"))
-        statsCard.addView(statItem("$totalMessages", "消息"))
-        statsCard.addView(statItem("${friends.count { it.apiUrl.isNotEmpty() }}", "专属API"))
-        profileContainer.addView(statsCard)
-
-        // ===== 设置列表 =====
-        addProfileSectionTitle("个人设置")
-
-        addProfileItem("用户名称", if (userName.isNotEmpty()) userName else "未设置",
-            "AI 能看到的你的名字") {
-            showEditUserNameDialog()
-        }
-
-        // 用户的自我描述
-        val userBioPrefs = getSharedPreferences("haven_user", MODE_PRIVATE)
-        val myBio = userBioPrefs.getString("my_bio", "") ?: ""
-        addProfileItem("我眼中的自己",
-            if (myBio.isNotEmpty()) myBio.take(20) + (if (myBio.length > 20) "..." else "") else "还没有写",
-            "你的自我描述，AI 好奇时可以翻看（不会主动塞给 AI）") {
-            showEditMyBioDialog()
-        }
-
-        addProfileSectionTitle("数据管理")
-
-        addProfileItem("导出数据", "", "把好友和聊天记录导出备份") {
-            startExport()
-        }
-
-        addProfileItem("导入数据", "", "从备份文件恢复好友和聊天记录") {
-            startImport()
-        }
-
-        addProfileSectionTitle("关于")
-
-        addProfileItem("归栖 Haven", "v0.1.0", "一个属于你的地方") { }
-    }
-
-    // ===== 编辑用户名 =====
-    private fun showEditUserNameDialog() {
-        val dp = { value: Int -> (value * resources.displayMetrics.density).toInt() }
-        val prefs = getSharedPreferences("haven_prefs", MODE_PRIVATE)
-        val currentName = prefs.getString("user_name", "") ?: ""
-
-        val input = EditText(this).apply {
-            setText(currentName)
-            this.hint = "你希望 AI 怎么称呼你"
-            setPadding(dp(16), dp(12), dp(16), dp(12))
-            textSize = 15f
-        }
-
-        AlertDialog.Builder(this)
-            .setTitle("设置名字")
-            .setView(input)
-            .setPositiveButton("保存") { _, _ ->
-                val name = input.text.toString().trim()
-                prefs.edit().putString("user_name", name).apply()
-                refreshProfile()
-                if (name.isNotEmpty()) {
-                    Toast.makeText(this, "以后 AI 就叫你「$name」了 ♡", Toast.LENGTH_SHORT).show()
-                }
-            }
-            .setNegativeButton("取消", null)
-            .show()
-    }
-
-    // ===== 编辑用户自我描述 =====
-    private fun showEditMyBioDialog() {
-        val dp = { value: Int -> (value * resources.displayMetrics.density).toInt() }
-        val prefs = getSharedPreferences("haven_user", MODE_PRIVATE)
-        val currentBio = prefs.getString("my_bio", "") ?: ""
-
-        val input = EditText(this).apply {
-            setText(currentBio)
-            this.hint = "写写你眼中的自己吧...\n\nAI 不会每次都看到这些，只有它好奇的时候才会主动翻看"
-            setPadding(dp(16), dp(12), dp(16), dp(12))
-            textSize = 14f
-            minLines = 5
-            gravity = Gravity.TOP
-            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE
-        }
-
-        AlertDialog.Builder(this)
-            .setTitle("我眼中的自己")
-            .setView(input)
-            .setPositiveButton("保存") { _, _ ->
-                val bio = input.text.toString().trim()
-                prefs.edit().putString("my_bio", bio).apply()
-                refreshProfile()
-                if (bio.isNotEmpty()) {
-                    Toast.makeText(this, "已保存 ♡", Toast.LENGTH_SHORT).show()
-                }
-            }
-            .setNegativeButton("取消", null)
-            .show()
-    }
-
-    // ===== "我的"页面辅助方法 =====
-    private fun addProfileSectionTitle(title: String) {
-        val dp = { value: Int -> (value * resources.displayMetrics.density).toInt() }
-        val tv = TextView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { topMargin = dp(12); bottomMargin = dp(8) }
-            this.text = title
-            textSize = 12f
-            setTextColor(c.accent)
-            setPadding(dp(4), 0, 0, 0)
-            letterSpacing = 0.1f
-        }
-        profileContainer.addView(tv)
-    }
-
-    private fun addProfileItem(title: String, value: String, desc: String, onClick: () -> Unit) {
-        val dp = { value: Int -> (value * resources.displayMetrics.density).toInt() }
-
-        val card = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            background = getDrawable(R.drawable.chat_card_bg)
-            setPadding(dp(14), dp(12), dp(14), dp(12))
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { bottomMargin = dp(6) }
-            setOnClickListener { onClick() }
-        }
-
-        val topRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-        }
-
-        val tvTitle = TextView(this).apply {
-            this.text = title
-            textSize = 14f
-            setTextColor(c.textPrimary)
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-        }
-        topRow.addView(tvTitle)
-
-        if (value.isNotEmpty()) {
-            val tvValue = TextView(this).apply {
-                this.text = value
-                textSize = 12f
-                setTextColor(c.accent)
-            }
-            topRow.addView(tvValue)
-        }
-
-        card.addView(topRow)
-
-        if (desc.isNotEmpty()) {
-            val tvDesc = TextView(this).apply {
-                this.text = desc
-                textSize = 11f
-                setTextColor(c.tipText)
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
-                ).apply { topMargin = dp(3) }
-            }
-            card.addView(tvDesc)
-        }
-
-        profileContainer.addView(card)
     }
 
     // ===== 刷新足迹列表 =====
@@ -1268,6 +648,9 @@ class ChatActivity : AppCompatActivity() {
                         put("content", msg.content)
                         put("timestamp", msg.timestamp)
                         if (msg.thinking.isNotEmpty()) put("thinking", msg.thinking)
+                        if (msg.imagePath.isNotEmpty()) put("image_path", msg.imagePath)
+                        if (msg.type != "text") put("type", msg.type)
+                        if (msg.extras.isNotEmpty()) put("extras", msg.extras)
                     })
                 }
 
@@ -1376,7 +759,10 @@ class ChatActivity : AppCompatActivity() {
                             role = msgObj.getString("role"),
                             content = msgObj.getString("content"),
                             timestamp = msgObj.optLong("timestamp", 0L),
-                            thinking = msgObj.optString("thinking", "")
+                            thinking = msgObj.optString("thinking", ""),
+                            imagePath = msgObj.optString("image_path", ""),
+                            type = msgObj.optString("type", "text"),
+                            extras = msgObj.optString("extras", "")
                         ))
                     }
                     chatStorage.saveMessages(friend.id, messages)
@@ -1387,8 +773,8 @@ class ChatActivity : AppCompatActivity() {
 
             // 刷新界面
             refreshMessagesList()
-            refreshFriendsList()
-            refreshProfile()
+            friendTabManager.refresh()
+            profileTabManager.refresh()
 
             Toast.makeText(this,
                 "导入成功 ♡\n${friends.size} 个好友已恢复",
@@ -1407,51 +793,6 @@ class ChatActivity : AppCompatActivity() {
             EXPORT_REQUEST -> doExport(data.data!!)
             IMPORT_REQUEST -> doImport(data.data!!)
         }
-    }
-
-    // ===== 计算续火花（连续聊天天数） =====
-    private fun calculateStreak(friendId: String): Int {
-        val messages = chatStorage.loadMessages(friendId)
-        if (messages.isEmpty()) return 0
-
-        // 收集所有有消息的日期（去重）
-        val chatDays = messages.map { msg ->
-            val cal = Calendar.getInstance().apply { timeInMillis = msg.timestamp }
-            "${cal.get(Calendar.YEAR)}-${cal.get(Calendar.DAY_OF_YEAR)}"
-        }.distinct().sortedDescending()
-
-        if (chatDays.isEmpty()) return 0
-
-        // 从今天开始往回数连续天数
-        val today = Calendar.getInstance()
-        val todayKey = "${today.get(Calendar.YEAR)}-${today.get(Calendar.DAY_OF_YEAR)}"
-
-        // 如果今天没聊过，检查昨天
-        val yesterday = Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, -1) }
-        val yesterdayKey = "${yesterday.get(Calendar.YEAR)}-${yesterday.get(Calendar.DAY_OF_YEAR)}"
-
-        // 起点必须是今天或昨天，否则火花已断
-        val startDay = if (chatDays.contains(todayKey)) {
-            today.clone() as Calendar
-        } else if (chatDays.contains(yesterdayKey)) {
-            yesterday.clone() as Calendar
-        } else {
-            return 0
-        }
-
-        // 从起点往回数连续天
-        var streak = 0
-        val checkDay = startDay.clone() as Calendar
-        while (true) {
-            val dayKey = "${checkDay.get(Calendar.YEAR)}-${checkDay.get(Calendar.DAY_OF_YEAR)}"
-            if (chatDays.contains(dayKey)) {
-                streak++
-                checkDay.add(Calendar.DAY_OF_YEAR, -1)
-            } else {
-                break
-            }
-        }
-        return streak
     }
 
     // ===== 空状态提示 =====

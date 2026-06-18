@@ -657,7 +657,7 @@ class DesktopActivity : AppCompatActivity() {
                 val intent = Intent(this, ChatActivity::class.java)
                 startActivity(intent)
             }
-            "nest" -> Toast.makeText(this, "小窝 - 正在搭建中 🪹", Toast.LENGTH_SHORT).show()
+            "nest" -> startActivity(Intent(this, NestActivity::class.java))
             "archive" -> {
                 startActivity(Intent(this, ArchiveActivity::class.java))
             }
