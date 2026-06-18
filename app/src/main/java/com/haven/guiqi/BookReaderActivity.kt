@@ -13,20 +13,24 @@ import androidx.appcompat.app.AppCompatActivity
 class BookReaderActivity : AppCompatActivity() {
 
     private lateinit var bookStorage: BookStorage
+    private lateinit var socialStorage: BookSocialStorage
     private var book: BookStorage.Book? = null
     private var currentChapter = 0
 
     private lateinit var rootLayout: LinearLayout
+    private lateinit var presenceBar: LinearLayout
     private lateinit var tvBookTitle: TextView
     private lateinit var tvChapterTitle: TextView
     private lateinit var tvChapterInfo: TextView
     private lateinit var tvContent: TextView
     private lateinit var contentScroll: ScrollView
+    private lateinit var annotationsLayout: LinearLayout
     private lateinit var btnPrev: TextView
     private lateinit var btnNext: TextView
     private lateinit var btnList: TextView
     private lateinit var btnFont: TextView
     private lateinit var btnTheme: TextView
+    private lateinit var btnAnnotate: TextView
     private lateinit var topBar: LinearLayout
     private lateinit var bottomBar: LinearLayout
 
@@ -55,12 +59,19 @@ class BookReaderActivity : AppCompatActivity() {
 
         try {
             bookStorage = BookStorage(this)
+            socialStorage = BookSocialStorage(this)
             val bookId = intent.getStringExtra("book_id")
             if (bookId == null) { finish(); return }
             book = bookStorage.getBook(bookId)
             if (book == null) { finish(); return }
 
             currentChapter = book!!.lastChapter.coerceIn(0, book!!.chapters.size - 1)
+
+            // 用户自己的进度优先
+            val myProgress = socialStorage.getProgress(book!!.id, "user")
+            if (myProgress != null) {
+                currentChapter = myProgress.chapter.coerceIn(0, book!!.chapters.size - 1)
+            }
 
             rootLayout = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
@@ -92,6 +103,15 @@ class BookReaderActivity : AppCompatActivity() {
             topBar.addView(tvChapterInfo)
             rootLayout.addView(topBar)
 
+            // 在场状态栏
+            presenceBar = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(14), dp(2), dp(14), dp(2))
+                visibility = View.GONE
+            }
+            rootLayout.addView(presenceBar)
+
             // 章节标题
             tvChapterTitle = TextView(this).apply {
                 gravity = Gravity.CENTER
@@ -115,6 +135,13 @@ class BookReaderActivity : AppCompatActivity() {
             contentScroll.addView(tvContent)
             rootLayout.addView(contentScroll)
 
+            // 批注区域（在正文下方）
+            annotationsLayout = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(16), dp(4), dp(16), dp(4))
+            }
+            rootLayout.addView(annotationsLayout)
+
             // 底部栏
             bottomBar = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
@@ -134,6 +161,13 @@ class BookReaderActivity : AppCompatActivity() {
                 text = "Aa"; textSize = 13f; setTextColor(lightHint)
                 setPadding(0, dp(8), 0, dp(8))
                 setOnClickListener { showFontSizeDialog() }
+            }
+            btnAnnotate = TextView(this).apply {
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                gravity = Gravity.CENTER
+                text = "✎"; textSize = 15f; setTextColor(lightHint)
+                setPadding(0, dp(8), 0, dp(8))
+                setOnClickListener { showAnnotateDialog() }
             }
             btnList = TextView(this).apply {
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
@@ -158,12 +192,19 @@ class BookReaderActivity : AppCompatActivity() {
             }
             bottomBar.addView(btnPrev)
             bottomBar.addView(btnFont)
+            bottomBar.addView(btnAnnotate)
             bottomBar.addView(btnList)
             bottomBar.addView(btnTheme)
             bottomBar.addView(btnNext)
             rootLayout.addView(bottomBar)
 
             setContentView(rootLayout)
+
+            // 设置在场状态
+            val userName = getSharedPreferences("haven_prefs", MODE_PRIVATE)
+                .getString("user_name", "我") ?: "我"
+            socialStorage.setPresence("user", userName, book!!.id, book!!.title, currentChapter)
+
             loadChapter()
 
         } catch (e: Exception) {
@@ -193,6 +234,15 @@ class BookReaderActivity : AppCompatActivity() {
         btnPrev.isEnabled = currentChapter > 0
         btnNext.alpha = if (currentChapter < b.chapters.size - 1) 1f else 0.3f
         btnNext.isEnabled = currentChapter < b.chapters.size - 1
+
+        // 更新在场状态和个人进度
+        socialStorage.updatePresenceChapter("user", currentChapter)
+        socialStorage.saveProgress(b.id, "user", currentChapter)
+
+        // 刷新在场栏
+        refreshPresenceBar()
+        // 刷新批注
+        refreshAnnotations()
     }
 
     private fun prevChapter() {
@@ -253,6 +303,7 @@ class BookReaderActivity : AppCompatActivity() {
         btnNext.setTextColor(hint)
         btnList.setTextColor(hint)
         btnFont.setTextColor(hint)
+        btnAnnotate.setTextColor(hint)
         btnTheme.text = if (isDarkMode) "🌙" else "☀"
         btnTheme.setTextColor(hint)
 
@@ -261,8 +312,165 @@ class BookReaderActivity : AppCompatActivity() {
     }
 
     private fun saveAndFinish() {
-        book?.let { bookStorage.updateProgress(it.id, currentChapter, 0) }
+        book?.let {
+            bookStorage.updateProgress(it.id, currentChapter, 0)
+            socialStorage.clearPresence("user")
+        }
         finish()
+    }
+
+    // ===== 在场状态栏 =====
+    private fun refreshPresenceBar() {
+        presenceBar.removeAllViews()
+        val b = book ?: return
+        val readers = socialStorage.getBookReaders(b.id).filter { it.readerId != "user" }
+
+        if (readers.isEmpty()) {
+            presenceBar.visibility = View.GONE
+            return
+        }
+
+        presenceBar.visibility = View.VISIBLE
+        val hintColor = if (isDarkMode) darkHint else lightHint
+
+        val icon = TextView(this).apply {
+            text = "📖 "; textSize = 10f
+        }
+        presenceBar.addView(icon)
+
+        for ((i, reader) in readers.withIndex()) {
+            val color = socialStorage.getReaderColor(reader.readerId)
+            val tv = TextView(this).apply {
+                text = reader.readerName + if (reader.chapter == currentChapter) " (同页)" else " (第${reader.chapter + 1}章)"
+                textSize = 10f
+                setTextColor(color)
+                setPadding(0, 0, dp(8), 0)
+                setOnClickListener {
+                    if (reader.chapter != currentChapter) {
+                        android.app.AlertDialog.Builder(this@BookReaderActivity)
+                            .setMessage("${reader.readerName} 在第 ${reader.chapter + 1} 章，要跳过去吗？")
+                            .setPositiveButton("跳过去") { _, _ ->
+                                currentChapter = reader.chapter
+                                loadChapter()
+                            }
+                            .setNegativeButton("不了", null)
+                            .show()
+                    }
+                }
+            }
+            presenceBar.addView(tv)
+        }
+    }
+
+    // ===== 批注 =====
+    private fun refreshAnnotations() {
+        annotationsLayout.removeAllViews()
+        val b = book ?: return
+        val annotations = socialStorage.getChapterAnnotations(b.id, currentChapter)
+
+        if (annotations.isEmpty()) return
+
+        // 分隔线
+        val divider = View(this).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(1)
+            ).apply { topMargin = dp(8); bottomMargin = dp(8) }
+            setBackgroundColor(if (isDarkMode) 0xFF333344.toInt() else 0xFFE0D5C5.toInt())
+        }
+        annotationsLayout.addView(divider)
+
+        val title = TextView(this).apply {
+            text = "批注 (${annotations.size})"
+            textSize = 11f
+            setTextColor(if (isDarkMode) darkHint else lightHint)
+            setPadding(0, 0, 0, dp(6))
+        }
+        annotationsLayout.addView(title)
+
+        for (ann in annotations.sortedBy { it.timestamp }) {
+            val card = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(10), dp(6), dp(10), dp(6))
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { bottomMargin = dp(4) }
+            }
+
+            // 彩色左边条 + 内容
+            val contentRow = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+            }
+            val colorBar = View(this).apply {
+                layoutParams = LinearLayout.LayoutParams(dp(3), LinearLayout.LayoutParams.MATCH_PARENT).apply {
+                    marginEnd = dp(8)
+                }
+                setBackgroundColor(ann.color)
+            }
+            val textCol = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            }
+            textCol.addView(TextView(this).apply {
+                text = ann.authorName
+                textSize = 10f; setTextColor(ann.color)
+            })
+            textCol.addView(TextView(this).apply {
+                text = ann.content
+                textSize = 13f; setTextColor(if (isDarkMode) darkText else lightText)
+                setPadding(0, dp(2), 0, 0)
+            })
+
+            contentRow.addView(colorBar)
+            contentRow.addView(textCol)
+            card.addView(contentRow)
+
+            // 长按删除自己的批注
+            if (ann.authorId == "user") {
+                card.setOnLongClickListener {
+                    android.app.AlertDialog.Builder(this)
+                        .setMessage("删除这条批注？")
+                        .setPositiveButton("删除") { _, _ ->
+                            socialStorage.deleteAnnotation(book!!.id, ann.id)
+                            refreshAnnotations()
+                        }
+                        .setNegativeButton("取消", null)
+                        .show()
+                    true
+                }
+            }
+
+            annotationsLayout.addView(card)
+        }
+    }
+
+    // ===== 写批注 =====
+    private fun showAnnotateDialog() {
+        val b = book ?: return
+        val userName = getSharedPreferences("haven_prefs", MODE_PRIVATE)
+            .getString("user_name", "我") ?: "我"
+
+        val input = android.widget.EditText(this).apply {
+            hint = "写点什么..."
+            setPadding(dp(16), dp(12), dp(16), dp(12))
+            textSize = 14f
+            minLines = 2
+            gravity = Gravity.TOP
+        }
+
+        android.app.AlertDialog.Builder(this)
+            .setTitle("在第 ${currentChapter + 1} 章留个批注")
+            .setView(input)
+            .setPositiveButton("留下") { _, _ ->
+                val content = input.text.toString().trim()
+                if (content.isNotEmpty()) {
+                    socialStorage.addAnnotation(b.id, currentChapter, "user", userName, content)
+                    refreshAnnotations()
+                    android.widget.Toast.makeText(this, "批注已留下 ♡", android.widget.Toast.LENGTH_SHORT).show()
+                }
+            }
+            .setNegativeButton("算了", null)
+            .show()
     }
 
     @Deprecated("Deprecated in Java")

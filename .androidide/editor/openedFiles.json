@@ -1,0 +1,35 @@
+{
+  "allFiles": [
+    {
+      "file": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/java/com/haven/guiqi/BookReaderActivity.kt",
+      "selection": {
+        "end": {
+          "column": 1,
+          "index": 18466,
+          "line": 479
+        },
+        "start": {
+          "column": 1,
+          "index": 18466,
+          "line": 479
+        }
+      }
+    },
+    {
+      "file": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/java/com/haven/guiqi/BookSocialStorage.kt",
+      "selection": {
+        "end": {
+          "column": 1,
+          "index": 9458,
+          "line": 267
+        },
+        "start": {
+          "column": 1,
+          "index": 9458,
+          "line": 267
+        }
+      }
+    }
+  ],
+  "selectedFile": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/java/com/haven/guiqi/BookSocialStorage.kt"
+}
