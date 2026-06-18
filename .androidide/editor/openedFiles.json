@@ -20,16 +20,121 @@
       "selection": {
         "end": {
           "column": 1,
-          "index": 9458,
-          "line": 267
+          "index": 10705,
+          "line": 298
         },
         "start": {
           "column": 1,
-          "index": 9458,
-          "line": 267
+          "index": 10705,
+          "line": 298
+        }
+      }
+    },
+    {
+      "file": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/java/com/haven/guiqi/SystemPromptBuilder.kt",
+      "selection": {
+        "end": {
+          "column": 1,
+          "index": 7427,
+          "line": 181
+        },
+        "start": {
+          "column": 1,
+          "index": 7427,
+          "line": 181
+        }
+      }
+    },
+    {
+      "file": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/java/com/haven/guiqi/InstructionProcessor.kt",
+      "selection": {
+        "end": {
+          "column": 1,
+          "index": 15783,
+          "line": 366
+        },
+        "start": {
+          "column": 1,
+          "index": 15783,
+          "line": 366
+        }
+      }
+    },
+    {
+      "file": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/java/com/haven/guiqi/ImpressionStorage.kt",
+      "selection": {
+        "end": {
+          "column": 0,
+          "index": 0,
+          "line": 0
+        },
+        "start": {
+          "column": 0,
+          "index": 0,
+          "line": 0
+        }
+      }
+    },
+    {
+      "file": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/java/com/haven/guiqi/DreamStorage.kt",
+      "selection": {
+        "end": {
+          "column": 0,
+          "index": 0,
+          "line": 0
+        },
+        "start": {
+          "column": 0,
+          "index": 0,
+          "line": 0
+        }
+      }
+    },
+    {
+      "file": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/java/com/haven/guiqi/DreamEngine.kt",
+      "selection": {
+        "end": {
+          "column": 1,
+          "index": 6610,
+          "line": 191
+        },
+        "start": {
+          "column": 1,
+          "index": 6610,
+          "line": 191
+        }
+      }
+    },
+    {
+      "file": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/java/com/haven/guiqi/HavenService.kt",
+      "selection": {
+        "end": {
+          "column": 1,
+          "index": 21130,
+          "line": 563
+        },
+        "start": {
+          "column": 1,
+          "index": 21130,
+          "line": 563
+        }
+      }
+    },
+    {
+      "file": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/java/com/haven/guiqi/ChatConversationActivity.kt",
+      "selection": {
+        "end": {
+          "column": 1,
+          "index": 58455,
+          "line": 1461
+        },
+        "start": {
+          "column": 1,
+          "index": 58455,
+          "line": 1461
         }
       }
     }
   ],
-  "selectedFile": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/java/com/haven/guiqi/BookSocialStorage.kt"
+  "selectedFile": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/java/com/haven/guiqi/HavenService.kt"
 }

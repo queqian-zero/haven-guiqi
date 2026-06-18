@@ -247,6 +247,37 @@ class BookSocialStorage(private val context: Context) {
         File(dir, "progress_$bookId.json").writeText(obj.toString())
     }
 
+    // ==================== AI阅读意图（下次醒来时喂内容） ====================
+
+    /** AI标记想读某本书某一章，下次触发时系统会把内容喂给它 */
+    fun setReadingIntent(readerId: String, bookId: String, chapter: Int) {
+        val file = File(dir, "reading_intent.json")
+        val all = try {
+            if (file.exists()) JSONObject(file.readText()) else JSONObject()
+        } catch (_: Exception) { JSONObject() }
+        all.put(readerId, JSONObject().apply {
+            put("book_id", bookId)
+            put("chapter", chapter)
+            put("timestamp", System.currentTimeMillis())
+        })
+        file.writeText(all.toString())
+    }
+
+    /** 获取某个AI的阅读意图（读完后清除） */
+    fun getAndClearReadingIntent(readerId: String): Triple<String, Int, Long>? {
+        val file = File(dir, "reading_intent.json")
+        if (!file.exists()) return null
+        return try {
+            val all = JSONObject(file.readText())
+            if (!all.has(readerId)) return null
+            val intent = all.getJSONObject(readerId)
+            val result = Triple(intent.getString("book_id"), intent.getInt("chapter"), intent.getLong("timestamp"))
+            all.remove(readerId)
+            file.writeText(all.toString())
+            result
+        } catch (_: Exception) { null }
+    }
+
     // ==================== 颜色分配 ====================
 
     /** 每个人一个固定颜色，用于批注和在场标识 */

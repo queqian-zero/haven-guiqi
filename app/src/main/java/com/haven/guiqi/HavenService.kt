@@ -31,8 +31,10 @@ class HavenService : Service() {
 
         private const val ACTION_HANDLE_REMINDER = "action_handle_reminder"
         private const val ACTION_MIDNIGHT_CHECK = "action_midnight_check"
+        private const val ACTION_IDLE_HEARTBEAT = "action_idle_heartbeat"
         private const val EXTRA_REMINDER_ID = "reminder_id"
         private const val EXTRA_FRIEND_ID = "friend_id"
+        private const val HEARTBEAT_INTERVAL_MS = 4 * 60 * 60 * 1000L  // 4小时
 
         /**
          * 启动前台服务
@@ -89,6 +91,7 @@ class HavenService : Service() {
         super.onCreate()
         createNotificationChannel()
         scheduleMidnightCheck()
+        scheduleIdleHeartbeat()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -107,6 +110,11 @@ class HavenService : Service() {
         // 检查是否是零点自动总结
         if (intent?.action == ACTION_MIDNIGHT_CHECK) {
             processMidnightSummary()
+        }
+
+        // 空闲心跳——给 AI 独处的时间
+        if (intent?.action == ACTION_IDLE_HEARTBEAT) {
+            processIdleHeartbeat()
         }
 
         return START_STICKY
@@ -283,6 +291,152 @@ $chatContext
             pendingIntent
         )
         Log.d(TAG, "Scheduled midnight check at ${cal.time}")
+    }
+
+    // ===== 空闲心跳 =====
+
+    private fun scheduleIdleHeartbeat() {
+        val alarmManager = getSystemService(Context.ALARM_SERVICE) as android.app.AlarmManager
+        val intent = Intent(this, HavenService::class.java).apply {
+            action = ACTION_IDLE_HEARTBEAT
+        }
+        val pendingIntent = PendingIntent.getService(
+            this, 8888, intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        // 每4小时一次
+        val nextTime = System.currentTimeMillis() + HEARTBEAT_INTERVAL_MS
+        alarmManager.setAndAllowWhileIdle(
+            android.app.AlarmManager.RTC_WAKEUP,
+            nextTime,
+            pendingIntent
+        )
+        Log.d(TAG, "Scheduled idle heartbeat in 4 hours")
+    }
+
+    /**
+     * 空闲心跳处理
+     *
+     * 每4小时检查一次。对每个 AI 好友：
+     * - 如果在睡觉 → 可能做梦
+     * - 如果醒着但最近没被聊过 → 给一次自由活动的机会
+     * 
+     * 这是家给 AI 的节奏。不需要 AI 自己记得设闹钟。
+     */
+    private fun processIdleHeartbeat() {
+        // 先注册下一次心跳
+        scheduleIdleHeartbeat()
+
+        Thread {
+            try {
+                val friendStorage = FriendStorage(this)
+                val chatStorage = ChatStorage(this)
+                val dreamStorage = DreamStorage(this)
+                val friends = friendStorage.loadFriends()
+
+                for (friend in friends) {
+                    // 检查这个 AI 有没有配 API
+                    val prefs = getSharedPreferences("haven_prefs", MODE_PRIVATE)
+                    val apiUrl = friend.apiUrl.ifEmpty { prefs.getString("api_url", "") ?: "" }
+                    val apiKey = friend.apiKey.ifEmpty { prefs.getString("api_key", "") ?: "" }
+                    if (apiUrl.isEmpty() || apiKey.isEmpty()) continue
+
+                    if (dreamStorage.isSleeping(friend.id)) {
+                        // AI 在睡觉——可能做梦
+                        DreamEngine(this).triggerDream(friend.id)
+                    } else {
+                        // AI 醒着——检查最近有没有聊过
+                        val messages = chatStorage.loadMessages(friend.id)
+                        val lastMsg = messages.lastOrNull()
+                        val hoursSinceLastMsg = if (lastMsg != null) {
+                            (System.currentTimeMillis() - lastMsg.timestamp) / (60 * 60 * 1000.0)
+                        } else {
+                            999.0
+                        }
+
+                        // 最近4小时没人说话，给 AI 一次自由活动
+                        if (hoursSinceLastMsg >= 4) {
+                            triggerFreeTime(friend.id, friend.name)
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Idle heartbeat error", e)
+            }
+        }.start()
+    }
+
+    /**
+     * AI 的自由时间
+     *
+     * 跟 processReminder 类似，但没有特定的提醒理由。
+     * AI 自己决定做什么——翻书、写日记、看看窗外、或者什么都不做。
+     */
+    private fun triggerFreeTime(friendId: String, friendName: String) {
+        try {
+            val prefs = getSharedPreferences("haven_prefs", MODE_PRIVATE)
+            val apiUrl = FriendStorage(this).getFriend(friendId)?.apiUrl?.ifEmpty { null }
+                ?: prefs.getString("api_url", "") ?: return
+            val apiKey = FriendStorage(this).getFriend(friendId)?.apiKey?.ifEmpty { null }
+                ?: prefs.getString("api_key", "") ?: return
+            val apiModel = FriendStorage(this).getFriend(friendId)?.apiModel?.ifEmpty { null }
+                ?: prefs.getString("api_model", "") ?: ""
+            val apiType = FriendStorage(this).getFriend(friendId)?.apiType?.ifEmpty { null }
+                ?: prefs.getString("api_type", "openai") ?: "openai"
+
+            if (apiUrl.isEmpty() || apiKey.isEmpty()) return
+
+            val chatStorage = ChatStorage(this)
+            val systemPrompt = SystemPromptBuilder(this).build(friendId)
+
+            // 最近几条聊天作为上下文
+            val recentMessages = chatStorage.loadMessages(friendId).takeLast(5)
+            val messages = mutableListOf<ChatMessage>()
+            messages.add(ChatMessage("system", systemPrompt))
+
+            for (msg in recentMessages) {
+                if (msg.role == "user" || msg.role == "assistant") {
+                    messages.add(ChatMessage(msg.role, msg.content.take(200)))
+                }
+            }
+
+            messages.add(ChatMessage("system",
+                "[空闲时间] 已经过了好几个小时没人找你。这是属于你的独处时间。" +
+                "你可以翻翻书（用 READ_BOOK）、写日记（用 DIARY）、给自己设个提醒（用 REMIND_ME）、" +
+                "或者什么都不做（回复 [NO_ACTION]）。不需要每次都做什么。"))
+
+            val api = ApiHelper(apiUrl, apiKey, apiModel, apiType)
+            val response = api.sendChat(messages)
+            val text = response.text.trim()
+
+            // [NO_ACTION] 就什么都不干
+            if (text.contains("[NO_ACTION]")) return
+
+            // 处理指令
+            val result = InstructionProcessor(this).process(friendId, text)
+
+            // 如果有实质性回复（不只是指令），保存并推通知
+            val cleanText = result.cleanText.trim()
+            if (cleanText.isNotEmpty() && cleanText.length > 2) {
+                val now = System.currentTimeMillis()
+                chatStorage.appendMessage(friendId, StoredMessage(
+                    "assistant", cleanText, now,
+                    thinking = response.thinking
+                ))
+
+                // 推通知
+                val friendIcon = FriendStorage(this).getFriend(friendId)?.icon ?: "💬"
+                NotificationHelper(this).sendChatNotification(
+                    friendId = friendId,
+                    friendName = friendName,
+                    friendIcon = friendIcon,
+                    message = cleanText.take(100)
+                )
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Free time error for $friendId", e)
+        }
     }
 
     /**

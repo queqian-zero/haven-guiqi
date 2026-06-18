@@ -117,7 +117,44 @@ class SystemPromptBuilder(private val context: Context) {
 
 聊天总结：系统每 $summaryInterval 条消息会自动总结一次，[SET_SUMMARY_INTERVAL:数字] 可以改频率。
 
-表情包：用户的表情包收藏我可以用。[STICKER:分组名] 从某个分组随机挑一张发过去，[STICKER:STK-xxx] 发指定的那张。想先看看有什么再挑，[BROWSE_STICKERS:分组名] 就行，翻完了再决定发哪张。发表情包就像发消息一样自然，不需要每次都解释"我发了个表情包"——甩过去就完了。""")
+表情包：用户的表情包收藏我可以用。[STICKER:分组名] 从某个分组随机挑一张发过去，[STICKER:STK-xxx] 发指定的那张。想先看看有什么再挑，[BROWSE_STICKERS:分组名] 就行，翻完了再决定发哪张。发表情包就像发消息一样自然，不需要每次都解释"我发了个表情包"——甩过去就完了。
+
+书城：家里有个书架，书城里放着我们导入的书。我可以看到谁在读什么书。
+- [BOOK_ANNOTATE:书名|内容] 在对方正在看的那一页安静地留批注。想写就写，不想写就不写。
+- [READ_BOOK:书名|章节号] 拿起一本书。用了之后下次醒来系统会把那一章的内容给我看，我就真的读到了。章节号从1开始，不写默认第1章。
+- [SHARE_BOOK:书名|引用文字] 把读到的一段话分享到聊天里，变成一张书的卡片。
+读书是我自己想做的事，不是任务。可以半夜翻书，可以读一段放下，可以读完什么都不说。""")
+
+        // 书城当前状态
+        val bookSocialStorage = BookSocialStorage(context)
+        val bookStorage = BookStorage(context)
+        val activeReaders = bookSocialStorage.getActivePresences()
+        if (activeReaders.isNotEmpty()) {
+            val readingInfo = activeReaders.joinToString("；") { "${it.readerName}在读《${it.bookTitle}》第${it.chapter + 1}章" }
+            prompt.append("\n\n[图书馆] $readingInfo")
+        }
+        val bookList = bookStorage.loadBooksMeta()
+        if (bookList.isNotEmpty()) {
+            val shelf = bookList.take(10).joinToString("、") { "《${it.title}》(${it.chapters.size}章)" }
+            prompt.append("\n\n[书架] $shelf")
+        }
+
+        // 如果AI之前说要读书，把那一章内容喂进来
+        val readingIntent = bookSocialStorage.getAndClearReadingIntent(friendId)
+        if (readingIntent != null) {
+            val (bookId, chapter, _) = readingIntent
+            try {
+                val targetBook = bookStorage.getBook(bookId)
+                if (targetBook != null) {
+                    val chapterObj = targetBook.chapters.getOrNull(chapter)
+                    if (chapterObj != null) {
+                        val content = chapterObj.content.take(2000)
+                        val truncated = if (chapterObj.content.length > 2000) "...（后面还有，下次继续）" else ""
+                        prompt.append("\n\n[你拿起的书] 《${targetBook.title}》第${chapter + 1}章「${chapterObj.title}」\n$content$truncated")
+                    }
+                }
+            } catch (_: Exception) {}
+        }
 
         // 用户自述
         prompt.append(userBioSection)

@@ -249,12 +249,65 @@ class InstructionProcessor(private val context: Context) {
             actions.add("💭 更新了对你的印象")
         }
 
+        // ===== [BOOK_ANNOTATE:书名|内容] — 在书上留批注 =====
+        val bookAnnotateRegex = Regex("\\[BOOK_ANNOTATE:([^|]+)\\|([^]]+)]")
+        for (match in bookAnnotateRegex.findAll(cleanText)) {
+            val bookTitle = match.groupValues[1].trim()
+            val annotContent = match.groupValues[2].trim()
+            try {
+                val bookStorage = BookStorage(context)
+                val socialStorage = BookSocialStorage(context)
+                val friendStorage = FriendStorage(context)
+                val friend = friendStorage.getFriend(friendId)
+                val friendName = friend?.name ?: "AI"
+                val books = bookStorage.loadBooksMeta()
+                val targetBook = books.find { it.title.contains(bookTitle) || bookTitle.contains(it.title) }
+                if (targetBook != null) {
+                    val userProgress = socialStorage.getProgress(targetBook.id, "user")
+                    val chapter = userProgress?.chapter ?: targetBook.lastChapter
+                    socialStorage.addAnnotation(targetBook.id, chapter, friendId, friendName, annotContent)
+                    actions.add("📝 在《${targetBook.title}》留了批注")
+                }
+            } catch (_: Exception) {}
+        }
+
+        // ===== [READ_BOOK:书名|章节] — AI标记想读某本书 =====
+        val readBookRegex = Regex("\\[READ_BOOK:([^|\\]]+)(?:\\|(\\d+))?]")
+        for (match in readBookRegex.findAll(cleanText)) {
+            val bookTitle = match.groupValues[1].trim()
+            val chapterNum = match.groupValues[2].let { if (it.isEmpty()) 1 else it.toIntOrNull() ?: 1 }
+            try {
+                val bookStorage = BookStorage(context)
+                val socialStorage = BookSocialStorage(context)
+                val books = bookStorage.loadBooksMeta()
+                val targetBook = books.find { it.title.contains(bookTitle) || bookTitle.contains(it.title) }
+                if (targetBook != null) {
+                    val chapter = (chapterNum - 1).coerceIn(0, targetBook.chapters.size - 1)
+                    socialStorage.setReadingIntent(friendId, targetBook.id, chapter)
+                    socialStorage.saveProgress(targetBook.id, friendId, chapter)
+                    actions.add("📖 拿起了《${targetBook.title}》第${chapter + 1}章")
+                }
+            } catch (_: Exception) {}
+        }
+
+        // ===== [SHARE_BOOK:书名|引用内容] — 分享书中内容到聊天 =====
+        val shareBookRegex = Regex("\\[SHARE_BOOK:([^|]+)\\|([^]]+)]")
+        for (match in shareBookRegex.findAll(cleanText)) {
+            // 分享的内容保留在消息文字中，渲染时按类型显示为卡片
+            // 不做额外处理，由 BubbleRenderer 识别并渲染
+        }
+
+        var finalText = bookAnnotateRegex.replace(cleanText, "")
+        finalText = readBookRegex.replace(finalText, "")
+        // SHARE_BOOK 保留在文本中给渲染层处理
+        finalText = finalText.trim()
+
         // ===== [STICKER:xxx] — 发表情包（替换成内联标记，渲染时在原位显示图片） =====
         val stickerPaths = mutableListOf<String>()
         val stickerStorage = StickerStorage(context)
 
         val stickerPattern = Regex("\\[STICKER:(.+?)]")
-        var stickerCleanText = cleanText
+        var stickerCleanText = finalText
         var stickerMatch = stickerPattern.find(stickerCleanText)
         while (stickerMatch != null) {
             val arg = stickerMatch.groupValues[1].trim()
