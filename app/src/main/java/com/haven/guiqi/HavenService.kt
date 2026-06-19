@@ -160,6 +160,23 @@ class HavenService : Service() {
                 val friend = friendStorage.getFriend(friendId) ?: return@Thread
                 val prefs = getSharedPreferences("haven_prefs", MODE_PRIVATE)
 
+                // 检查 AI 是否在睡觉
+                val dreamStorage = DreamStorage(this)
+                val wasSleeping = dreamStorage.isSleeping(friendId)
+                if (wasSleeping) {
+                    // 提醒到了就该醒——像定了闹钟一样
+                    dreamStorage.setSleeping(friendId, false)
+                    dreamStorage.updateLatestWakeAt(friendId)
+                    // 存一条系统提示让聊天页面看到
+                    val chatStorage0 = ChatStorage(this)
+                    chatStorage0.appendMessage(friendId, StoredMessage(
+                        role = "system",
+                        content = "⏰ 提醒时间到，醒了",
+                        timestamp = System.currentTimeMillis(),
+                        type = "tip"
+                    ))
+                }
+
                 val apiUrl: String
                 val apiKey: String
                 val apiModel: String
