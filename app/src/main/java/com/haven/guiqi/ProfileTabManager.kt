@@ -42,13 +42,18 @@ class ProfileTabManager(
             )
         }
 
+        val userAvatar = prefs.getString("user_avatar", "") ?: ""
+
         val avatarCircle = TextView(activity).apply {
             layoutParams = LinearLayout.LayoutParams(dp(64), dp(64))
             gravity = Gravity.CENTER
-            text = if (userName.isNotEmpty()) userName.first().toString() else "?"
+            text = if (userAvatar.isNotEmpty()) userAvatar
+                   else if (userName.isNotEmpty()) userName.first().toString()
+                   else "?"
             textSize = 26f
             setTextColor(c.accentStrong)
             setBackgroundResource(R.drawable.icon_bg)
+            setOnClickListener { showAvatarDialog() }
         }
 
         val nameText = TextView(activity).apply {
@@ -159,6 +164,32 @@ class ProfileTabManager(
                 if (name.isNotEmpty()) {
                     Toast.makeText(activity, "以后 AI 就叫你「$name」了 ♡", Toast.LENGTH_SHORT).show()
                 }
+            }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    private fun showAvatarDialog() {
+        val prefs = activity.getSharedPreferences("haven_prefs", AppCompatActivity.MODE_PRIVATE)
+        val input = EditText(activity).apply {
+            hint = "输入一个emoji作为头像"
+            setText(prefs.getString("user_avatar", ""))
+            setPadding(dp(16), dp(12), dp(16), dp(12))
+            textSize = 24f
+            gravity = android.view.Gravity.CENTER
+        }
+
+        AlertDialog.Builder(activity)
+            .setTitle("换个头像")
+            .setView(input)
+            .setPositiveButton("换") { _, _ ->
+                val avatar = input.text.toString().trim()
+                prefs.edit().putString("user_avatar", avatar).apply()
+                refresh()
+            }
+            .setNeutralButton("恢复默认") { _, _ ->
+                prefs.edit().remove("user_avatar").apply()
+                refresh()
             }
             .setNegativeButton("取消", null)
             .show()
