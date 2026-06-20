@@ -29,7 +29,82 @@
           "line": 389
         }
       }
+    },
+    {
+      "file": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/java/com/haven/guiqi/SubconsciousStorage.kt",
+      "selection": {
+        "end": {
+          "column": 0,
+          "index": 0,
+          "line": 0
+        },
+        "start": {
+          "column": 0,
+          "index": 0,
+          "line": 0
+        }
+      }
+    },
+    {
+      "file": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/java/com/haven/guiqi/SubconsciousActivity.kt",
+      "selection": {
+        "end": {
+          "column": 1,
+          "index": 7117,
+          "line": 196
+        },
+        "start": {
+          "column": 1,
+          "index": 7117,
+          "line": 196
+        }
+      }
+    },
+    {
+      "file": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/java/com/haven/guiqi/ArchiveActivity.kt",
+      "selection": {
+        "end": {
+          "column": 0,
+          "index": 0,
+          "line": 0
+        },
+        "start": {
+          "column": 0,
+          "index": 0,
+          "line": 0
+        }
+      }
+    },
+    {
+      "file": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/java/com/haven/guiqi/ArchiveDetailActivity.kt",
+      "selection": {
+        "end": {
+          "column": 1,
+          "index": 12730,
+          "line": 360
+        },
+        "start": {
+          "column": 1,
+          "index": 12730,
+          "line": 360
+        }
+      }
+    },
+    {
+      "file": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/AndroidManifest.xml",
+      "selection": {
+        "end": {
+          "column": 11,
+          "index": 3380,
+          "line": 73
+        },
+        "start": {
+          "column": 11,
+          "index": 3380,
+          "line": 73
+        }
+      }
     }
   ],
-  "selectedFile": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/java/com/haven/guiqi/InstructionProcessor.kt"
+  "selectedFile": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/AndroidManifest.xml"
 }

@@ -41,6 +41,7 @@
         <activity android:name=".NestActivity"
             android:configChanges="orientation|screenSize"
             android:screenOrientation="unspecified" />
+        <activity android:name=".SubconsciousActivity" />
         <service
             android:name=".HavenService"
             android:enabled="true"

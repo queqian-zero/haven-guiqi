@@ -228,6 +228,21 @@ class ArchiveDetailActivity : AppCompatActivity() {
             startActivity(intent)
         }
 
+        // 潜意识
+        val prefCount = SubconsciousStorage(this).getActiveCount(friendId)
+        addFolder(
+            tabText = "潜意识",
+            tabColor = c.accent,
+            preview = if (prefCount > 0) "$prefCount 个念头" else "还没有记录",
+            isEmpty = prefCount == 0,
+            dp = dp
+        ) {
+            val intent = Intent(this, SubconsciousActivity::class.java)
+            intent.putExtra("friend_id", friendId)
+            intent.putExtra("friend_name", friendName)
+            startActivity(intent)
+        }
+
         // 废纸篓
         addFolder(
             tabText = "废纸篓",
