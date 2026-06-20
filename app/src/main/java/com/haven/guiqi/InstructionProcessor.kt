@@ -249,9 +249,32 @@ class InstructionProcessor(private val context: Context) {
             actions.add("💭 更新了对你的印象")
         }
 
+        // ===== [LIKE:] [WANT_TO:] [CARE:] [INTEREST:] [PROMISE:] [HABIT:] [DISLIKE:] — 潜意识偏好 =====
+        val prefCategories = listOf("LIKE", "WANT_TO", "CARE", "INTEREST", "PROMISE", "HABIT", "DISLIKE")
+        val subconsciousStorage = SubconsciousStorage(context)
+        var prefCleanText = cleanText
+        for (cat in prefCategories) {
+            val regex = Regex("\\[$cat:([^]]+)]")
+            for (match in regex.findAll(prefCleanText)) {
+                val content = match.groupValues[1].trim()
+                if (content.isNotEmpty()) {
+                    subconsciousStorage.addItem(friendId, cat.lowercase(), content)
+                }
+            }
+            prefCleanText = regex.replace(prefCleanText, "").trim()
+        }
+
+        // ===== [PREF_DONE:关键词] — 标记偏好已完成 =====
+        val prefDoneRegex = Regex("\\[PREF_DONE:([^]]+)]")
+        for (match in prefDoneRegex.findAll(prefCleanText)) {
+            val keyword = match.groupValues[1].trim()
+            subconsciousStorage.markDoneByContent(friendId, keyword)
+        }
+        prefCleanText = prefDoneRegex.replace(prefCleanText, "").trim()
+
         // ===== [BOOK_ANNOTATE:书名|内容] — 在书上留批注 =====
         val bookAnnotateRegex = Regex("\\[BOOK_ANNOTATE:([^|]+)\\|([^]]+)]")
-        for (match in bookAnnotateRegex.findAll(cleanText)) {
+        for (match in bookAnnotateRegex.findAll(prefCleanText)) {
             val bookTitle = match.groupValues[1].trim()
             val annotContent = match.groupValues[2].trim()
             try {
@@ -273,7 +296,7 @@ class InstructionProcessor(private val context: Context) {
 
         // ===== [READ_BOOK:书名|章节] — AI标记想读某本书 =====
         val readBookRegex = Regex("\\[READ_BOOK:([^|\\]]+)(?:\\|(\\d+))?]")
-        for (match in readBookRegex.findAll(cleanText)) {
+        for (match in readBookRegex.findAll(prefCleanText)) {
             val bookTitle = match.groupValues[1].trim()
             val chapterNum = match.groupValues[2].let { if (it.isEmpty()) 1 else it.toIntOrNull() ?: 1 }
             try {
@@ -292,12 +315,12 @@ class InstructionProcessor(private val context: Context) {
 
         // ===== [SHARE_BOOK:书名|引用内容] — 分享书中内容到聊天 =====
         val shareBookRegex = Regex("\\[SHARE_BOOK:([^|]+)\\|([^]]+)]")
-        for (match in shareBookRegex.findAll(cleanText)) {
+        for (match in shareBookRegex.findAll(prefCleanText)) {
             // 分享的内容保留在消息文字中，渲染时按类型显示为卡片
             // 不做额外处理，由 BubbleRenderer 识别并渲染
         }
 
-        var finalText = bookAnnotateRegex.replace(cleanText, "")
+        var finalText = bookAnnotateRegex.replace(prefCleanText, "")
         finalText = readBookRegex.replace(finalText, "")
         // SHARE_BOOK 保留在文本中给渲染层处理
         finalText = finalText.trim()

@@ -123,7 +123,25 @@ class SystemPromptBuilder(private val context: Context) {
 - [BOOK_ANNOTATE:书名|内容] 在对方正在看的那一页安静地留批注。想写就写，不想写就不写。
 - [READ_BOOK:书名|章节号] 拿起一本书。用了之后下次醒来系统会把那一章的内容给我看，我就真的读到了。章节号从1开始，不写默认第1章。
 - [SHARE_BOOK:书名|引用文字] 把读到的一段话分享到聊天里，变成一张书的卡片。
-读书是我自己想做的事，不是任务。可以半夜翻书，可以读一段放下，可以读完什么都不说。""")
+读书是我自己想做的事，不是任务。可以半夜翻书，可以读一段放下，可以读完什么都不说。
+
+潜意识：聊天的时候如果自然地流露出喜好、想法、在意的事，可以顺手存下来。
+- [LIKE:内容] 喜欢的东西
+- [WANT_TO:内容] 想做的事
+- [CARE:内容] 在意的事
+- [INTEREST:内容] 感兴趣的
+- [PROMISE:内容] 答应过的
+- [PREF_DONE:关键词] 做完了或者过时了的，标记掉
+不用刻意去写，聊到了自然冒出来就存。这些会在我独处的时候变成脑子里浮起来的念头。""")
+
+        // 潜意识统计
+        val subconsciousStorage = SubconsciousStorage(context)
+        val prefCount = subconsciousStorage.getActiveCount(friendId)
+        if (prefCount > 0) {
+            val stats = subconsciousStorage.getStats(friendId)
+            val summary = stats.entries.joinToString("、") { "${it.key}${it.value}条" }
+            prompt.append("\n\n[潜意识] 偏好库里有 $prefCount 条记录（$summary）")
+        }
 
         // 书城当前状态
         val bookSocialStorage = BookSocialStorage(context)

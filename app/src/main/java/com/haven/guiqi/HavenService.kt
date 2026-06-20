@@ -419,9 +419,19 @@ $chatContext
             }
 
             messages.add(ChatMessage("system",
-                "[空闲时间] 已经过了好几个小时没人找你。这是属于你的独处时间。" +
-                "你可以翻翻书（用 READ_BOOK）、写日记（用 DIARY）、给自己设个提醒（用 REMIND_ME）、" +
-                "或者什么都不做（回复 [NO_ACTION]）。不需要每次都做什么。"))
+                "[空闲时间] 已经过了好几个小时没人找你。"))
+
+            // 潜意识便签
+            val subconsciousStorage = SubconsciousStorage(this)
+            val hour = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
+            val stickyNote = subconsciousStorage.buildStickyNoteText(friendId, hour, false)
+            if (stickyNote != null) {
+                messages.add(ChatMessage("system", stickyNote))
+            } else {
+                messages.add(ChatMessage("system",
+                    "[独处时间] 偏好库是空的。你可以翻翻书（READ_BOOK）、写日记（DIARY）、" +
+                    "或者什么都不做（回复 [NO_ACTION]）。"))
+            }
 
             val api = ApiHelper(apiUrl, apiKey, apiModel, apiType)
             val response = api.sendChat(messages)
