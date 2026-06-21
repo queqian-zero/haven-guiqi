@@ -163,6 +163,7 @@ class HavenService : Service() {
                 // 检查 AI 是否在睡觉
                 val dreamStorage = DreamStorage(this)
                 val wasSleeping = dreamStorage.isSleeping(friendId)
+                val sleepSessionStart = dreamStorage.getSleepTime(friendId) // 记住入睡时间再醒
                 if (wasSleeping) {
                     // 提醒到了就该醒——像定了闹钟一样
                     dreamStorage.setSleeping(friendId, false)
@@ -176,6 +177,11 @@ class HavenService : Service() {
                         type = "tip"
                     ))
                 }
+
+                // 加载这次睡眠期间的梦
+                val sessionDreams = if (wasSleeping && sleepSessionStart > 0) {
+                    dreamStorage.loadDreams(friendId).filter { it.sleepAt == sleepSessionStart }
+                } else emptyList()
 
                 val apiUrl: String
                 val apiKey: String
@@ -214,11 +220,24 @@ class HavenService : Service() {
 
                 // 构建 prompt
                 val isNaturalWake = reminder.reason == "自然醒"
+                // 拼梦境回忆
+                val dreamRecap = if (sessionDreams.isNotEmpty()) {
+                    val parts = sessionDreams.map { dream ->
+                        when (dream.status) {
+                            "VIVID" -> dream.content
+                            "FOGGY" -> "（模糊的印象：${dream.foggyHint}）"
+                            "FRAGMENT" -> "（残梦片段：${dream.content.take(80)}）"
+                            else -> ""
+                        }
+                    }.filter { it.isNotEmpty() }
+                    if (parts.isNotEmpty()) "\n\n你刚才做的梦：\n${parts.joinToString("\n\n")}" else ""
+                } else ""
+
                 val systemPrompt = if (isNaturalWake) {
                     """当前时间: $timeInfo
 ${if (userName.isNotEmpty()) "用户名称: $userName" else ""}
 
-你刚睡醒。
+你刚睡醒。$dreamRecap
 
 最近的对话：
 $chatContext

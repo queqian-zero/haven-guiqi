@@ -196,9 +196,9 @@ ${bookSnippet.ifEmpty { "（没有在读的书）" }}"""
             val content = match.groupValues[2].trim()
             if (content.isNotEmpty()) {
                 if (dreamStorage.isSleeping(friendId)) {
-                    dreamStorage.saveVividDream(friendId, content, sleepTime)
+                    dreamStorage.saveVividDream(friendId, content, sleepTime, mood)
                 } else {
-                    dreamStorage.saveFragmentDream(friendId, content, sleepTime)
+                    dreamStorage.saveFragmentDream(friendId, content, sleepTime, mood)
                 }
             }
             return

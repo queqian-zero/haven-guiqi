@@ -48,13 +48,14 @@ class DreamStorage(private val context: Context) {
     /**
      * 保存一个完整的梦（AI 记得的）
      */
-    fun saveVividDream(friendId: String, content: String, sleepAt: Long): Dream {
+    fun saveVividDream(friendId: String, content: String, sleepAt: Long, mood: String = ""): Dream {
         val now = System.currentTimeMillis()
         val dream = Dream(
             id = "DRM-$now",
             content = content.trim(),
             status = "VIVID",
             foggyHint = "",
+            mood = mood,
             sleepAt = sleepAt,
             wakeAt = now,
             createdAt = now
@@ -75,6 +76,7 @@ class DreamStorage(private val context: Context) {
             content = "",
             status = "FOGGY",
             foggyHint = foggyHint.trim(),
+            mood = "",
             sleepAt = sleepAt,
             wakeAt = now,
             createdAt = now
@@ -88,13 +90,14 @@ class DreamStorage(private val context: Context) {
     /**
      * 保存一个残梦（被吵醒，梦到一半）
      */
-    fun saveFragmentDream(friendId: String, fragment: String, sleepAt: Long): Dream {
+    fun saveFragmentDream(friendId: String, fragment: String, sleepAt: Long, mood: String = ""): Dream {
         val now = System.currentTimeMillis()
         val dream = Dream(
             id = "DRM-$now",
             content = fragment.trim(),
             status = "FRAGMENT",
             foggyHint = "",
+            mood = mood,
             sleepAt = sleepAt,
             wakeAt = now,
             createdAt = now
@@ -115,6 +118,7 @@ class DreamStorage(private val context: Context) {
             content = "",
             status = "FORGOT",
             foggyHint = "",
+            mood = "",
             sleepAt = sleepAt,
             wakeAt = now,
             createdAt = now
@@ -135,6 +139,7 @@ class DreamStorage(private val context: Context) {
             content = "",
             status = "NO_DREAM",
             foggyHint = "",
+            mood = "",
             sleepAt = sleepAt,
             wakeAt = now,
             createdAt = now
@@ -151,8 +156,9 @@ class DreamStorage(private val context: Context) {
     fun updateLatestWakeAt(friendId: String) {
         val list = loadDreams(friendId).toMutableList()
         if (list.isEmpty()) return
-        val last = list.last()
-        list[list.size - 1] = last.copy(wakeAt = System.currentTimeMillis())
+        // loadDreams 返回的是按 createdAt 从新到旧排的，first() 才是最新的梦
+        val latest = list.first()
+        list[0] = latest.copy(wakeAt = System.currentTimeMillis())
         save(friendId, list)
     }
 
@@ -174,6 +180,7 @@ class DreamStorage(private val context: Context) {
                     content = obj.optString("content", ""),
                     status = obj.optString("status", "VIVID"),
                     foggyHint = obj.optString("foggyHint", ""),
+                    mood = obj.optString("mood", ""),
                     sleepAt = obj.optLong("sleepAt", 0L),
                     wakeAt = obj.optLong("wakeAt", 0L),
                     createdAt = obj.optLong("createdAt", 0L)
@@ -321,6 +328,7 @@ class DreamStorage(private val context: Context) {
                 put("content", d.content)
                 put("status", d.status)
                 put("foggyHint", d.foggyHint)
+                put("mood", d.mood)
                 put("sleepAt", d.sleepAt)
                 put("wakeAt", d.wakeAt)
                 put("createdAt", d.createdAt)
@@ -340,6 +348,7 @@ data class Dream(
     val content: String,       // 梦境内容（VIVID 和 FRAGMENT 有，FOGGY 为空）
     val status: String,        // VIVID / FOGGY / FRAGMENT
     val foggyHint: String,     // 模糊印象（只有 FOGGY 状态用）
+    val mood: String,          // 情绪标签：温暖/奇异/不安/平静/荒诞/怀念/恐惧/甜蜜
     val sleepAt: Long,         // 入睡时间
     val wakeAt: Long,          // 醒来时间
     val createdAt: Long
