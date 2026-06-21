@@ -102,8 +102,21 @@ class DreamArchiveActivity : AppCompatActivity() {
                 return
             }
 
-            // 按睡眠时段分组（相同 sleepAt 的梦属于同一次睡眠）
-            val sessions = filtered.groupBy { it.sleepAt }.toSortedMap(compareByDescending { it })
+            // 按睡眠时段分组（sleepAt 差不超过 30 分钟的梦属于同一次睡眠）
+            val sortedDreams = filtered.sortedBy { it.sleepAt }
+            val sessionMap = mutableMapOf<Long, MutableList<Dream>>()
+            for (dream in sortedDreams) {
+                // 找有没有已有的分组 sleepAt 跟这个梦差不超过 30 分钟
+                val matchKey = sessionMap.keys.find {
+                    Math.abs(dream.sleepAt - it) < 30 * 60 * 1000L
+                }
+                if (matchKey != null) {
+                    sessionMap[matchKey]!!.add(dream)
+                } else {
+                    sessionMap[dream.sleepAt] = mutableListOf(dream)
+                }
+            }
+            val sessions = sessionMap.toSortedMap(compareByDescending { it })
 
             for ((sleepAt, dreams) in sessions) {
                 // 睡眠时段头

@@ -180,8 +180,8 @@ ${bookSnippet.ifEmpty { "（没有在读的书）" }}"""
                 // ===== 解析结果 =====
                 parseDreamResult(friendId, result, sleepTime)
 
-            } catch (_: Exception) {
-                // 造梦失败不影响任何东西
+            } catch (e: Exception) {
+                android.util.Log.e("DreamEngine", "造梦失败: ${e.message}", e)
             }
         }.start()
     }
