@@ -132,7 +132,7 @@ class FriendTabManager(
         }
 
         val tvCode = TextView(activity).apply {
-            text = friend.id
+            text = friend.visibleCode
             textSize = 9f
             setTextColor(c.dateLabel)
             setPadding(dp(8), 0, 0, 0)
@@ -202,7 +202,7 @@ class FriendTabManager(
                 val name = input.text.toString().trim()
                 if (name.isNotEmpty()) {
                     val friend = friendStorage.addFriend(name)
-                    Toast.makeText(activity, "已添加「${friend.name}」\n编码: ${friend.id}", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(activity, "已添加「${friend.name}」\n编码: ${friend.visibleCode}", Toast.LENGTH_SHORT).show()
                     refresh()
                     onRefresh()
                 } else {

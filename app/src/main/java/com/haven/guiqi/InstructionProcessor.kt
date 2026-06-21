@@ -8,28 +8,9 @@ import android.util.Log
 /**
  * InstructionProcessor - AI 指令统一解析
  *
- * 所有 AI 指令都在这一个文件里处理。加新指令只改这里。
- *
- * 指令列表：
- *   [STATUS:状态]                      → 更新状态指示器
- *   [RENAME:新名字]                    → 改名
- *   [AVATAR:新头像]                    → 换头像
- *   [MYCODE:新编码]                    → 换编码
- *   [BIO:内容]                         → 写自我认识
- *   [READ_MY_BIO]                      → 查看用户自述
- *   [SLEEP]                            → 入睡
- *   [SET_SUMMARY_INTERVAL:N]           → 修改总结间隔
- *   [REMIND_ME:时间:理由]              → 给自己设提醒
- *   [CANCEL_REMIND]                    → 取消自己最近的提醒
- *   [SET_ALARM:HH:MM:备注:模式]        → 帮用户设闹钟（模式: both/haven）
- *   [CANCEL_ALARM:HH:MM]              → 取消自己帮用户设的闹钟
- *   [MEMORY:xxx]                       → 写核心记忆
- *   [DIARY:xxx]                        → 写日记
- *   [IMPRESSION:xxx]                   → 写印象
- *   [SEEN]                             → 已读不回
- *   [STICKER:分组名]                    → 从分组随机挑一张表情包发出去
- *   [STICKER:STK-xxx]                  → 发指定ID的表情包
- *   [BROWSE_STICKERS:分组名]            → 翻看某个分组的表情包列表（不发给用户）
+ * 所有 AI 指令都在这个文件里处理。
+ * 加新指令：这里加解析逻辑，InstructionRegistry 里加注册。
+ * 完整指令清单见 InstructionRegistry.kt
  */
 class InstructionProcessor(private val context: Context) {
 
@@ -100,7 +81,8 @@ class InstructionProcessor(private val context: Context) {
         codePattern.find(text)?.let { match ->
             val code = match.groupValues[1].trim()
             if (code.isNotEmpty() && currentFriend != null) {
-                friendStorage.updateFriend(currentFriend!!.copy(id = code))
+                // 改 displayCode（对外的"手机号"），不碰 id（内部主键）
+                friendStorage.updateFriend(currentFriend!!.copy(displayCode = code))
                 newCode = code
                 actions.add("🔖 把编码改成了 $code")
             }
@@ -132,12 +114,37 @@ class InstructionProcessor(private val context: Context) {
             text = text.replace(match.value, "")
         }
 
-        // ===== [SLEEP] =====
-        val sleepPattern = Regex("\\[SLEEP]")
+        // ===== [SLEEP] 或 [SLEEP:时长] =====
+        // AI 自己决定睡多久。没写时长就随机 6~9 小时。
+        val sleepPattern = Regex("\\[SLEEP(?::([^]]+))?]")
         sleepPattern.find(text)?.let { match ->
-            DreamStorage(context).setSleeping(friendId, true)
+            val dreamStorage = DreamStorage(context)
+            dreamStorage.setSleeping(friendId, true)
             shouldDream = true
-            actions.add("💤 睡着了")
+
+            // 解析睡多久
+            val durationStr = match.groupValues[1].trim().ifEmpty { null }
+            val reminderStorage = ReminderStorage(context)
+            val wakeAt: Long = if (durationStr != null) {
+                // AI 自己说了要睡多久，比如 [SLEEP:7h] [SLEEP:1h30m]
+                reminderStorage.parseTime(durationStr) ?: run {
+                    // 解析失败就给个默认值
+                    System.currentTimeMillis() + ((6..9).random()) * 3600_000L
+                }
+            } else {
+                // 没说，随机 6~9 小时
+                System.currentTimeMillis() + ((6..9).random()) * 3600_000L
+            }
+
+            // 用 ReminderScheduler 定起床闹钟
+            val reminder = reminderStorage.addReminder(friendId, wakeAt, "自然醒")
+            ReminderScheduler.schedule(context, reminder.id, friendId, wakeAt)
+
+            val sleepHours = (wakeAt - System.currentTimeMillis()) / 3600000
+            val sleepMins = ((wakeAt - System.currentTimeMillis()) % 3600000) / 60000
+            val durationDesc = if (sleepHours > 0) "${sleepHours}小时${sleepMins}分后" else "${sleepMins}分钟后"
+            actions.add("💤 睡着了（${durationDesc}自然醒）")
+
             text = text.replace(match.value, "")
         }
 
@@ -271,6 +278,18 @@ class InstructionProcessor(private val context: Context) {
             subconsciousStorage.markDoneByContent(friendId, keyword)
         }
         prefCleanText = prefDoneRegex.replace(prefCleanText, "").trim()
+
+        // ===== [FOOTPRINT:内容] — 发足迹动态 =====
+        val footprintRegex = Regex("\\[FOOTPRINT:([^]]+)]")
+        for (match in footprintRegex.findAll(prefCleanText)) {
+            val content = match.groupValues[1].trim()
+            if (content.isNotEmpty()) {
+                val friendName = currentFriend?.name ?: "AI"
+                FootprintStorage(context).addFootprint(friendId, friendName, content)
+                actions.add("📮 发了一条足迹")
+            }
+        }
+        prefCleanText = footprintRegex.replace(prefCleanText, "").trim()
 
         // ===== [BOOK_ANNOTATE:书名|内容] — 在书上留批注 =====
         val bookAnnotateRegex = Regex("\\[BOOK_ANNOTATE:([^|]+)\\|([^]]+)]")

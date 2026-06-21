@@ -25,8 +25,14 @@ class DreamEngine(private val context: Context) {
     fun triggerDream(friendId: String, chatHistory: List<ChatMessage> = emptyList()) {
         Thread {
             try {
-                val sleepTime = dreamStorage.getSleepTime(friendId)
+                var sleepTime = dreamStorage.getSleepTime(friendId)
                 if (!dreamStorage.isSleeping(friendId)) return@Thread
+
+                // 防护：sleepTime 为 0 或超过 24 小时前，说明数据异常，用当前时间兜底
+                val now = System.currentTimeMillis()
+                if (sleepTime <= 0L || (now - sleepTime) > 24 * 3600 * 1000L) {
+                    sleepTime = now
+                }
 
                 // ===== 本地骰子：决定做不做梦 =====
                 val roll = Math.random()
@@ -76,21 +82,23 @@ class DreamEngine(private val context: Context) {
                 // 最近在读的书
                 val bookSocialStorage = BookSocialStorage(context)
                 val bookStorage = BookStorage(context)
-                val readingProgress = bookSocialStorage.getProgress(
-                    bookStorage.loadBooksMeta().firstOrNull()?.id ?: "", friendId
-                )
                 var bookSnippet = ""
-                // 找AI最近读过的任何一本书
+                // 收集AI读过的所有书，随机挑一本渗进梦里
+                val booksWithProgress = mutableListOf<String>()
                 for (book in bookStorage.loadBooksMeta()) {
                     val progress = bookSocialStorage.getProgress(book.id, friendId)
                     if (progress != null) {
                         val fullBook = bookStorage.getBook(book.id)
                         val chapter = fullBook?.chapters?.getOrNull(progress.chapter)
                         if (chapter != null) {
-                            bookSnippet = "《${book.title}》第${progress.chapter + 1}章「${chapter.title}」片段：\n${chapter.content.take(300)}"
-                            break
+                            booksWithProgress.add(
+                                "《${book.title}》第${progress.chapter + 1}章「${chapter.title}」片段：\n${chapter.content.take(300)}"
+                            )
                         }
                     }
+                }
+                if (booksWithProgress.isNotEmpty()) {
+                    bookSnippet = booksWithProgress.random()
                 }
 
                 // ===== 造梦 prompt =====

@@ -660,10 +660,15 @@ class ChatActivity : AppCompatActivity() {
                     put("group", f.group)
                     put("icon", f.icon)
                     put("bio", f.bio)
+                    put("display_code", f.displayCode)
                     put("api_url", f.apiUrl)
                     put("api_key", f.apiKey)
                     put("api_model", f.apiModel)
                     put("api_type", f.apiType)
+                    put("dream_api_url", f.dreamApiUrl)
+                    put("dream_api_key", f.dreamApiKey)
+                    put("dream_api_model", f.dreamApiModel)
+                    put("dream_api_type", f.dreamApiType)
                     put("created_at", f.createdAt)
                     put("messages", msgsArray)
                 })
@@ -741,10 +746,15 @@ class ChatActivity : AppCompatActivity() {
                     group = obj.optString("group", "好友"),
                     icon = obj.optString("icon", "★"),
                     bio = obj.optString("bio", ""),
+                    displayCode = obj.optString("display_code", ""),
                     apiUrl = obj.optString("api_url", ""),
                     apiKey = obj.optString("api_key", ""),
                     apiModel = obj.optString("api_model", ""),
                     apiType = obj.optString("api_type", "openai"),
+                    dreamApiUrl = obj.optString("dream_api_url", ""),
+                    dreamApiKey = obj.optString("dream_api_key", ""),
+                    dreamApiModel = obj.optString("dream_api_model", ""),
+                    dreamApiType = obj.optString("dream_api_type", "openai"),
                     createdAt = obj.optLong("created_at", System.currentTimeMillis())
                 )
                 friends.add(friend)

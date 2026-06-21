@@ -50,6 +50,7 @@ class FriendStorage(private val context: Context) {
                     group = obj.optString("group", "好友"),
                     icon = obj.optString("icon", "★"),
                     bio = obj.optString("bio", ""),
+                    displayCode = obj.optString("display_code", ""),
                     apiUrl = obj.optString("api_url", ""),
                     apiKey = obj.optString("api_key", ""),
                     apiModel = obj.optString("api_model", ""),
@@ -78,6 +79,7 @@ class FriendStorage(private val context: Context) {
                 put("group", f.group)
                 put("icon", f.icon)
                 put("bio", f.bio)
+                put("display_code", f.displayCode)
                 put("api_url", f.apiUrl)
                 put("api_key", f.apiKey)
                 put("api_model", f.apiModel)
@@ -148,11 +150,12 @@ class FriendStorage(private val context: Context) {
  * 好友数据
  */
 data class Friend(
-    val id: String,                // 好友编码（唯一标识）
+    val id: String,                // 内部主键（永远不变，HV-XXXX 格式）
     val name: String,              // 显示名称
     val group: String = "好友",     // 分组
     val icon: String = "★",        // 头像字符
     val bio: String = "",          // AI 简介
+    val displayCode: String = "",  // AI 的"手机号"（MYCODE 改的是这个，空则显示 id）
     val apiUrl: String = "",       // 单独 API（空则用全局配置）
     val apiKey: String = "",
     val apiModel: String = "",
@@ -162,4 +165,7 @@ data class Friend(
     val dreamApiModel: String = "",
     val dreamApiType: String = "openai",
     val createdAt: Long = System.currentTimeMillis()
-)
+) {
+    /** 对外显示的编码：有 displayCode 就用，没有就用 id */
+    val visibleCode: String get() = displayCode.ifEmpty { id }
+}

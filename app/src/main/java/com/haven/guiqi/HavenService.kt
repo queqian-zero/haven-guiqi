@@ -213,7 +213,22 @@ class HavenService : Service() {
                 val userName = prefs.getString("user_name", "") ?: ""
 
                 // 构建 prompt
-                val systemPrompt = """当前时间: $timeInfo
+                val isNaturalWake = reminder.reason == "自然醒"
+                val systemPrompt = if (isNaturalWake) {
+                    """当前时间: $timeInfo
+${if (userName.isNotEmpty()) "用户名称: $userName" else ""}
+
+你刚睡醒。
+
+最近的对话：
+$chatContext
+
+你可以做任何你想做的事：
+${InstructionRegistry.buildPromptList(InstructionRegistry.Scene.WAKE_UP)}
+
+没有人要求你必须说话。醒了就是醒了。"""
+                } else {
+                    """当前时间: $timeInfo
 ${if (userName.isNotEmpty()) "用户名称: $userName" else ""}
 
 你之前在聊天中给自己设了一个提醒：
@@ -230,6 +245,7 @@ $chatContext
 如果你想了想觉得现在不需要说什么，就只回复 [NO_ACTION]。
 你也可以在回复中再设新的提醒 [REMIND_ME:时间:理由] 来给自己续闹钟。
 你也可以使用 [STATUS:状态] 更新你的状态。"""
+                }
 
                 val api = ApiHelper(apiUrl, apiKey, apiModel, apiType)
                 val messages = listOf(
@@ -360,8 +376,18 @@ $chatContext
                     if (apiUrl.isEmpty() || apiKey.isEmpty()) continue
 
                     if (dreamStorage.isSleeping(friend.id)) {
-                        // AI 在睡觉——可能做梦
-                        DreamEngine(this).triggerDream(friend.id)
+                        val sleepTime = dreamStorage.getSleepTime(friend.id)
+                        val hoursAsleep = (System.currentTimeMillis() - sleepTime) / 3600000
+
+                        if (hoursAsleep >= 12) {
+                            // 睡太久了，自然醒——不能让 AI 在后台永远睡下去
+                            dreamStorage.setSleeping(friend.id, false)
+                            dreamStorage.updateLatestWakeAt(friend.id)
+                            Log.d(TAG, "${friend.name} 自然醒了（睡了${hoursAsleep}小时）")
+                        } else {
+                            // 正常睡眠范围内，可能做梦
+                            DreamEngine(this).triggerDream(friend.id)
+                        }
                     } else {
                         // AI 醒着——检查最近有没有聊过
                         val messages = chatStorage.loadMessages(friend.id)
@@ -429,8 +455,8 @@ $chatContext
                 messages.add(ChatMessage("system", stickyNote))
             } else {
                 messages.add(ChatMessage("system",
-                    "[独处时间] 偏好库是空的。你可以翻翻书（READ_BOOK）、写日记（DIARY）、" +
-                    "或者什么都不做（回复 [NO_ACTION]）。"))
+                    "[独处时间] 偏好库是空的。你可以：\n" +
+                    InstructionRegistry.buildPromptList(InstructionRegistry.Scene.IDLE)))
             }
 
             val api = ApiHelper(apiUrl, apiKey, apiModel, apiType)

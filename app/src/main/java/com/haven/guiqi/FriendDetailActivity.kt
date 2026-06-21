@@ -115,12 +115,12 @@ class FriendDetailActivity : AppCompatActivity() {
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply { topMargin = dp(4) }
-            this.text = friend.id
+            this.text = friend.visibleCode
             textSize = 12f
             setTextColor(c.textHint)
             setOnClickListener {
                 val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                clipboard.setPrimaryClip(ClipData.newPlainText("code", friend.id))
+                clipboard.setPrimaryClip(ClipData.newPlainText("code", friend.visibleCode))
                 Toast.makeText(this@FriendDetailActivity, "编码已复制", Toast.LENGTH_SHORT).show()
             }
         }
@@ -214,10 +214,10 @@ class FriendDetailActivity : AppCompatActivity() {
             showEditIconDialog(friend)
         }
 
-        addEditableItem("编码", friend.id, "好友的唯一标识，点击复制") {
+        addEditableItem("编码", friend.visibleCode, "好友的编码，点击复制") {
             val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-            clipboard.setPrimaryClip(ClipData.newPlainText("code", friend.id))
-            Toast.makeText(this, "编码已复制: ${friend.id}", Toast.LENGTH_SHORT).show()
+            clipboard.setPrimaryClip(ClipData.newPlainText("code", friend.visibleCode))
+            Toast.makeText(this, "编码已复制: ${friend.visibleCode}", Toast.LENGTH_SHORT).show()
         }
 
         // ===== AI 简介 =====

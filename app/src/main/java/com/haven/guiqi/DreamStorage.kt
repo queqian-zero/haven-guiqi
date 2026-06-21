@@ -272,7 +272,7 @@ class DreamStorage(private val context: Context) {
         getSleepPrefs().edit()
             .putBoolean("sleeping_$friendId", sleeping)
             .putLong("sleep_time_$friendId", if (sleeping) System.currentTimeMillis() else 0L)
-            .apply()
+            .commit()  // commit 不用 apply——睡眠状态必须立刻写进磁盘，防止进程被杀后丢失
     }
 
     /**
