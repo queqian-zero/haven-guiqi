@@ -328,8 +328,22 @@ class BubbleRenderer(
         renderAiSegmentStatic(msg, timeStr)
     }
 
-    /** 静态渲染一段——拆表情包标记 */
+    /** 静态渲染一段——拆分享卡片和表情包标记 */
     private fun renderAiSegmentStatic(segment: String, timeStr: String) {
+        // 先处理 [SHARE_BOOK:书名|内容]
+        val bookPattern = Regex("\\[SHARE_BOOK:([^|]+)\\|([^]]+)]")
+        val bookMatch = bookPattern.find(segment)
+        if (bookMatch != null) {
+            // 卡片前面的文字
+            val before = segment.substring(0, bookMatch.range.first).trim()
+            if (before.isNotEmpty()) renderAiSegmentStatic(before, timeStr)
+            // 渲染书籍分享卡片
+            addBookShareCard(bookMatch.groupValues[1].trim(), bookMatch.groupValues[2].trim(), timeStr)
+            // 卡片后面的文字
+            val after = segment.substring(bookMatch.range.last + 1).trim()
+            if (after.isNotEmpty()) renderAiSegmentStatic(after, timeStr)
+            return
+        }
         if (!segment.contains("[STICKER_IMG:")) {
             addAiBubbleSingleStatic(segment, timeStr); return
         }
@@ -339,6 +353,135 @@ class BubbleRenderer(
     /** 静态单条 AI 文字气泡 */
     private fun addAiBubbleSingleStatic(msg: String, timeStr: String) {
         val (wrapper, _, _) = buildAiBubbleStructure(MarkdownRenderer.render(msg), timeStr, msg)
+        messagesContainer.addView(wrapper)
+        scrollToBottom()
+    }
+
+    /** 书籍分享卡片 */
+    private fun addBookShareCard(bookName: String, quote: String, timeStr: String) {
+        val wrapper = LinearLayout(activity).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = dp(8) }
+            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.START
+        }
+        val avatar = TextView(activity).apply {
+            layoutParams = LinearLayout.LayoutParams(dp(30), dp(30))
+                .apply { marginEnd = dp(7); topMargin = dp(2) }
+            gravity = Gravity.CENTER
+            text = friendIcon; textSize = 12f
+            setTextColor(c.accentStrong)
+            setBackgroundResource(R.drawable.icon_bg)
+        }
+        val column = LinearLayout(activity).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        }
+
+        // ── 书型卡片 ──
+        val card = LinearLayout(activity).apply {
+            orientation = LinearLayout.HORIZONTAL
+            background = android.graphics.drawable.GradientDrawable().apply {
+                setColor(c.accentBg)
+                cornerRadius = dp(4).toFloat()
+                setStroke(dp(1), c.accent)
+            }
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        }
+
+        // 书脊
+        val spine = View(activity).apply {
+            layoutParams = LinearLayout.LayoutParams(dp(8), LinearLayout.LayoutParams.MATCH_PARENT)
+            setBackgroundColor(c.accent)
+        }
+
+        // 封面内容
+        val cover = LinearLayout(activity).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(10), dp(8), dp(10), dp(8))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        }
+
+        val titleView = TextView(activity).apply {
+            text = "📖 $bookName"
+            textSize = 13f
+            setTextColor(c.accentStrong)
+            maxWidth = (screenWidth * 0.5).toInt()
+        }
+        val quoteView = TextView(activity).apply {
+            text = quote
+            textSize = 11f
+            setTextColor(c.textSecondary)
+            setLineSpacing(0f, 1.3f)
+            maxWidth = (screenWidth * 0.5).toInt()
+            maxLines = 3
+            setPadding(0, dp(4), 0, 0)
+        }
+        val hintView = TextView(activity).apply {
+            text = "tap to read ›"
+            textSize = 10f
+            setTextColor(c.timeText)
+            gravity = Gravity.END
+            setPadding(0, dp(4), 0, 0)
+        }
+
+        cover.addView(titleView)
+        cover.addView(quoteView)
+        cover.addView(hintView)
+        card.addView(spine)
+        card.addView(cover)
+
+        // ── 点击：书翻开 → 跳转 ──
+        card.setOnClickListener {
+            // 翻开效果：书脊变宽，内容切换
+            spine.layoutParams = LinearLayout.LayoutParams(dp(12), LinearLayout.LayoutParams.MATCH_PARENT)
+            spine.requestLayout()
+            titleView.text = "📖 翻开中…"
+            quoteView.text = quote
+            quoteView.maxLines = 6
+            hintView.visibility = View.GONE
+
+            // 延一帧再跳转，让卡片变化先画出来
+            card.postDelayed({
+                val bookStorage = BookStorage(activity)
+                val book = bookStorage.loadBooksMeta().find { it.title == bookName }
+                if (book != null) {
+                    val intent = android.content.Intent(activity, BookReaderActivity::class.java)
+                    intent.putExtra("book_id", book.id)
+                    activity.startActivity(intent)
+                } else {
+                    android.widget.Toast.makeText(activity, "书架上没找到《$bookName》", android.widget.Toast.LENGTH_SHORT).show()
+                }
+            }, 50)
+
+            // 回来之后恢复初始状态
+            card.postDelayed({
+                spine.layoutParams = LinearLayout.LayoutParams(dp(8), LinearLayout.LayoutParams.MATCH_PARENT)
+                spine.requestLayout()
+                titleView.text = "📖 $bookName"
+                quoteView.maxLines = 3
+                hintView.visibility = View.VISIBLE
+            }, 2000)
+        }
+
+        card.setOnLongClickListener {
+            showMessageMenu("📖 $bookName\n$quote", friendName); true
+        }
+
+        column.addView(card)
+        column.addView(makeTimeView(timeStr, Gravity.START))
+        wrapper.addView(avatar)
+        wrapper.addView(column)
         messagesContainer.addView(wrapper)
         scrollToBottom()
     }

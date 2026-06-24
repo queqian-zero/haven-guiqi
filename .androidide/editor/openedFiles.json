@@ -29,7 +29,22 @@
           "line": 800
         }
       }
+    },
+    {
+      "file": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/java/com/haven/guiqi/BubbleRenderer.kt",
+      "selection": {
+        "end": {
+          "column": 1,
+          "index": 28259,
+          "line": 721
+        },
+        "start": {
+          "column": 1,
+          "index": 28259,
+          "line": 721
+        }
+      }
     }
   ],
-  "selectedFile": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/java/com/haven/guiqi/DesktopActivity.kt"
+  "selectedFile": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/java/com/haven/guiqi/BubbleRenderer.kt"
 }
