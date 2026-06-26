@@ -29,7 +29,22 @@
           "line": 1311
         }
       }
+    },
+    {
+      "file": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/java/com/haven/guiqi/ChatActivity.kt",
+      "selection": {
+        "end": {
+          "column": 1,
+          "index": 32551,
+          "line": 859
+        },
+        "start": {
+          "column": 1,
+          "index": 32551,
+          "line": 859
+        }
+      }
     }
   ],
-  "selectedFile": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/java/com/haven/guiqi/ChatConversationActivity.kt"
+  "selectedFile": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/java/com/haven/guiqi/ChatActivity.kt"
 }

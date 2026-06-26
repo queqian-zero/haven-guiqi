@@ -331,6 +331,24 @@ class ChatActivity : AppCompatActivity() {
         }
 
         infoLayout.addView(topRow)
+
+        // AI 状态指示器（如果有的话）
+        val statusPrefs = getSharedPreferences("haven_status", MODE_PRIVATE)
+        val aiStatus = statusPrefs.getString("status_${friend.id}", "") ?: ""
+        if (aiStatus.isNotEmpty()) {
+            infoLayout.addView(TextView(this).apply {
+                text = aiStatus
+                textSize = 11f
+                setTextColor(c.accent)
+                maxLines = 1
+                ellipsize = android.text.TextUtils.TruncateAt.END
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { topMargin = dp(1) }
+            })
+        }
+
         infoLayout.addView(tvLastMsg)
 
         // 续火花
