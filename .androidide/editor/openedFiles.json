@@ -44,7 +44,22 @@
           "line": 863
         }
       }
+    },
+    {
+      "file": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/java/com/haven/guiqi/DreamArchiveActivity.kt",
+      "selection": {
+        "end": {
+          "column": 1,
+          "index": 18154,
+          "line": 463
+        },
+        "start": {
+          "column": 1,
+          "index": 18154,
+          "line": 463
+        }
+      }
     }
   ],
-  "selectedFile": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/java/com/haven/guiqi/ChatActivity.kt"
+  "selectedFile": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/java/com/haven/guiqi/DreamArchiveActivity.kt"
 }

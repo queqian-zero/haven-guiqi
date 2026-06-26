@@ -238,6 +238,25 @@ class DreamArchiveActivity : AppCompatActivity() {
         labelView.setPadding(dp(8), dp(2), dp(8), dp(2))
         headerRow.addView(labelView)
 
+        // 情绪标签（如果有的话）
+        if (dream.mood.isNotEmpty()) {
+            val moodBg = GradientDrawable().apply {
+                setColor(labelBg)
+                cornerRadius = dp(10).toFloat()
+            }
+            headerRow.addView(TextView(this).apply {
+                text = dream.mood
+                textSize = 10f
+                setTextColor(accentColor)
+                background = moodBg
+                setPadding(dp(6), dp(2), dp(6), dp(2))
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { marginStart = dp(4) }
+            })
+        }
+
         card.addView(headerRow)
 
         // 内容（默认折叠）
