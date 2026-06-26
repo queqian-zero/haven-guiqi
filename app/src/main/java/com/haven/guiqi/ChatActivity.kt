@@ -433,12 +433,16 @@ class ChatActivity : AppCompatActivity() {
         }
 
         val isUser = fp.authorId == "user"
+        // 查好友的真实头像
+        val friendIcon = if (!isUser) {
+            FriendStorage(this).getFriend(fp.authorId)?.icon ?: "★"
+        } else "♡"
         val avatar = TextView(this).apply {
             layoutParams = LinearLayout.LayoutParams(dp(28), dp(28)).apply {
                 marginEnd = dp(8)
             }
             gravity = Gravity.CENTER
-            this.text = if (isUser) "♡" else "★"
+            this.text = friendIcon
             textSize = 12f
             setTextColor(if (isUser) c.textSecondary else c.accentStrong)
             setBackgroundResource(R.drawable.icon_bg)
