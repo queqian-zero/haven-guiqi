@@ -90,8 +90,8 @@ class ChatConversationActivity : AppCompatActivity() {
     private lateinit var chatStorage: ChatStorage
     private lateinit var bubbleRenderer: BubbleRenderer
 
-    // 待发送的图片（支持多张）
-    private val pendingImagePaths = mutableListOf<String>()
+    // 图片选择和预览（委托给 ChatImageHandler）
+    private lateinit var chatImageHandler: ChatImageHandler
 
     // 待引用的消息
     private var pendingQuoteAuthor: String? = null
@@ -100,13 +100,6 @@ class ChatConversationActivity : AppCompatActivity() {
     // 记录最后一条消息的日期（用于判断是否需要加分隔线）
     private var lastMessageDate = ""
     private var lastMessageTimestamp = 0L
-
-    private val imageDir: File
-        get() {
-            val dir = File(filesDir, "chat_images")
-            if (!dir.exists()) dir.mkdirs()
-            return dir
-        }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -150,6 +143,14 @@ class ChatConversationActivity : AppCompatActivity() {
         btnPlus = findViewById(R.id.btnPlus)
         connectionBar = findViewById(R.id.connectionBar)
         imagePreviewContainer = findViewById(R.id.imagePreviewContainer)
+        chatImageHandler = ChatImageHandler(this, imagePreviewContainer)
+        chatImageHandler.onPickMore = {
+            val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
+                type = "image/*"
+                putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+            }
+            startActivityForResult(intent, PICK_IMAGE)
+        }
         quotePreviewContainer = findViewById(R.id.quotePreviewContainer)
         inputBar = findViewById(R.id.inputBar)
         expandedInputPanel = findViewById(R.id.expandedInputPanel)
@@ -296,16 +297,7 @@ class ChatConversationActivity : AppCompatActivity() {
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
                 if (requestCode == PICK_IMAGE && resultCode == RESULT_OK && data != null) {
-            // 多选：clipData 里有多个 URI
-            val clipData = data.clipData
-            if (clipData != null) {
-                for (i in 0 until clipData.itemCount) {
-                    handlePickedImage(clipData.getItemAt(i).uri)
-                }
-            } else if (data.data != null) {
-                // 单选
-                handlePickedImage(data.data!!)
-            }
+            chatImageHandler.handleActivityResult(data)
         } else if (requestCode == PICK_STICKER && resultCode == RESULT_OK && data != null) {
             // 导入表情包（支持多选）
             val uris = mutableListOf<Uri>()
@@ -331,146 +323,6 @@ class ChatConversationActivity : AppCompatActivity() {
                 Toast.makeText(this, "导入失败", Toast.LENGTH_SHORT).show()
             }
         }
-    }
-
-    // ===== 选图后：压缩保存，加入待发列表 =====
-    private fun handlePickedImage(uri: Uri) {
-        val path = ImageHelper.compressAndSave(this, uri, imageDir, pendingImagePaths.size)
-        if (path != null) {
-            pendingImagePaths.add(path)
-            showImagePreview()
-        } else {
-            Toast.makeText(this, "图片处理失败", Toast.LENGTH_SHORT).show()
-        }
-    }
-
-    // ===== 输入栏上方显示图片预览（支持多图） =====
-    private fun showImagePreview() {
-        removePendingPreview()
-        if (pendingImagePaths.isEmpty()) return
-        val dp = { value: Int -> (value * resources.displayMetrics.density).toInt() }
-
-        val previewLayout = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setBackgroundColor(c.inputBg)
-            setPadding(dp(8), dp(8), dp(8), dp(4))
-        }
-
-        // 缩略图行：横向滚动
-        val scrollView = android.widget.HorizontalScrollView(this).apply {
-            isHorizontalScrollBarEnabled = false
-        }
-        val thumbRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-        }
-
-        for ((index, path) in pendingImagePaths.withIndex()) {
-            val thumbContainer = android.widget.FrameLayout(this).apply {
-                layoutParams = LinearLayout.LayoutParams(dp(56), dp(56)).apply {
-                    marginEnd = dp(6)
-                }
-            }
-
-            val imageView = ImageView(this).apply {
-                layoutParams = android.widget.FrameLayout.LayoutParams(dp(56), dp(56))
-                scaleType = ImageView.ScaleType.CENTER_CROP
-                val bitmap = BitmapFactory.decodeFile(path)
-                setImageBitmap(bitmap)
-                val gd = android.graphics.drawable.GradientDrawable().apply {
-                    cornerRadius = dp(8).toFloat()
-                }
-                clipToOutline = true
-                outlineProvider = object : android.view.ViewOutlineProvider() {
-                    override fun getOutline(view: View, outline: android.graphics.Outline) {
-                        outline.setRoundRect(0, 0, view.width, view.height, dp(8).toFloat())
-                    }
-                }
-            }
-            thumbContainer.addView(imageView)
-
-            // 每个缩略图右上角的 × 按钮
-            val removeBtn = TextView(this).apply {
-                layoutParams = android.widget.FrameLayout.LayoutParams(dp(18), dp(18)).apply {
-                    gravity = Gravity.TOP or Gravity.END
-                }
-                text = "✕"
-                textSize = 10f
-                gravity = Gravity.CENTER
-                setTextColor(0xFFFFFFFF.toInt())
-                val bg = android.graphics.drawable.GradientDrawable().apply {
-                    setColor(0x99000000.toInt())
-                    cornerRadius = dp(9).toFloat()
-                }
-                background = bg
-                val idx = index
-                setOnClickListener {
-                    pendingImagePaths.removeAt(idx)
-                    showImagePreview()
-                }
-            }
-            thumbContainer.addView(removeBtn)
-            thumbRow.addView(thumbContainer)
-        }
-
-        // ＋ 追加更多图片按钮
-        val addMore = TextView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(dp(56), dp(56))
-            text = "＋"
-            textSize = 20f
-            gravity = Gravity.CENTER
-            setTextColor(c.textSecondary)
-            val bg = android.graphics.drawable.GradientDrawable().apply {
-                setColor(c.accentBg)
-                cornerRadius = dp(8).toFloat()
-            }
-            background = bg
-            setOnClickListener {
-                val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
-                    type = "image/*"
-                    putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
-                }
-                startActivityForResult(intent, PICK_IMAGE)
-            }
-        }
-        thumbRow.addView(addMore)
-
-        scrollView.addView(thumbRow)
-        previewLayout.addView(scrollView)
-
-        // 底部提示 + 全部清除
-        val bottomRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(4), dp(4), dp(4), 0)
-        }
-        val label = TextView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-            text = "${pendingImagePaths.size} 张图片已选择"
-            textSize = 11f
-            setTextColor(c.textSecondary)
-        }
-        val clearBtn = TextView(this).apply {
-            text = "全部清除"
-            textSize = 11f
-            setTextColor(c.errorText)
-            setOnClickListener {
-                pendingImagePaths.clear()
-                removePendingPreview()
-            }
-        }
-        bottomRow.addView(label)
-        bottomRow.addView(clearBtn)
-        previewLayout.addView(bottomRow)
-
-        imagePreviewContainer.removeAllViews()
-        imagePreviewContainer.addView(previewLayout)
-        imagePreviewContainer.visibility = View.VISIBLE
-    }
-
-    private fun removePendingPreview() {
-        imagePreviewContainer.removeAllViews()
-        imagePreviewContainer.visibility = View.GONE
     }
 
     private fun checkDateSeparator(timestamp: Long) {
@@ -968,7 +820,7 @@ class ChatConversationActivity : AppCompatActivity() {
     // ===== 发送消息（文字、图片、或图片+文字） =====
     private fun sendMessage() {
         val msg = inputMessage.text.toString().trim()
-        val imagePaths = pendingImagePaths.toList()  // 快照
+        val imagePaths = chatImageHandler.pendingPaths.toList()  // 快照
 
         // 分条模式：文字和图片都蹦到待发区，不真正发送
         if (batchModeManager.isBatchMode) {
@@ -977,8 +829,7 @@ class ChatConversationActivity : AppCompatActivity() {
                 val caption = if (msg.isNotEmpty()) msg else ""
                 batchModeManager.addImage(imagePaths, caption)
                 inputMessage.text.clear()
-                pendingImagePaths.clear()
-                removePendingPreview()
+                chatImageHandler.clear()
                 return
             } else if (msg.isNotEmpty()) {
                 if (pendingQuoteAuthor != null && pendingQuoteContent != null) {
@@ -1000,8 +851,7 @@ class ChatConversationActivity : AppCompatActivity() {
         }
 
         inputMessage.text.clear()
-        removePendingPreview()
-        pendingImagePaths.clear()
+        chatImageHandler.clear()
 
         // 如果发图片就不带引用了
         if (imagePaths.isNotEmpty()) removeQuotePreview()
@@ -1367,8 +1217,8 @@ class ChatConversationActivity : AppCompatActivity() {
     }
     // ===== 发送表情包（本质就是发图片） =====
     private fun sendSticker(stickerFile: File) {
-        pendingImagePaths.clear()
-        pendingImagePaths.add(stickerFile.absolutePath)
+        chatImageHandler.pendingPaths.clear()
+        chatImageHandler.pendingPaths.add(stickerFile.absolutePath)
         stickerPanelManager.hide()
         sendMessage()
     }
