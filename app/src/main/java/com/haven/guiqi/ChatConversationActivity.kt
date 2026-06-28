@@ -759,6 +759,7 @@ class ChatConversationActivity : AppCompatActivity() {
                 if (result.newName != null) { friendName = result.newName!!; bubbleRenderer.friendName = friendName }
                 if (result.newIcon != null) { friendIcon = result.newIcon!!; bubbleRenderer.friendIcon = friendIcon }
                 if (result.userBioContext != null) chatHistory.add(ChatMessage("system", result.userBioContext!!))
+                for (recall in result.recallResults) chatHistory.add(ChatMessage("system", "[留声] $recall"))
                 if (result.shouldDream) triggerDream(friendId)
  
                 // 保存到聊天记录（存的是去掉指令后的干净文本）
@@ -959,6 +960,7 @@ class ChatConversationActivity : AppCompatActivity() {
                 if (result.newName != null) { friendName = result.newName!!; bubbleRenderer.friendName = friendName }
                 if (result.newIcon != null) { friendIcon = result.newIcon!!; bubbleRenderer.friendIcon = friendIcon }
                 if (result.userBioContext != null) chatHistory.add(ChatMessage("system", result.userBioContext!!))
+                for (recall in result.recallResults) chatHistory.add(ChatMessage("system", "[留声] $recall"))
                 if (result.shouldDream) triggerDream(friendId)
 
                 // 保存到聊天记录（存的是去掉指令后的干净文本）

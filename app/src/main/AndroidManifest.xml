@@ -42,6 +42,7 @@
             android:configChanges="orientation|screenSize"
             android:screenOrientation="unspecified" />
         <activity android:name=".SubconsciousActivity" />
+        <activity android:name=".EchoActivity" />
         <service
             android:name=".HavenService"
             android:enabled="true"

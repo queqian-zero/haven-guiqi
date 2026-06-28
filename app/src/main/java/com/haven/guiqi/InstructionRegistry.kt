@@ -41,6 +41,7 @@ object InstructionRegistry {
         Ability("[READ_BOOK:书名]", "去看书", setOf(Scene.CHAT, Scene.WAKE_UP, Scene.IDLE)),
         Ability("[BOOK_ANNOTATE:书名|内容]", "在书上留批注", setOf(Scene.CHAT, Scene.IDLE)),
         Ability("[SHARE_BOOK:书名|内容]", "分享一本书", setOf(Scene.CHAT, Scene.IDLE)),
+        Ability("[RECALL:关键词或日期]", "翻留声（搜聊天记录）", setOf(Scene.CHAT, Scene.WAKE_UP, Scene.IDLE)),
 
         // ── 作息 ──
         Ability("[SLEEP] / [SLEEP:时长]", "睡觉（自动定起床闹钟）", setOf(Scene.CHAT)),

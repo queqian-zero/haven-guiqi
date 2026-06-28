@@ -243,6 +243,21 @@ class ArchiveDetailActivity : AppCompatActivity() {
             startActivity(intent)
         }
 
+        // 留声
+        val echoCount = EchoStorage(this).count(friendId)
+        addFolder(
+            tabText = "留声",
+            tabColor = c.folderDiary,
+            preview = if (echoCount > 0) "$echoCount 条记录" else "点击同步或导入聊天记录",
+            isEmpty = false,  // 留声始终可点——进去才能同步/导入
+            dp = dp
+        ) {
+            val intent = Intent(this, EchoActivity::class.java)
+            intent.putExtra("friend_id", friendId)
+            intent.putExtra("friend_name", friendName)
+            startActivity(intent)
+        }
+
         // 废纸篓
         addFolder(
             tabText = "废纸篓",

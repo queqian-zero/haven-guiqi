@@ -1,0 +1,125 @@
+{
+  "allFiles": [
+    {
+      "file": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/java/com/haven/guiqi/EchoStorage.kt",
+      "selection": {
+        "end": {
+          "column": 1,
+          "index": 7833,
+          "line": 229
+        },
+        "start": {
+          "column": 1,
+          "index": 7833,
+          "line": 229
+        }
+      }
+    },
+    {
+      "file": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/java/com/haven/guiqi/EchoActivity.kt",
+      "selection": {
+        "end": {
+          "column": 1,
+          "index": 10913,
+          "line": 295
+        },
+        "start": {
+          "column": 1,
+          "index": 10913,
+          "line": 295
+        }
+      }
+    },
+    {
+      "file": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/java/com/haven/guiqi/ArchiveDetailActivity.kt",
+      "selection": {
+        "end": {
+          "column": 1,
+          "index": 13263,
+          "line": 375
+        },
+        "start": {
+          "column": 1,
+          "index": 13263,
+          "line": 375
+        }
+      }
+    },
+    {
+      "file": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/java/com/haven/guiqi/InstructionProcessor.kt",
+      "selection": {
+        "end": {
+          "column": 1,
+          "index": 18536,
+          "line": 423
+        },
+        "start": {
+          "column": 1,
+          "index": 18536,
+          "line": 423
+        }
+      }
+    },
+    {
+      "file": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/java/com/haven/guiqi/InstructionRegistry.kt",
+      "selection": {
+        "end": {
+          "column": 1,
+          "index": 3256,
+          "line": 85
+        },
+        "start": {
+          "column": 1,
+          "index": 3256,
+          "line": 85
+        }
+      }
+    },
+    {
+      "file": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/java/com/haven/guiqi/SystemPromptBuilder.kt",
+      "selection": {
+        "end": {
+          "column": 1,
+          "index": 8231,
+          "line": 202
+        },
+        "start": {
+          "column": 1,
+          "index": 8231,
+          "line": 202
+        }
+      }
+    },
+    {
+      "file": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/AndroidManifest.xml",
+      "selection": {
+        "end": {
+          "column": 11,
+          "index": 3430,
+          "line": 74
+        },
+        "start": {
+          "column": 11,
+          "index": 3430,
+          "line": 74
+        }
+      }
+    },
+    {
+      "file": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/java/com/haven/guiqi/ChatConversationActivity.kt",
+      "selection": {
+        "end": {
+          "column": 1,
+          "index": 53224,
+          "line": 1313
+        },
+        "start": {
+          "column": 1,
+          "index": 53224,
+          "line": 1313
+        }
+      }
+    }
+  ],
+  "selectedFile": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/java/com/haven/guiqi/EchoStorage.kt"
+}

@@ -28,7 +28,8 @@ class InstructionProcessor(private val context: Context) {
         val isSeen: Boolean,
         val shouldDream: Boolean,
         val userBioContext: String?,
-        val stickerPaths: List<String> = emptyList()  // AI 发的表情包图片路径
+        val stickerPaths: List<String> = emptyList(),
+        val recallResults: List<String> = emptyList()  // RECALL 搜索结果
     )
 
     fun process(friendId: String, rawText: String): Result {
@@ -40,6 +41,7 @@ class InstructionProcessor(private val context: Context) {
         var newCode: String? = null
         var shouldDream = false
         var userBioContext: String? = null
+        val recallResults = mutableListOf<String>()
 
         val friendStorage = FriendStorage(context)
         var currentFriend = friendStorage.getFriend(friendId)
@@ -291,6 +293,18 @@ class InstructionProcessor(private val context: Context) {
         }
         prefCleanText = footprintRegex.replace(prefCleanText, "").trim()
 
+        // ===== [RECALL:查询] — 搜索留声（聊天记录） =====
+        val recallRegex = Regex("\\[RECALL:([^]]+)]")
+        for (match in recallRegex.findAll(prefCleanText)) {
+            val query = match.groupValues[1].trim()
+            if (query.isNotEmpty()) {
+                val result = EchoStorage(context).buildRecallPrompt(friendId, query)
+                recallResults.add(result)
+                actions.add("🔍 翻了翻留声")
+            }
+        }
+        prefCleanText = recallRegex.replace(prefCleanText, "").trim()
+
         // ===== [BOOK_ANNOTATE:书名|内容] — 在书上留批注 =====
         val bookAnnotateRegex = Regex("\\[BOOK_ANNOTATE:([^|]+)\\|([^]]+)]")
         for (match in bookAnnotateRegex.findAll(prefCleanText)) {
@@ -403,7 +417,8 @@ class InstructionProcessor(private val context: Context) {
             isSeen = isSeen,
             shouldDream = shouldDream,
             userBioContext = userBioContext,
-            stickerPaths = stickerPaths
+            stickerPaths = stickerPaths,
+            recallResults = recallResults
         )
     }
 }
