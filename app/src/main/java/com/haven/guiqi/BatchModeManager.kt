@@ -92,6 +92,15 @@ class BatchModeManager(
     fun refreshUI() {
         pendingMessages.removeAllViews()
         pendingCount.text = "待发送 (${items.size})"
+
+        val innerLayout = LinearLayout(activity).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        }
+
         for ((index, item) in items.withIndex()) {
             val row = LinearLayout(activity).apply {
                 orientation = LinearLayout.HORIZONTAL
@@ -141,7 +150,22 @@ class BatchModeManager(
                 setPadding(dp(8), dp(4), dp(8), dp(4))
                 setOnClickListener { items.removeAt(index); refreshUI() }
             })
-            pendingMessages.addView(row)
+            innerLayout.addView(row)
+        }
+
+        // 超过3条包ScrollView，能滑动看全部
+        if (items.size > 3) {
+            val scroll = android.widget.ScrollView(activity).apply {
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, dp(180)
+                )
+                isFillViewport = false
+            }
+            scroll.addView(innerLayout)
+            pendingMessages.addView(scroll)
+            scroll.post { scroll.fullScroll(android.view.View.FOCUS_DOWN) }
+        } else {
+            pendingMessages.addView(innerLayout)
         }
     }
 }

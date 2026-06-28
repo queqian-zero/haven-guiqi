@@ -50,7 +50,34 @@ class AlarmStorage(private val context: Context) {
     }
 
     fun getActiveAlarms(): List<HavenAlarm> {
-        return loadAll().filter { it.enabled && !it.triggered }
+        val all = loadAll().toMutableList()
+        var changed = false
+        val now = System.currentTimeMillis()
+
+        for (i in all.indices) {
+            val a = all[i]
+            if (!a.enabled || a.triggered) continue
+            if (a.repeat != "none") continue  // 重复闹钟不自动归档
+
+            // 算这个闹钟本来该响的时间
+            val cal = java.util.Calendar.getInstance().apply {
+                timeInMillis = a.createdAt
+                set(java.util.Calendar.HOUR_OF_DAY, a.hour)
+                set(java.util.Calendar.MINUTE, a.minute)
+                set(java.util.Calendar.SECOND, 0)
+                // 如果设闹钟的时候已经过了这个时间点，目标是第二天
+                if (timeInMillis <= a.createdAt) add(java.util.Calendar.DAY_OF_YEAR, 1)
+            }
+
+            if (now > cal.timeInMillis) {
+                // 时间过了，自动归档
+                all[i] = a.copy(triggered = true)
+                changed = true
+            }
+        }
+
+        if (changed) save(all)
+        return all.filter { it.enabled && !it.triggered }
     }
 
     fun getCompletedAlarms(): List<HavenAlarm> {
