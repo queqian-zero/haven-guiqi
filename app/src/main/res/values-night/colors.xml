@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- ===== 归栖配色 · 深色模式（原有配色） ===== -->
+
+    <!-- 背景 -->
+    <color name="haven_background">#0A1628</color>
+    <color name="haven_background_secondary">#0D1B2A</color>
+    <color name="haven_card">#152238</color>
+    <color name="haven_input_bg">#0FFFFFFF</color>
+
+    <!-- 文字 -->
+    <color name="haven_text_primary">#D9FFFFFF</color>
+    <color name="haven_text_secondary">#80FFFFFF</color>
+    <color name="haven_text_hint">#26FFFFFF</color>
+    <color name="haven_text_on_card">#B3FFFFFF</color>
+
+    <!-- 强调色（紫色） -->
+    <color name="haven_accent">#4DB3A0FF</color>
+    <color name="haven_accent_strong">#80B3A0FF</color>
+    <color name="haven_accent_bg">#0FB3A0FF</color>
+
+    <!-- 边框 -->
+    <color name="haven_border">#08FFFFFF</color>
+    <color name="haven_border_medium">#1AFFFFFF</color>
+    <color name="haven_divider">#0AFFFFFF</color>
+
+    <!-- 设置页专用 -->
+    <color name="haven_settings_bg">#0A1628</color>
+    <color name="haven_settings_item_bg">#152238</color>
+    <color name="haven_settings_title">#E6FFFFFF</color>
+    <color name="haven_settings_section">#66FFFFFF</color>
+    <color name="haven_settings_label">#99FFFFFF</color>
+    <color name="haven_settings_value">#CCFFFFFF</color>
+    <color name="haven_settings_input_text">#CCFFFFFF</color>
+    <color name="haven_settings_input_hint">#33FFFFFF</color>
+    <color name="haven_settings_button">#99FFFFFF</color>
+    <color name="haven_settings_back">#99FFFFFF</color>
+    <color name="haven_settings_divider">#0AFFFFFF</color>
+    <color name="haven_settings_version">#26FFFFFF</color>
+
+    <!-- 弹窗 -->
+    <color name="haven_dialog_bg">#152238</color>
+    <color name="haven_dialog_text">#D9FFFFFF</color>
+    <color name="haven_dialog_text_secondary">#80FFFFFF</color>
+    <color name="haven_dialog_accent">#B3A0FF</color>
+
+    <!-- 桌面 -->
+    <color name="haven_desktop_gradient_start">#0a0a1a</color>
+    <color name="haven_desktop_gradient_center">#1a1a3e</color>
+    <color name="haven_desktop_gradient_end">#0f0f2a</color>
+    <color name="haven_desktop_time">#E6FFFFFF</color>
+    <color name="haven_desktop_motto">#59FFFFFF</color>
+    <color name="haven_desktop_date">#66FFFFFF</color>
+    <color name="haven_desktop_icon_label">#66FFFFFF</color>
+    <color name="haven_desktop_icon_bg">#14FFFFFF</color>
+    <color name="haven_desktop_icon_border">#26FFFFFF</color>
+    <color name="haven_desktop_icon_selected_bg">#33FFFFFF</color>
+    <color name="haven_desktop_icon_selected_border">#99FFFFFF</color>
+    <color name="haven_desktop_icon_color">#99FFFFFF</color>
+    <color name="haven_desktop_dot_active">#FFFFFFFF</color>
+    <color name="haven_desktop_dot_inactive">#40FFFFFF</color>
+    <color name="haven_desktop_drawer_bg">#D9080820</color>
+    <color name="haven_desktop_drawer_title">#4DFFFFFF</color>
+    <color name="haven_desktop_drawer_overlay">#66000000</color>
+    <color name="haven_desktop_icon_circle_bg">#24FFFFFF</color>
+    <color name="haven_desktop_icon_circle_border">#33FFFFFF</color>
+
+    <color name="haven_date_label">#26FFFFFF</color>
+    <!-- 聊天页 -->
+    <color name="haven_highlight">#FFB3A0FF</color>
+    <color name="haven_error_bg">#33FF6B6B</color>
+    <color name="haven_error_text">#CCFF6B6B</color>
+
+    <!-- 状态 -->
+    <color name="haven_success">#6666FF66</color>
+    <color name="haven_error">#CCFF6B6B</color>
+    <color name="haven_warning">#CCFFCC66</color>
+</resources>

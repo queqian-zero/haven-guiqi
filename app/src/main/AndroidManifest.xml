@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest 
+    xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
+    <application 
+        android:allowBackup="true" 
+        android:icon="@mipmap/ic_launcher" 
+        android:roundIcon="@mipmap/ic_launcher" 
+        android:label="@string/app_name" 
+        android:supportsRtl="true" 
+        android:theme="@style/AppTheme">
+        <activity 
+            android:name=".MainActivity" 
+            android:exported="true">
+            <intent-filter>
+                <action 
+                    android:name="android.intent.action.MAIN" />
+                <category 
+                    android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+        <activity android:name=".DesktopActivity" />
+        <activity android:name=".SettingsActivity" />
+        <activity android:name=".ChatActivity" />
+        <activity android:name=".ChatConversationActivity" />
+        <activity android:name=".ChatSettingsActivity" />
+        <activity android:name=".ArchiveActivity" />
+        <activity android:name=".ArchiveDetailActivity" />
+        <activity android:name=".ArchiveFolderActivity" />
+        <activity android:name=".DreamArchiveActivity" />
+        <activity android:name=".BookReaderActivity" />
+        <activity android:name=".FriendDetailActivity" />
+        <activity android:name=".ClockActivity" />
+        <activity android:name=".ClockHistoryActivity" />
+        <activity android:name=".NestActivity"
+            android:configChanges="orientation|screenSize"
+            android:screenOrientation="unspecified" />
+        <activity android:name=".SubconsciousActivity" />
+        <activity android:name=".EchoActivity" />
+        <service
+            android:name=".HavenService"
+            android:enabled="true"
+            android:exported="false" />
+        <receiver
+            android:name=".ReminderReceiver"
+            android:enabled="true"
+            android:exported="false" />
+        <receiver
+            android:name=".BootReceiver"
+            android:enabled="true"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
+        <service
+            android:name=".HavenAccessibilityService"
+            android:enabled="true"
+            android:exported="false"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/accessibility_service_config" />
+        </service>
+    </application>
+</manifest>

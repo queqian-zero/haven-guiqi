@@ -1,0 +1,410 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/settings_bg"
+    android:orientation="vertical">
+
+    <!-- 顶部标题栏 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingHorizontal="16dp"
+        android:paddingTop="16dp"
+        android:paddingBottom="12dp">
+
+        <TextView
+            android:id="@+id/btnBack"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:gravity="center"
+            android:text="←"
+            android:textColor="@color/haven_settings_back"
+            android:textSize="20sp"
+            android:background="@drawable/icon_bg" />
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="12dp"
+            android:text="设置"
+            android:textColor="@color/haven_settings_title"
+            android:textSize="20sp" />
+    </LinearLayout>
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:scrollbars="none"
+        android:paddingHorizontal="16dp">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingBottom="32dp">
+
+            <!-- ===== API 预设区 ===== -->
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="API 预设"
+                android:textColor="@color/haven_settings_section"
+                android:textSize="12sp"
+                android:paddingHorizontal="4dp"
+                android:paddingTop="16dp"
+                android:paddingBottom="8dp" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="@drawable/settings_item_bg"
+                android:orientation="vertical"
+                android:padding="16dp">
+
+                <!-- 当前预设 -->
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="当前预设"
+                    android:textColor="@color/haven_settings_back"
+                    android:textSize="13sp"
+                    android:paddingBottom="6dp" />
+
+                <TextView
+                    android:id="@+id/btnPreset"
+                    android:layout_width="match_parent"
+                    android:layout_height="42dp"
+                    android:background="@drawable/input_bg"
+                    android:gravity="center_vertical"
+                    android:paddingHorizontal="12dp"
+                    android:text="默认"
+                    android:textColor="@color/haven_settings_value"
+                    android:textSize="13sp" />
+
+                <!-- 保存/删除预设按钮 -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:layout_marginTop="10dp">
+
+                    <TextView
+                        android:id="@+id/btnSavePreset"
+                        android:layout_width="0dp"
+                        android:layout_height="36dp"
+                        android:layout_weight="1"
+                        android:background="@drawable/input_bg"
+                        android:gravity="center"
+                        android:text="保存为预设"
+                        android:textColor="@color/haven_settings_back"
+                        android:textSize="12sp"
+                        android:layout_marginEnd="6dp" />
+
+                    <TextView
+                        android:id="@+id/btnDeletePreset"
+                        android:layout_width="0dp"
+                        android:layout_height="36dp"
+                        android:layout_weight="1"
+                        android:background="@drawable/input_bg"
+                        android:gravity="center"
+                        android:text="删除预设"
+                        android:textColor="@color/haven_settings_section"
+                        android:textSize="12sp"
+                        android:layout_marginStart="6dp" />
+                </LinearLayout>
+
+            </LinearLayout>
+
+            <!-- ===== API 配置区 ===== -->
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="API 配置"
+                android:textColor="@color/haven_settings_section"
+                android:textSize="12sp"
+                android:paddingHorizontal="4dp"
+                android:paddingTop="24dp"
+                android:paddingBottom="8dp" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="@drawable/settings_item_bg"
+                android:orientation="vertical"
+                android:padding="16dp">
+
+                <!-- API 地址 -->
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="API 地址"
+                    android:textColor="@color/haven_settings_back"
+                    android:textSize="13sp"
+                    android:paddingBottom="6dp" />
+
+                <EditText
+                    android:id="@+id/inputApiUrl"
+                    android:layout_width="match_parent"
+                    android:layout_height="42dp"
+                    android:background="@drawable/input_bg"
+                    android:hint="https://api.openai.com/v1"
+                    android:textColor="@color/haven_settings_value"
+                    android:textColorHint="@color/haven_settings_input_hint"
+                    android:textSize="13sp"
+                    android:paddingHorizontal="12dp"
+                    android:singleLine="true"
+                    android:inputType="textUri"
+                    android:imeOptions="actionNext" />
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:background="@color/haven_settings_divider"
+                    android:layout_marginVertical="14dp" />
+
+                <!-- API 密钥 -->
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="API 密钥"
+                    android:textColor="@color/haven_settings_back"
+                    android:textSize="13sp"
+                    android:paddingBottom="6dp" />
+
+                <EditText
+                    android:id="@+id/inputApiKey"
+                    android:layout_width="match_parent"
+                    android:layout_height="42dp"
+                    android:background="@drawable/input_bg"
+                    android:hint="sk-..."
+                    android:textColor="@color/haven_settings_value"
+                    android:textColorHint="@color/haven_settings_input_hint"
+                    android:textSize="13sp"
+                    android:paddingHorizontal="12dp"
+                    android:singleLine="true"
+                    android:inputType="textPassword"
+                    android:imeOptions="actionNext" />
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:background="@color/haven_settings_divider"
+                    android:layout_marginVertical="14dp" />
+
+                <!-- 模型名称 + 拉取按钮 -->
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="模型名称"
+                    android:textColor="@color/haven_settings_back"
+                    android:textSize="13sp"
+                    android:paddingBottom="6dp" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="42dp"
+                    android:orientation="horizontal">
+
+                    <EditText
+                        android:id="@+id/inputModel"
+                        android:layout_width="0dp"
+                        android:layout_height="match_parent"
+                        android:layout_weight="1"
+                        android:background="@drawable/input_bg"
+                        android:hint="手动输入或点击拉取"
+                        android:textColor="@color/haven_settings_value"
+                        android:textColorHint="@color/haven_settings_input_hint"
+                        android:textSize="13sp"
+                        android:paddingHorizontal="12dp"
+                        android:singleLine="true"
+                        android:inputType="text"
+                        android:imeOptions="actionDone" />
+
+                    <TextView
+                        android:id="@+id/btnFetchModels"
+                        android:layout_width="72dp"
+                        android:layout_height="match_parent"
+                        android:layout_marginStart="8dp"
+                        android:background="@drawable/input_bg"
+                        android:gravity="center"
+                        android:text="拉取"
+                        android:textColor="@color/haven_settings_back"
+                        android:textSize="12sp" />
+                </LinearLayout>
+
+                <!-- 测试连接按钮 -->
+                <TextView
+                    android:id="@+id/btnTestConnection"
+                    android:layout_width="match_parent"
+                    android:layout_height="42dp"
+                    android:layout_marginTop="14dp"
+                    android:background="@drawable/input_bg"
+                    android:gravity="center"
+                    android:text="测试连接"
+                    android:textColor="@color/haven_settings_back"
+                    android:textSize="13sp" />
+
+                <!-- 连接状态 -->
+                <TextView
+                    android:id="@+id/tvConnectionStatus"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:gravity="center"
+                    android:paddingTop="8dp"
+                    android:text=""
+                    android:textSize="12sp" />
+
+            </LinearLayout>
+
+
+            <!-- ===== 主题设置区 ===== -->
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="外观"
+                android:textColor="@color/haven_settings_section"
+                android:textSize="12sp"
+                android:paddingHorizontal="4dp"
+                android:paddingTop="24dp"
+                android:paddingBottom="8dp" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="@drawable/settings_item_bg"
+                android:orientation="vertical"
+                android:padding="16dp">
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="主题模式"
+                    android:textColor="@color/haven_settings_back"
+                    android:textSize="13sp"
+                    android:paddingBottom="6dp" />
+
+                <TextView
+                    android:id="@+id/btnTheme"
+                    android:layout_width="match_parent"
+                    android:layout_height="42dp"
+                    android:background="@drawable/input_bg"
+                    android:gravity="center_vertical"
+                    android:paddingHorizontal="12dp"
+                    android:text="跟随系统"
+                    android:textColor="@color/haven_settings_value"
+                    android:textSize="13sp" />
+            </LinearLayout>
+            <!-- ===== 语言设置区 ===== -->
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="系统语言"
+                android:textColor="@color/haven_settings_section"
+                android:textSize="12sp"
+                android:paddingHorizontal="4dp"
+                android:paddingTop="24dp"
+                android:paddingBottom="8dp" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="@drawable/settings_item_bg"
+                android:orientation="vertical"
+                android:padding="16dp">
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="界面语言"
+                    android:textColor="@color/haven_settings_back"
+                    android:textSize="13sp"
+                    android:paddingBottom="6dp" />
+
+                <TextView
+                    android:id="@+id/btnLanguage"
+                    android:layout_width="match_parent"
+                    android:layout_height="42dp"
+                    android:background="@drawable/input_bg"
+                    android:gravity="center_vertical"
+                    android:paddingHorizontal="12dp"
+                    android:text="简体中文"
+                    android:textColor="@color/haven_settings_value"
+                    android:textSize="13sp" />
+            </LinearLayout>
+
+            <!-- ===== 数据管理区 ===== -->
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="数据管理"
+                android:textColor="@color/haven_settings_section"
+                android:textSize="12sp"
+                android:paddingHorizontal="4dp"
+                android:paddingTop="24dp"
+                android:paddingBottom="8dp" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="@drawable/settings_item_bg"
+                android:orientation="vertical"
+                android:padding="16dp">
+
+                <TextView
+                    android:id="@+id/btnExport"
+                    android:layout_width="match_parent"
+                    android:layout_height="42dp"
+                    android:background="@drawable/input_bg"
+                    android:gravity="center_vertical"
+                    android:paddingHorizontal="12dp"
+                    android:text="导出全部数据"
+                    android:textColor="@color/haven_settings_value"
+                    android:textSize="13sp" />
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:background="@color/haven_settings_divider"
+                    android:layout_marginVertical="10dp" />
+
+                <TextView
+                    android:id="@+id/btnImport"
+                    android:layout_width="match_parent"
+                    android:layout_height="42dp"
+                    android:background="@drawable/input_bg"
+                    android:gravity="center_vertical"
+                    android:paddingHorizontal="12dp"
+                    android:text="导入数据"
+                    android:textColor="@color/haven_settings_value"
+                    android:textSize="13sp" />
+            </LinearLayout>
+
+            <!-- ===== 保存按钮 ===== -->
+            <TextView
+                android:id="@+id/btnSave"
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:layout_marginTop="32dp"
+                android:background="@drawable/search_bar_bg"
+                android:gravity="center"
+                android:text="保存设置"
+                android:textColor="@color/haven_settings_value"
+                android:textSize="15sp" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center"
+                android:paddingTop="24dp"
+                android:text="归栖 Haven v0.1"
+                android:textColor="@color/haven_settings_version"
+                android:textSize="11sp" />
+
+        </LinearLayout>
+    </ScrollView>
+</LinearLayout>

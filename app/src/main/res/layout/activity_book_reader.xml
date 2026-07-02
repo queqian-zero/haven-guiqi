@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="#FFFDF5E6">
+
+    <!-- 顶部栏 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingHorizontal="14dp"
+        android:paddingTop="10dp"
+        android:paddingBottom="8dp">
+
+        <TextView
+            android:id="@+id/btnBack"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:gravity="center"
+            android:text="←"
+            android:textColor="#8B7355"
+            android:textSize="18sp" />
+
+        <TextView
+            android:id="@+id/tvBookTitle"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:text="书名"
+            android:textColor="#5D4037"
+            android:textSize="15sp" />
+
+        <TextView
+            android:id="@+id/tvChapterInfo"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textColor="#A08060"
+            android:textSize="11sp" />
+    </LinearLayout>
+
+    <!-- 章节标题 -->
+    <TextView
+        android:id="@+id/tvChapterTitle"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center"
+        android:paddingHorizontal="20dp"
+        android:paddingBottom="12dp"
+        android:textColor="#6D4C41"
+        android:textSize="16sp" />
+
+    <!-- 正文 -->
+    <ScrollView
+        android:id="@+id/contentScroll"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:scrollbars="none">
+
+        <TextView
+            android:id="@+id/tvContent"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingHorizontal="20dp"
+            android:paddingTop="8dp"
+            android:paddingBottom="40dp"
+            android:textColor="#4E342E"
+            android:textSize="15sp"
+            android:lineSpacingMultiplier="1.8" />
+    </ScrollView>
+
+    <!-- 底部翻页栏 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center"
+        android:orientation="horizontal"
+        android:paddingHorizontal="20dp"
+        android:paddingVertical="10dp">
+
+        <TextView
+            android:id="@+id/btnPrevChapter"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:text="‹ 上一章"
+            android:textColor="#8B7355"
+            android:textSize="13sp"
+            android:paddingVertical="8dp" />
+
+        <TextView
+            android:id="@+id/btnChapterList"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:text="目录"
+            android:textColor="#8B7355"
+            android:textSize="13sp"
+            android:paddingVertical="8dp" />
+
+        <TextView
+            android:id="@+id/btnNextChapter"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:text="下一章 ›"
+            android:textColor="#8B7355"
+            android:textSize="13sp"
+            android:paddingVertical="8dp" />
+    </LinearLayout>
+</LinearLayout>

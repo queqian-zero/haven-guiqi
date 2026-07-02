@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">归栖</string>
+    <string name="accessibility_service_desc">归栖保活服务：保持 AI 在后台运行，让 AI 能主动给你发消息、按时提醒。此服务不会读取任何屏幕内容。</string>
+
+</resources>
