@@ -31,8 +31,6 @@ import java.text.SimpleDateFormat
 import java.util.*
 
 class DesktopActivity : AppCompatActivity() {
-
-    // ===== 普通模式元素 =====
     private lateinit var normalDesktop: LinearLayout
     private lateinit var desktopTime: TextView
     private lateinit var desktopDate: TextView
@@ -40,7 +38,6 @@ class DesktopActivity : AppCompatActivity() {
     private lateinit var gridBottom: GridLayout
     private lateinit var pageDots: LinearLayout
 
-    // ===== 立绘模式元素 =====
     private lateinit var liveDesktop: LinearLayout
     private lateinit var liveBgImage: ImageView
     private lateinit var normalBgImage: ImageView
@@ -52,17 +49,14 @@ class DesktopActivity : AppCompatActivity() {
     private lateinit var drawerOverlay: View
     private lateinit var drawerGrid: GridLayout
 
-    // ===== 状态 =====
     private var isLiveMode = false
     private var isDrawerOpen = false
     private var isEditMode = false
-    private var selectedIndex = -1  // 编辑模式下选中的图标索引
+    private var selectedIndex = -1
     private lateinit var prefs: SharedPreferences
+    private var pendingWallpaperSlot = ""
 
-    // ===== 编辑模式动画列表（方便统一停止） =====
     private val wobbleAnimators = mutableListOf<ObjectAnimator>()
-
-    // ===== 定时器 =====
     private val handler = Handler(Looper.getMainLooper())
     private val updateRunnable = object : Runnable {
         override fun run() {
@@ -71,7 +65,6 @@ class DesktopActivity : AppCompatActivity() {
         }
     }
 
-    // ===== 图标数据 =====
     data class AppIcon(
         val type: String,
         val label: String,
@@ -86,11 +79,11 @@ class DesktopActivity : AppCompatActivity() {
         AppIcon("world", "世界", "world"),
         AppIcon("workshop", "工坊", "workshop"),
         AppIcon("clock", "时钟", "clock"),
-        AppIcon("weather", "天气", "weather"),
+        AppIcon("weather", "窗外", "weather"),
         AppIcon("calendar", "日历", "calendar"),
-        AppIcon("music", "音乐", "music"),
-        AppIcon("browser", "浏览", "browser"),
-        AppIcon("settings", "设置", "settings"),
+        AppIcon("music", "留声机", "music"),
+        AppIcon("browser", "出门", "browser"),
+        AppIcon("settings", "杂物间", "settings"),
         AppIcon("beautify", "美化", "beautify")
     )
 
@@ -104,7 +97,6 @@ class DesktopActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
         // 沉浸式全屏
         WindowCompat.setDecorFitsSystemWindows(window, false)
         window.statusBarColor = android.graphics.Color.TRANSPARENT
@@ -117,7 +109,6 @@ class DesktopActivity : AppCompatActivity() {
         }
 
         setContentView(R.layout.activity_desktop)
-
 
         // 只隐藏底部导航栏，保留顶部状态栏
         val insetsController = WindowInsetsControllerCompat(window, window.decorView)
@@ -154,16 +145,8 @@ class DesktopActivity : AppCompatActivity() {
         liveBgImage = findViewById(R.id.liveBgImage)
         normalBgImage = findViewById(R.id.normalBgImage)
 
-        // 加载普通桌面壁纸
-        val normalBgUri = prefs.getString("normal_bg_uri", null)
-        if (normalBgUri != null) {
-            try {
-                normalBgImage.setImageURI(Uri.parse(normalBgUri))
-                normalBgImage.visibility = View.VISIBLE
-            } catch (e: Exception) {
-                normalBgImage.visibility = View.GONE
-            }
-        }
+        // 加载普通桌面壁纸（昼/夜自动切换）
+        loadDesktopWallpaper()
         liveTime = findViewById(R.id.liveTime)
         liveDate = findViewById(R.id.liveDate)
         drawerBtn = findViewById(R.id.drawerBtn)
@@ -244,13 +227,11 @@ class DesktopActivity : AppCompatActivity() {
         handler.removeCallbacks(updateRunnable)
     }
 
-    // ===== 保存图标顺序 =====
     private fun saveIconOrder() {
         val orderStr = currentIcons.joinToString(",") { it.action }
         prefs.edit().putString("icon_order", orderStr).apply()
     }
 
-    // ===== 加载图标顺序 =====
     private fun loadIconOrder() {
         val orderStr = prefs.getString("icon_order", null)
         if (orderStr != null) {
@@ -272,12 +253,10 @@ class DesktopActivity : AppCompatActivity() {
         }
     }
 
-    // ===== 刷新桌面图标显示 =====
     private fun refreshDesktopIcons() {
         fillIcons(gridTop, currentIcons, 4, 55, true)
     }
 
-    // ===== 进入编辑模式 =====
     private fun enterEditMode() {
         isEditMode = true
         selectedIndex = -1
@@ -285,7 +264,6 @@ class DesktopActivity : AppCompatActivity() {
         refreshDesktopIcons()  // 重新填充，带上晃动动画
     }
 
-    // ===== 退出编辑模式 =====
     private fun exitEditMode() {
         isEditMode = false
         selectedIndex = -1
@@ -299,12 +277,11 @@ class DesktopActivity : AppCompatActivity() {
         Toast.makeText(this, "已退出编辑模式", Toast.LENGTH_SHORT).show()
     }
 
-    // ===== 长按弹出菜单 =====
     private fun showModeMenu() {
         val items = if (isLiveMode) {
-            arrayOf("切换到普通模式", "更换立绘背景")
+            arrayOf("切换到普通模式", "更换立绘背景（昼）", "更换立绘背景（夜）")
         } else {
-            arrayOf("切换到立绘模式", "更换桌面壁纸", "编辑桌面图标")
+            arrayOf("切换到立绘模式", "更换桌面壁纸（昼）", "更换桌面壁纸（夜）", "编辑桌面图标")
         }
 
         AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog)
@@ -313,20 +290,21 @@ class DesktopActivity : AppCompatActivity() {
                 if (isLiveMode) {
                     when (which) {
                         0 -> switchToNormalMode()
-                        1 -> pickImage()
+                        1 -> { pendingWallpaperSlot = "live2d_day"; pickImage() }
+                        2 -> { pendingWallpaperSlot = "live2d_night"; pickImage() }
                     }
                 } else {
                     when (which) {
                         0 -> switchToLiveMode(true)
-                        1 -> pickNormalWallpaper()
-                        2 -> enterEditMode()
+                        1 -> { pendingWallpaperSlot = "desktop_day"; pickNormalWallpaper() }
+                        2 -> { pendingWallpaperSlot = "desktop_night"; pickNormalWallpaper() }
+                        3 -> enterEditMode()
                     }
                 }
             }
             .show()
     }
 
-    // ===== 切换到立绘模式 =====
     private fun switchToLiveMode(save: Boolean) {
         // 如果在编辑模式，先退出
         if (isEditMode) exitEditMode()
@@ -348,6 +326,34 @@ class DesktopActivity : AppCompatActivity() {
             } catch (e: Exception) {
                 liveBgImage.visibility = View.GONE
             }
+        }
+    }
+
+    /** 判断当前是否深色模式 */
+    private fun isDarkMode(): Boolean =
+        (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
+            android.content.res.Configuration.UI_MODE_NIGHT_YES
+
+    /** 加载普通桌面壁纸（昼/夜自动切换） */
+    private fun loadDesktopWallpaper() {
+        val slot = if (isDarkMode()) "desktop_night" else "desktop_day"
+        val path = LockScreenStorage(this).getWallpaper(slot)
+        if (path.isNotEmpty()) {
+            try {
+                normalBgImage.setImageURI(Uri.parse(path))
+                normalBgImage.visibility = View.VISIBLE
+                return
+            } catch (_: Exception) { }
+        }
+        // 降级：尝试旧的 key
+        val oldUri = prefs.getString("normal_bg_uri", null)
+        if (oldUri != null) {
+            try {
+                normalBgImage.setImageURI(Uri.parse(oldUri))
+                normalBgImage.visibility = View.VISIBLE
+            } catch (_: Exception) { normalBgImage.visibility = View.GONE }
+        } else {
+            normalBgImage.visibility = View.GONE
         }
     }
 
@@ -402,7 +408,6 @@ class DesktopActivity : AppCompatActivity() {
         }
     }
 
-    // ===== 切换到普通模式 =====
     private fun switchToNormalMode() {
         isLiveMode = false
         prefs.edit().putBoolean("live_mode", false).apply()
@@ -414,16 +419,10 @@ class DesktopActivity : AppCompatActivity() {
         liveBgImage.visibility = View.GONE
         drawerBtn.visibility = View.GONE
 
-        // 显示普通桌面壁纸（如果有）
-        val normalBgUri = prefs.getString("normal_bg_uri", null)
-        if (normalBgUri != null) {
-            normalBgImage.visibility = View.VISIBLE
-        } else {
-            normalBgImage.visibility = View.GONE
-        }
+        // 显示普通桌面壁纸（昼/夜自动切换）
+        loadDesktopWallpaper()
     }
 
-    // ===== 打开/关闭抽屉 =====
     private fun toggleDrawer() {
         if (isDrawerOpen) {
             drawerPanel.animate()
@@ -449,7 +448,6 @@ class DesktopActivity : AppCompatActivity() {
         }
     }
 
-    // ===== 选择图片 =====
     private fun pickImage() {
         val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
             addCategory(Intent.CATEGORY_OPENABLE)
@@ -484,26 +482,32 @@ class DesktopActivity : AppCompatActivity() {
 
         when (requestCode) {
             PICK_IMAGE_REQUEST -> {
-                // 立绘背景
+                // 立绘背景（昼或夜）
+                val slot = pendingWallpaperSlot.ifEmpty { "live2d_day" }
+                LockScreenStorage(this).setWallpaper(slot, uri.toString())
+                // 同时更新旧的 key（兼容）
                 prefs.edit().putString("live_bg_uri", uri.toString()).apply()
                 liveBgImage.setImageURI(uri)
                 liveBgImage.visibility = View.VISIBLE
                 if (!isLiveMode) switchToLiveMode(true)
-                // 抽屉颜色跟壁纸走
                 updateDrawerTint(uri)
-                Toast.makeText(this, "立绘背景已更换 ♡", Toast.LENGTH_SHORT).show()
+                val label = if (slot.endsWith("night")) "夜间" else "日间"
+                Toast.makeText(this, "立绘${label}背景已更换 ♡", Toast.LENGTH_SHORT).show()
             }
             PICK_NORMAL_BG_REQUEST -> {
-                // 普通桌面壁纸
+                // 普通桌面壁纸（昼或夜）
+                val slot = pendingWallpaperSlot.ifEmpty { "desktop_day" }
+                LockScreenStorage(this).setWallpaper(slot, uri.toString())
+                // 同时更新旧的 key（兼容）
                 prefs.edit().putString("normal_bg_uri", uri.toString()).apply()
                 normalBgImage.setImageURI(uri)
                 normalBgImage.visibility = View.VISIBLE
-                Toast.makeText(this, "桌面壁纸已更换 ♡", Toast.LENGTH_SHORT).show()
+                val label = if (slot.endsWith("night")) "夜间" else "日间"
+                Toast.makeText(this, "桌面${label}壁纸已更换 ♡", Toast.LENGTH_SHORT).show()
             }
         }
     }
 
-    // ===== 更新时间和日期 =====
     private fun updateTimeAndDate() {
         val now = Calendar.getInstance()
         val timeFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
@@ -527,7 +531,6 @@ class DesktopActivity : AppCompatActivity() {
         liveDate.text = liveDateStr
     }
 
-    // ===== 填充图标 =====
     private fun fillIcons(
         grid: GridLayout,
         icons: List<AppIcon>,
@@ -649,7 +652,6 @@ class DesktopActivity : AppCompatActivity() {
         }
     }
 
-    // ===== 图标点击 =====
     private fun onIconClick(icon: AppIcon) {
         when (icon.action) {
             "chat" -> {
@@ -674,7 +676,6 @@ class DesktopActivity : AppCompatActivity() {
         }
     }
 
-    // ===== 白点点 =====
     private fun setupPageDots(totalPages: Int, currentPage: Int) {
         pageDots.removeAllViews()
         for (i in 0 until totalPages) {
@@ -695,7 +696,6 @@ class DesktopActivity : AppCompatActivity() {
         }
     }
 
-    // ===== 普通图标背景 =====
     private fun createIconBackground(): android.graphics.drawable.GradientDrawable {
         return android.graphics.drawable.GradientDrawable().apply {
             shape = android.graphics.drawable.GradientDrawable.RECTANGLE
@@ -705,7 +705,6 @@ class DesktopActivity : AppCompatActivity() {
         }
     }
 
-    // ===== 选中状态的高亮背景 =====
     private fun createSelectedBackground(): android.graphics.drawable.GradientDrawable {
         return android.graphics.drawable.GradientDrawable().apply {
             shape = android.graphics.drawable.GradientDrawable.RECTANGLE

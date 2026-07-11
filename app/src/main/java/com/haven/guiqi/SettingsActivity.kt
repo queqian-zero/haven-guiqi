@@ -9,6 +9,7 @@ import android.os.Looper
 import android.view.View
 import android.view.WindowManager
 import android.widget.EditText
+import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
@@ -125,6 +126,11 @@ class SettingsActivity : AppCompatActivity() {
                     recreate()
                 }
                 .show()
+        }
+
+        // ===== 小助手 API =====
+        findViewById<TextView>(R.id.btnHelperApi).setOnClickListener {
+            showHelperApiDialog()
         }
 
         // ===== 语言选择 =====
@@ -472,6 +478,53 @@ class SettingsActivity : AppCompatActivity() {
                 currentPresetName = "默认"
                 btnPreset.text = "默认"
                 loadPreset("默认")
+            }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    // ===== 小助手 API 配置 =====
+    private fun showHelperApiDialog() {
+        val storage = LockScreenStorage(this)
+        val dp = { v: Int -> (v * resources.displayMetrics.density).toInt() }
+
+        val layout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(16), dp(20), dp(8))
+        }
+        val inputUrl = EditText(this).apply {
+            hint = "API 地址"
+            setText(storage.getHelperApiUrl())
+            textSize = 13f
+            setPadding(dp(12), dp(8), dp(12), dp(8))
+        }
+        val inputKey = EditText(this).apply {
+            hint = "API 密钥"
+            setText(storage.getHelperApiKey())
+            textSize = 13f
+            setPadding(dp(12), dp(8), dp(12), dp(8))
+        }
+        val inputModel = EditText(this).apply {
+            hint = "模型名称"
+            setText(storage.getHelperApiModel())
+            textSize = 13f
+            setPadding(dp(12), dp(8), dp(12), dp(8))
+        }
+        layout.addView(inputUrl)
+        layout.addView(inputKey)
+        layout.addView(inputModel)
+
+        AlertDialog.Builder(this)
+            .setTitle("小助手 API")
+            .setMessage("用于开屏文案、天气卡片等小功能。\n可以用便宜的小模型，不需要很聪明。")
+            .setView(layout as View)
+            .setPositiveButton("保存") { _, _ ->
+                storage.saveHelperApi(
+                    inputUrl.text.toString().trim(),
+                    inputKey.text.toString().trim(),
+                    inputModel.text.toString().trim()
+                )
+                Toast.makeText(this, "小助手 API 已保存 ✓", Toast.LENGTH_SHORT).show()
             }
             .setNegativeButton("取消", null)
             .show()

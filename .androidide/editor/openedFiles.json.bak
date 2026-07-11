@@ -1,0 +1,95 @@
+{
+  "allFiles": [
+    {
+      "file": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/java/com/haven/guiqi/DesktopActivity.kt",
+      "selection": {
+        "end": {
+          "column": 1,
+          "index": 29540,
+          "line": 799
+        },
+        "start": {
+          "column": 1,
+          "index": 29540,
+          "line": 799
+        }
+      }
+    },
+    {
+      "file": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/java/com/haven/guiqi/MainActivity.kt",
+      "selection": {
+        "end": {
+          "column": 1,
+          "index": 15298,
+          "line": 430
+        },
+        "start": {
+          "column": 1,
+          "index": 15298,
+          "line": 430
+        }
+      }
+    },
+    {
+      "file": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/java/com/haven/guiqi/LockScreenStorage.kt",
+      "selection": {
+        "end": {
+          "column": 1,
+          "index": 4752,
+          "line": 124
+        },
+        "start": {
+          "column": 1,
+          "index": 4752,
+          "line": 124
+        }
+      }
+    },
+    {
+      "file": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/java/com/haven/guiqi/SettingsActivity.kt",
+      "selection": {
+        "end": {
+          "column": 1,
+          "index": 21687,
+          "line": 562
+        },
+        "start": {
+          "column": 1,
+          "index": 21687,
+          "line": 562
+        }
+      }
+    },
+    {
+      "file": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/res/layout/activity_settings.xml",
+      "selection": {
+        "end": {
+          "column": 15,
+          "index": 18478,
+          "line": 439
+        },
+        "start": {
+          "column": 15,
+          "index": 18478,
+          "line": 439
+        }
+      }
+    },
+    {
+      "file": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/java/com/haven/guiqi/DiaryStorage.kt",
+      "selection": {
+        "end": {
+          "column": 0,
+          "index": 0,
+          "line": 0
+        },
+        "start": {
+          "column": 0,
+          "index": 0,
+          "line": 0
+        }
+      }
+    }
+  ],
+  "selectedFile": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/java/com/haven/guiqi/DesktopActivity.kt"
+}
