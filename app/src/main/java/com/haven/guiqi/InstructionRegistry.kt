@@ -70,6 +70,14 @@ object InstructionRegistry {
         Ability("[PROMISE:内容]", "记住答应过的", setOf(Scene.CHAT)),
         Ability("[PREF_DONE:关键词]", "标记偏好已完成", setOf(Scene.CHAT)),
 
+        // ── 天气 ──
+        Ability("[WEATHER]", "查看用户所在城市天气", setOf(Scene.CHAT, Scene.WAKE_UP)),
+        Ability("[SHARE_WEATHER]", "把天气以卡片分享给用户", setOf(Scene.CHAT)),
+        Ability("[REFRESH_WEATHER]", "静默刷新天气数据", setOf(Scene.CHAT, Scene.IDLE)),
+
+        // ── 留言板 ──
+        Ability("[BULLETIN:内容]", "在桌面留言板写一条留言", setOf(Scene.ALL)),
+
         // ── 静默 ──
         Ability("[NO_ACTION]", "什么都不做", setOf(Scene.WAKE_UP, Scene.IDLE))
     )

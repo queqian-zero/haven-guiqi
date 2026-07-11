@@ -399,7 +399,48 @@ class InstructionProcessor(private val context: Context) {
             val groupName = match.groupValues[1].trim()
             val detail = stickerStorage.getGroupDetailForAI(groupName)
             userBioContext = (userBioContext ?: "") + "\n[表情包「$groupName」详情]\n$detail"
-            // 不告诉用户我在翻表情包
+            stickerCleanText = stickerCleanText.replace(match.value, "")
+        }
+
+        // ===== [WEATHER] — 查天气，结果注入上下文 =====
+        if (stickerCleanText.contains("[WEATHER]")) {
+            val ws = WeatherStorage(context)
+            val city = ws.getCity()
+            if (city.isNotEmpty()) {
+                Thread { ws.fetchWeather(city) }.start()
+            }
+            val summary = ws.buildWeatherSummary()
+            userBioContext = (userBioContext ?: "") + "\n$summary"
+            actions.add("🌤 查看了窗外的天气")
+            stickerCleanText = stickerCleanText.replace("[WEATHER]", "")
+        }
+
+        // ===== [SHARE_WEATHER] — 天气卡片（留标记让 BubbleRenderer 渲染） =====
+        if (stickerCleanText.contains("[SHARE_WEATHER]")) {
+            val ws = WeatherStorage(context)
+            val summary = ws.buildWeatherSummary()
+            // 把天气摘要嵌入文本，BubbleRenderer 检测到会渲染卡片
+            stickerCleanText = stickerCleanText.replace("[SHARE_WEATHER]", "\n$summary\n")
+        }
+
+        // ===== [REFRESH_WEATHER] — 静默刷新 =====
+        if (stickerCleanText.contains("[REFRESH_WEATHER]")) {
+            val ws = WeatherStorage(context)
+            val city = ws.getCity()
+            if (city.isNotEmpty()) Thread { ws.fetchWeather(city) }.start()
+            stickerCleanText = stickerCleanText.replace("[REFRESH_WEATHER]", "")
+        }
+
+        // ===== [BULLETIN:内容] — 留言板 =====
+        val bulletinPattern = Regex("\\[BULLETIN:(.+?)]")
+        bulletinPattern.find(stickerCleanText)?.let { match ->
+            val content = match.groupValues[1].trim()
+            if (content.isNotEmpty()) {
+                val bs = BulletinStorage(context)
+                val friendName = FriendStorage(context).getFriend(friendId)?.name ?: "AI"
+                bs.addMessage(friendId, friendName, content)
+                actions.add("📌 在留言板写了一条")
+            }
             stickerCleanText = stickerCleanText.replace(match.value, "")
         }
 

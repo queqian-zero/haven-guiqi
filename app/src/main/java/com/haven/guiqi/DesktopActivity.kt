@@ -654,23 +654,20 @@ class DesktopActivity : AppCompatActivity() {
 
     private fun onIconClick(icon: AppIcon) {
         when (icon.action) {
-            "chat" -> {
-                val intent = Intent(this, ChatActivity::class.java)
-                startActivity(intent)
-            }
+            "chat" -> startActivity(Intent(this, ChatActivity::class.java))
             "nest" -> startActivity(Intent(this, NestActivity::class.java))
-            "archive" -> {
-                startActivity(Intent(this, ArchiveActivity::class.java))
-            }
+            "archive" -> startActivity(Intent(this, ArchiveActivity::class.java))
             "world" -> Toast.makeText(this, "世界 - 预设·正则·世界书", Toast.LENGTH_SHORT).show()
             "workshop" -> Toast.makeText(this, "工坊 - AI项目·代码·文件", Toast.LENGTH_SHORT).show()
-            "settings" -> {
-    val intent = Intent(this, SettingsActivity::class.java)
-    startActivity(intent)
-}
+            "settings" -> startActivity(Intent(this, SettingsActivity::class.java))
             "beautify" -> Toast.makeText(this, "美化 - 主题·图标·名字", Toast.LENGTH_SHORT).show()
-            "clock" -> {
-                startActivity(Intent(this, ClockActivity::class.java))
+            "clock" -> startActivity(Intent(this, ClockActivity::class.java))
+            "weather" -> {
+                try {
+                    startActivity(Intent(this, WeatherActivity::class.java))
+                } catch (e: Exception) {
+                    Toast.makeText(this, "窗外启动失败: ${e.message}", Toast.LENGTH_LONG).show()
+                }
             }
             else -> Toast.makeText(this, "${icon.label} - 开发中", Toast.LENGTH_SHORT).show()
         }
