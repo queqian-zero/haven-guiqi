@@ -473,8 +473,14 @@ class ChatConversationActivity : AppCompatActivity() {
                 if (result.shouldDream) triggerDream(friendId)
 
                 // 保存到聊天记录
+                val msgType = if (result.weatherCard) "weather" else "text"
+                val msgExtras = if (result.weatherCard) {
+                    val ws = WeatherStorage(this@ChatConversationActivity)
+                    val wd = ws.getCachedWeather(); val ct = ws.getCity()
+                    if (wd != null) WeatherStorage.toExtras(wd, ct) else ""
+                } else ""
                 chatStorage.appendMessage(friendId, StoredMessage(
-                    "assistant", cleanText, replyTime, response.thinking
+                    "assistant", cleanText, replyTime, response.thinking, type = msgType, extras = msgExtras
                 ))
                 chatHistory.add(ChatMessage("assistant", cleanText))
 
@@ -504,6 +510,12 @@ class ChatConversationActivity : AppCompatActivity() {
                         bubbleRenderer.addSeenIndicator()
                     } else {
                         if (response.thinking.isNotEmpty()) bubbleRenderer.addThinkingBlock(response.thinking)
+                        if (result.weatherCard) {
+                            val ws = WeatherStorage(this@ChatConversationActivity)
+                            val wd = ws.getCachedWeather(); val city = ws.getCity()
+                            if (wd != null && city.isNotEmpty())
+                                bubbleRenderer.addWeatherCard(wd, city, isUser = false, timeStr = replyTimeStr)
+                        }
                         bubbleRenderer.addAiBubbleStreaming(cleanText, replyTimeStr)
                         NotificationHelper(this@ChatConversationActivity).sendChatNotification(
                             friendId, friendName, friendIcon, cleanText
@@ -656,52 +668,58 @@ class ChatConversationActivity : AppCompatActivity() {
     /** 加号菜单 */
     private fun showPlusMenu() {
         val plusPanel = findViewById<LinearLayout>(R.id.plusPanel)
-        val pendingArea = findViewById<LinearLayout>(R.id.pendingArea)
-
-        if (plusPanel.visibility == View.VISIBLE) {
-            plusPanel.visibility = View.GONE
-            return
-        }
-
+        if (plusPanel.visibility == View.VISIBLE) { plusPanel.visibility = View.GONE; return }
         stickerPanelManager.hide()
         plusPanel.visibility = View.VISIBLE
 
         findViewById<LinearLayout>(R.id.plusBtnImage).setOnClickListener {
             plusPanel.visibility = View.GONE
             val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
-                type = "image/*"
-                putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+                type = "image/*"; putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
             }
             startActivityForResult(intent, PICK_IMAGE)
         }
-
         findViewById<LinearLayout>(R.id.plusBtnSticker).setOnClickListener {
-            plusPanel.visibility = View.GONE
-            stickerPanelManager.toggle()
+            plusPanel.visibility = View.GONE; stickerPanelManager.toggle()
         }
+        findViewById<LinearLayout>(R.id.plusBtnWeather).setOnClickListener {
+            plusPanel.visibility = View.GONE; insertWeatherCard()
+        }
+    }
+
+    /** 插入天气卡片：开着多条发送就进队列，没开就直接发 */
+    private fun insertWeatherCard() {
+        val ws = WeatherStorage(this)
+        val data = ws.getCachedWeather(); val city = ws.getCity()
+        if (data == null || city.isEmpty()) { Toast.makeText(this, "还没有天气数据，先去窗外看看？", Toast.LENGTH_SHORT).show(); return }
+        if (batchModeManager.isBatchMode) { batchModeManager.addWeather(); return }
+        val now = System.currentTimeMillis()
+        val timeStr = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date(now))
+        checkDateSeparator(now)
+        bubbleRenderer.addWeatherCard(data, city, isUser = true, timeStr = timeStr)
+        val extras = WeatherStorage.toExtras(data, city)
+        chatStorage.appendMessage(friendId, StoredMessage("user", ws.buildWeatherSummary(), now, type = "weather", extras = extras))
+        chatHistory.add(ChatMessage("user", ws.buildWeatherSummary()))
+        callApiForReply()
     }
 
     /** 发送全部待发消息 */
     private fun sendAllPending() {
         if (batchModeManager.isEmpty()) return
         val items = batchModeManager.getItemsAndClear()
-
         val handler = android.os.Handler(android.os.Looper.getMainLooper())
         var delay = 0L
-
-        // 清掉全局引用状态（引用已经存在各条item里了）
         removeQuotePreview()
-
-        // 收集所有文字内容给 API
         val allTextForApi = StringBuilder()
 
-        // 按顺序一条条蹦出去
         for ((index, item) in items.withIndex()) {
-            // 先收集文字给 API（在 postDelayed 外面，保证顺序）
-            if (item.quoteAuthor != null && item.quoteContent != null) {
+            if (item.quoteAuthor != null && item.quoteContent != null)
                 allTextForApi.append("[引用 ${item.quoteAuthor}: ${item.quoteContent}]\n")
-            }
-            if (item.text.isNotEmpty()) {
+            if (item.type == "weather") {
+                val ws = WeatherStorage(this)
+                val summary = ws.buildWeatherSummary()
+                if (summary.isNotEmpty()) allTextForApi.append(summary).append("\n")
+            } else if (item.text.isNotEmpty()) {
                 allTextForApi.append(item.text).append("\n")
             }
 
@@ -709,75 +727,57 @@ class ChatConversationActivity : AppCompatActivity() {
                 val now = System.currentTimeMillis()
                 val timeStr = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date(now))
                 checkDateSeparator(now)
-
-                if (item.type == "image") {
-                    if (item.imagePaths.size == 1) {
-                        bubbleRenderer.addImageBubble(item.imagePaths[0], timeStr, item.text)
-                    } else {
-                        bubbleRenderer.addMultiImageBubble(item.imagePaths, timeStr, item.text)
+                when (item.type) {
+                    "image" -> {
+                        if (item.imagePaths.size == 1) bubbleRenderer.addImageBubble(item.imagePaths[0], timeStr, item.text)
+                        else bubbleRenderer.addMultiImageBubble(item.imagePaths, timeStr, item.text)
+                        val display = if (item.text.isNotEmpty()) item.text else "[${item.imagePaths.size}张图片]"
+                        chatStorage.appendMessage(friendId, StoredMessage("user", display, now, imagePath = item.imagePaths[0], type = "image"))
+                        chatHistory.add(ChatMessage("user", if (item.text.isNotEmpty()) item.text else "[用户发送了图片]", item.imagePaths.map { ImageHelper.toBase64(File(it)) }))
                     }
-                    val displayContent = if (item.text.isNotEmpty()) item.text else "[${item.imagePaths.size}张图片]"
-                    chatStorage.appendMessage(friendId, StoredMessage(
-                        "user", displayContent, now, imagePath = item.imagePaths[0], type = "image"
-                    ))
-                    val base64List = item.imagePaths.map { ImageHelper.toBase64(File(it)) }
-                    chatHistory.add(ChatMessage("user",
-                        if (item.text.isNotEmpty()) item.text else "[用户发送了图片]", base64List))
-                } else {
-                    // 文字条目：检查这条自己有没有带引用
-                    if (item.quoteAuthor != null && item.quoteContent != null) {
-                        bubbleRenderer.addQuoteBubble(item.quoteAuthor, item.quoteContent, item.text, timeStr)
-                        chatStorage.appendMessage(friendId, StoredMessage(
-                            "user", "「回复 ${item.quoteAuthor}」\n${item.text}", now, type = "quote"
-                        ))
-                    } else {
-                        bubbleRenderer.addUserBubble(item.text, timeStr)
-                        chatStorage.appendMessage(friendId, StoredMessage("user", item.text, now))
+                    "weather" -> {
+                        val ws = WeatherStorage(this)
+                        val data = ws.getCachedWeather(); val city = ws.getCity()
+                        if (data != null && city.isNotEmpty()) {
+                            bubbleRenderer.addWeatherCard(data, city, isUser = true, timeStr = timeStr)
+                            val extras = WeatherStorage.toExtras(data, city)
+                            chatStorage.appendMessage(friendId, StoredMessage("user", ws.buildWeatherSummary(), now, type = "weather", extras = extras))
+                        }
+                    }
+                    else -> {
+                        if (item.quoteAuthor != null && item.quoteContent != null) {
+                            bubbleRenderer.addQuoteBubble(item.quoteAuthor, item.quoteContent, item.text, timeStr)
+                            chatStorage.appendMessage(friendId, StoredMessage("user", "「回复 ${item.quoteAuthor}」\n${item.text}", now, type = "quote"))
+                        } else {
+                            bubbleRenderer.addUserBubble(item.text, timeStr)
+                            chatStorage.appendMessage(friendId, StoredMessage("user", item.text, now))
+                        }
                     }
                 }
-
-                // 最后一条发完，统一调 API
                 if (index == items.size - 1) {
-                    val textContent = allTextForApi.toString()
-                    if (textContent.isNotEmpty()) {
-                        chatHistory.add(ChatMessage("user", textContent))
-                    }
+                    val text = allTextForApi.toString()
+                    if (text.isNotEmpty()) chatHistory.add(ChatMessage("user", text))
                     callApiForReply()
                 }
             }, delay)
-
             delay += 300L
         }
     }
 
-    // ===== 发送表情包 =====
     private fun sendSticker(stickerFile: File) {
         chatImageHandler.pendingPaths.clear()
         chatImageHandler.pendingPaths.add(stickerFile.absolutePath)
-        stickerPanelManager.hide()
-        sendMessage()
+        stickerPanelManager.hide(); sendMessage()
     }
     private fun triggerChatSummary(friendId: String, currentCount: Int) {
-        summaryStorage.triggerSummary(
-            friendId, currentCount, chatStorage,
-            apiUrl, apiKey, apiModel, apiType
-        ) { addAndSaveSystemTip("📝 自动生成了一条聊天总结") }
+        summaryStorage.triggerSummary(friendId, currentCount, chatStorage, apiUrl, apiKey, apiModel, apiType)
+        { addAndSaveSystemTip("📝 自动生成了一条聊天总结") }
     }
-
-    private fun triggerDream(friendId: String) {
-        DreamEngine(this).triggerDream(friendId, chatHistory)
-    }
-
-    /** 添加系统提示并保存到聊天记录（退出再进来还能看到） */
+    private fun triggerDream(friendId: String) { DreamEngine(this).triggerDream(friendId, chatHistory) }
     private fun addAndSaveSystemTip(msg: String) {
         bubbleRenderer.addSystemTip(msg)
         val saved = chatStorage.loadMessages(friendId).toMutableList()
-        saved.add(StoredMessage(
-            role = "system",
-            content = msg,
-            timestamp = System.currentTimeMillis(),
-            type = "tip"
-        ))
+        saved.add(StoredMessage("system", msg, System.currentTimeMillis(), type = "tip"))
         chatStorage.saveMessages(friendId, saved)
     }
 

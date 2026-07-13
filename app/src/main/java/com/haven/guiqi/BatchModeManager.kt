@@ -25,7 +25,7 @@ class BatchModeManager(
 ) {
     /** 待发条目 */
     data class PendingItem(
-        val type: String,  // "text" 或 "image"
+        val type: String,  // "text" / "image" / "weather"
         val text: String = "",
         val imagePaths: List<String> = emptyList(),
         val quoteAuthor: String? = null,
@@ -76,6 +76,11 @@ class BatchModeManager(
 
     fun addImage(paths: List<String>, caption: String) {
         items.add(PendingItem("image", caption, paths))
+        refreshUI()
+    }
+
+    fun addWeather() {
+        items.add(PendingItem("weather", "[天气卡片]"))
         refreshUI()
     }
 

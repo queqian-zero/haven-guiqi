@@ -8,16 +8,19 @@ import java.text.SimpleDateFormat
 import java.util.*
 
 /**
- * BulletinStorage — 留言板（每日留言 + 历史30天）
+ * BulletinStorage — 留言板（每日留言 + 历史30天 + 收藏）
  *
  * AI 通过 [BULLETIN:内容] 指令写留言。
  * 每天的留言独立存储，超过30天的自动清除。
- * 点击留言条展开看今天全部留言，有"历史留言"入口看往期。
+ * 收藏的留言永久保存，取消收藏后开始30天倒计时。
  */
 class BulletinStorage(private val context: Context) {
 
     private val dir: File
         get() = File(context.filesDir, "bulletin").also { if (!it.exists()) it.mkdirs() }
+
+    private val favFile: File
+        get() = File(context.filesDir, "bulletin_favorites.json")
 
     private fun todayKey(): String =
         SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
@@ -55,7 +58,67 @@ class BulletinStorage(private val context: Context) {
     /** 获取指定日期的留言 */
     fun getMessagesForDate(date: String): List<BulletinMessage> = loadDay(date)
 
-    /** 清理超过30天的数据 */
+    // ===== 收藏 =====
+
+    /** 收藏一条留言（复制到收藏列表，永不过期） */
+    fun addFavorite(msg: BulletinMessage) {
+        val favs = loadFavorites().toMutableList()
+        // 用 timestamp 去重
+        if (favs.any { it.timestamp == msg.timestamp }) return
+        favs.add(msg)
+        saveFavorites(favs)
+    }
+
+    /** 取消收藏（从收藏列表移除，留言回到日期文件里走正常30天清理） */
+    fun removeFavorite(timestamp: Long) {
+        val favs = loadFavorites().toMutableList()
+        val removed = favs.find { it.timestamp == timestamp }
+        favs.removeAll { it.timestamp == timestamp }
+        saveFavorites(favs)
+
+        // 如果原始日期文件已经被清理了，把留言补回当天的文件
+        // 这样它会从"今天"开始重新计算30天
+        if (removed != null) {
+            val originalDate = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+                .format(Date(removed.timestamp))
+            val dayMessages = loadDay(originalDate)
+            val stillExists = dayMessages.any { it.timestamp == removed.timestamp }
+            if (!stillExists) {
+                // 原文件已清理，存到今天的文件里，让它从今天开始倒数30天
+                val today = todayKey()
+                val todayMsgs = loadDay(today).toMutableList()
+                todayMsgs.add(removed)
+                saveDay(today, todayMsgs)
+            }
+        }
+    }
+
+    /** 是否已收藏 */
+    fun isFavorite(timestamp: Long): Boolean =
+        loadFavorites().any { it.timestamp == timestamp }
+
+    /** 获取所有收藏（按时间降序） */
+    fun getFavorites(): List<BulletinMessage> =
+        loadFavorites().sortedByDescending { it.timestamp }
+
+    /** 收藏数量 */
+    fun getFavoriteCount(): Int = loadFavorites().size
+
+    private fun loadFavorites(): List<BulletinMessage> {
+        if (!favFile.exists()) return emptyList()
+        return try {
+            val arr = JSONArray(favFile.readText())
+            (0 until arr.length()).map { i -> parseBulletin(arr.getJSONObject(i)) }
+        } catch (_: Exception) { emptyList() }
+    }
+
+    private fun saveFavorites(list: List<BulletinMessage>) {
+        val arr = JSONArray()
+        for (msg in list) arr.put(bulletinToJson(msg))
+        favFile.writeText(arr.toString())
+    }
+
+    /** 清理超过30天的数据（收藏的留言不删） */
     private fun cleanOldData() {
         val cal = Calendar.getInstance()
         cal.add(Calendar.DAY_OF_YEAR, -30)
@@ -72,29 +135,28 @@ class BulletinStorage(private val context: Context) {
         if (!file.exists()) return emptyList()
         return try {
             val arr = JSONArray(file.readText())
-            (0 until arr.length()).map { i ->
-                val obj = arr.getJSONObject(i)
-                BulletinMessage(
-                    authorId = obj.getString("author_id"),
-                    authorName = obj.getString("author_name"),
-                    content = obj.getString("content"),
-                    timestamp = obj.getLong("timestamp")
-                )
-            }
+            (0 until arr.length()).map { i -> parseBulletin(arr.getJSONObject(i)) }
         } catch (_: Exception) { emptyList() }
     }
 
     private fun saveDay(key: String, messages: List<BulletinMessage>) {
         val arr = JSONArray()
-        for (msg in messages) {
-            arr.put(JSONObject().apply {
-                put("author_id", msg.authorId)
-                put("author_name", msg.authorName)
-                put("content", msg.content)
-                put("timestamp", msg.timestamp)
-            })
-        }
+        for (msg in messages) arr.put(bulletinToJson(msg))
         File(dir, "$key.json").writeText(arr.toString())
+    }
+
+    private fun parseBulletin(obj: JSONObject) = BulletinMessage(
+        authorId = obj.getString("author_id"),
+        authorName = obj.getString("author_name"),
+        content = obj.getString("content"),
+        timestamp = obj.getLong("timestamp")
+    )
+
+    private fun bulletinToJson(msg: BulletinMessage) = JSONObject().apply {
+        put("author_id", msg.authorId)
+        put("author_name", msg.authorName)
+        put("content", msg.content)
+        put("timestamp", msg.timestamp)
     }
 }
 

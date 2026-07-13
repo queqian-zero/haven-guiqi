@@ -32,7 +32,7 @@
             android:layout_width="match_parent"
             android:layout_height="70dp" />
 
-        <!-- 时间 + 可编辑短文字 -->
+        <!-- 时间（左上）+ 归栖+日期（右上） -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -47,34 +47,59 @@
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:fontFamily="monospace"
-                android:text="13:54"
+                android:text="09:51"
                 android:textColor="@color/haven_desktop_time"
                 android:textSize="36sp"
                 android:letterSpacing="0.05" />
 
-            <TextView
-                android:id="@+id/desktopMotto"
+            <LinearLayout
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="归栖"
-                android:textColor="@color/haven_desktop_motto"
-                android:textSize="12sp"
-                android:gravity="end" />
+                android:orientation="vertical"
+                android:gravity="end">
+
+                <TextView
+                    android:id="@+id/desktopMotto"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="归栖"
+                    android:textColor="@color/haven_desktop_motto"
+                    android:textSize="14sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/desktopDate"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="2026年7月11日 星期六"
+                    android:textColor="@color/haven_desktop_date"
+                    android:textSize="11sp"
+                    android:layout_marginTop="1dp" />
+            </LinearLayout>
         </LinearLayout>
 
-        <!-- 日期搜索栏 -->
-        <TextView
-            android:id="@+id/desktopDate"
+        <!-- 留言板条 -->
+        <FrameLayout
+            android:id="@+id/bulletinStrip"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginHorizontal="16dp"
-            android:layout_marginTop="4dp"
+            android:layout_marginTop="8dp"
             android:background="@drawable/search_bar_bg"
-            android:paddingHorizontal="16dp"
-            android:paddingVertical="8dp"
-            android:text="2026年5月5日  星期二"
-            android:textColor="@color/haven_desktop_date"
-            android:textSize="12sp" />
+            android:paddingHorizontal="14dp"
+            android:paddingVertical="9dp">
+
+            <TextView
+                android:id="@+id/bulletinText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:drawablePadding="8dp"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:text="暂无留言"
+                android:textColor="@color/haven_desktop_date"
+                android:textSize="12sp" />
+        </FrameLayout>
 
         <Space
             android:layout_width="match_parent"

@@ -370,6 +370,27 @@
                 android:textSize="11sp"
                 android:layout_marginTop="6dp" />
         </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/plusBtnWeather"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:orientation="vertical"
+            android:padding="8dp">
+            <View
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:background="@drawable/settings_item_bg" />
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="天气"
+                android:textColor="@color/haven_text_secondary"
+                android:textSize="11sp"
+                android:layout_marginTop="6dp" />
+        </LinearLayout>
     </LinearLayout>
 
     <!-- ===== 底部输入栏 ===== -->

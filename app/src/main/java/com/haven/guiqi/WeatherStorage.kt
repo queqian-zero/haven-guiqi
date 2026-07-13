@@ -95,16 +95,40 @@ class WeatherStorage(private val context: Context) {
     }
 
     private fun getDesc(obj: JSONObject): String {
-        return try {
+        // 优先用天气代码查中文映射（最可靠）
+        val code = obj.optString("weatherCode", "0").toIntOrNull() ?: 0
+        val mapped = descFromCode(code)
+        if (mapped != null) return mapped
+        // 其次尝试 wttr.in 的中文字段
+        try {
             val arr = obj.getJSONArray("lang_zh")
+            if (arr.length() > 0) {
+                val zh = arr.getJSONObject(0).getString("value")
+                if (zh.isNotEmpty() && zh.any { it.code > 0x4E00 }) return zh
+            }
+        } catch (_: Exception) {}
+        // 最后：英文原文
+        return try {
+            val arr = obj.getJSONArray("weatherDesc")
             if (arr.length() > 0) arr.getJSONObject(0).getString("value") else "未知"
-        } catch (_: Exception) {
-            try {
-                val arr = obj.getJSONArray("weatherDesc")
-                if (arr.length() > 0) arr.getJSONObject(0).getString("value") else "未知"
-            } catch (_: Exception) { "未知" }
-        }
+        } catch (_: Exception) { "未知" }
     }
+
+    private fun descFromCode(code: Int): String? = mapOf(
+        113 to "晴", 116 to "多云", 119 to "阴", 122 to "阴",
+        143 to "雾", 176 to "阵雨", 179 to "小雪", 182 to "冻雨",
+        185 to "冻毛毛雨", 200 to "雷阵雨", 227 to "暴风雪", 230 to "大暴风雪",
+        248 to "雾", 260 to "冻雾", 263 to "小阵雨", 266 to "毛毛雨",
+        281 to "冻毛毛雨", 284 to "大冻雨", 293 to "小雨", 296 to "小雨",
+        299 to "中雨", 302 to "中雨", 305 to "大雨", 308 to "暴雨",
+        311 to "冻雨", 314 to "大冻雨", 317 to "雨夹雪", 320 to "大雨夹雪",
+        323 to "小雪", 326 to "小雪", 329 to "中雪", 332 to "中雪",
+        335 to "大雪", 338 to "暴雪", 350 to "冰粒",
+        353 to "阵雨", 356 to "大阵雨", 359 to "暴雨",
+        362 to "小雨夹雪", 365 to "大雨夹雪", 368 to "小阵雪", 371 to "大阵雪",
+        374 to "小冰粒", 377 to "大冰粒",
+        386 to "雷阵雨", 389 to "雷暴雨", 392 to "雷阵雪", 395 to "大雷暴雪"
+    )[code]
 
     private fun getWindDir(obj: JSONObject): String {
         val dirs = mapOf(
@@ -136,6 +160,24 @@ class WeatherStorage(private val context: Context) {
         return sb.toString()
     }
 
+    /** 解析天文数据（日出日落月出月落） */
+    fun getCachedAstronomy(): AstronomyData? {
+        val json = prefs.getString("weather_json", null) ?: return null
+        return try {
+            val root = JSONObject(json)
+            val astro = root.getJSONArray("weather").getJSONObject(0)
+                .getJSONArray("astronomy").getJSONObject(0)
+            AstronomyData(
+                sunrise = astro.getString("sunrise").trim(),
+                sunset = astro.getString("sunset").trim(),
+                moonrise = astro.getString("moonrise").trim(),
+                moonset = astro.getString("moonset").trim(),
+                moonPhase = astro.optString("moon_phase", ""),
+                moonIllumination = astro.optString("moon_illumination", "0").toIntOrNull() ?: 0
+            )
+        } catch (_: Exception) { null }
+    }
+
     companion object {
         fun weatherIcon(code: Int): String = when (code) {
             113 -> "sun"
@@ -153,6 +195,48 @@ class WeatherStorage(private val context: Context) {
             kmph < 2 -> "0级"; kmph < 6 -> "1级"; kmph < 12 -> "2级"; kmph < 20 -> "3级"
             kmph < 29 -> "4级"; kmph < 39 -> "5级"; kmph < 50 -> "6级"; else -> "7级以上"
         }
+
+        /** 把天气数据+城市序列化成 JSON 字符串（存进 StoredMessage.extras） */
+        fun toExtras(data: WeatherData, city: String): String {
+            val obj = org.json.JSONObject()
+            obj.put("city", city)
+            obj.put("tempC", data.tempC); obj.put("feelsLikeC", data.feelsLikeC)
+            obj.put("humidity", data.humidity); obj.put("windDir", data.windDir)
+            obj.put("windSpeed", data.windSpeed); obj.put("uvIndex", data.uvIndex)
+            obj.put("code", data.code); obj.put("desc", data.desc)
+            val ha = org.json.JSONArray()
+            for (h in data.hourly) ha.put(org.json.JSONObject().apply {
+                put("time", h.time); put("tempC", h.tempC); put("code", h.code); put("desc", h.desc)
+            })
+            obj.put("hourly", ha)
+            val da = org.json.JSONArray()
+            for (d in data.daily) da.put(org.json.JSONObject().apply {
+                put("date", d.date); put("maxC", d.maxC); put("minC", d.minC); put("code", d.code); put("desc", d.desc)
+            })
+            obj.put("daily", da)
+            return obj.toString()
+        }
+
+        /** 从 extras JSON 还原天气数据和城市，解析失败返回 null */
+        fun fromExtras(json: String): Pair<WeatherData, String>? {
+            if (json.isEmpty()) return null
+            return try {
+                val obj = org.json.JSONObject(json)
+                val city = obj.getString("city")
+                val ha = obj.getJSONArray("hourly")
+                val hourly = (0 until ha.length()).map { i -> ha.getJSONObject(i).let { h ->
+                    HourlyWeather(h.getString("time"), h.getInt("tempC"), h.getInt("code"), h.getString("desc"))
+                }}
+                val da = obj.getJSONArray("daily")
+                val daily = (0 until da.length()).map { i -> da.getJSONObject(i).let { d ->
+                    DailyWeather(d.getString("date"), d.getInt("maxC"), d.getInt("minC"), d.getInt("code"), d.getString("desc"))
+                }}
+                val data = WeatherData(obj.getInt("tempC"), obj.getInt("feelsLikeC"),
+                    obj.getInt("humidity"), obj.getString("windDir"), obj.getInt("windSpeed"),
+                    obj.getInt("uvIndex"), obj.getInt("code"), obj.getString("desc"), hourly, daily)
+                Pair(data, city)
+            } catch (_: Exception) { null }
+        }
     }
 }
 
@@ -164,3 +248,9 @@ data class WeatherData(
 )
 data class HourlyWeather(val time: String, val tempC: Int, val code: Int, val desc: String)
 data class DailyWeather(val date: String, val maxC: Int, val minC: Int, val code: Int, val desc: String)
+
+data class AstronomyData(
+    val sunrise: String, val sunset: String,
+    val moonrise: String, val moonset: String,
+    val moonPhase: String, val moonIllumination: Int
+)

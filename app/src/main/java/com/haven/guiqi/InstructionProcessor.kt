@@ -29,7 +29,8 @@ class InstructionProcessor(private val context: Context) {
         val shouldDream: Boolean,
         val userBioContext: String?,
         val stickerPaths: List<String> = emptyList(),
-        val recallResults: List<String> = emptyList()  // RECALL 搜索结果
+        val recallResults: List<String> = emptyList(),
+        val weatherCard: Boolean = false
     )
 
     fun process(friendId: String, rawText: String): Result {
@@ -281,6 +282,16 @@ class InstructionProcessor(private val context: Context) {
         }
         prefCleanText = prefDoneRegex.replace(prefCleanText, "").trim()
 
+        // ===== [PREF_DELETE:关键词] — 删除念头（进废纸篓） =====
+        val prefDelRegex = Regex("\\[PREF_DELETE:([^]]+)]")
+        for (match in prefDelRegex.findAll(prefCleanText)) {
+            val keyword = match.groupValues[1].trim()
+            if (subconsciousStorage.deleteItem(friendId, keyword)) {
+                actions.add("🗑 清理了一个念头")
+            }
+        }
+        prefCleanText = prefDelRegex.replace(prefCleanText, "").trim()
+
         // ===== [FOOTPRINT:内容] — 发足迹动态 =====
         val footprintRegex = Regex("\\[FOOTPRINT:([^]]+)]")
         for (match in footprintRegex.findAll(prefCleanText)) {
@@ -415,12 +426,11 @@ class InstructionProcessor(private val context: Context) {
             stickerCleanText = stickerCleanText.replace("[WEATHER]", "")
         }
 
-        // ===== [SHARE_WEATHER] — 天气卡片（留标记让 BubbleRenderer 渲染） =====
+        // ===== [SHARE_WEATHER] — 天气卡片（通知 Activity 渲染卡片） =====
+        var hasWeatherCard = false
         if (stickerCleanText.contains("[SHARE_WEATHER]")) {
-            val ws = WeatherStorage(context)
-            val summary = ws.buildWeatherSummary()
-            // 把天气摘要嵌入文本，BubbleRenderer 检测到会渲染卡片
-            stickerCleanText = stickerCleanText.replace("[SHARE_WEATHER]", "\n$summary\n")
+            hasWeatherCard = true
+            stickerCleanText = stickerCleanText.replace("[SHARE_WEATHER]", "")
         }
 
         // ===== [REFRESH_WEATHER] — 静默刷新 =====
@@ -459,7 +469,8 @@ class InstructionProcessor(private val context: Context) {
             shouldDream = shouldDream,
             userBioContext = userBioContext,
             stickerPaths = stickerPaths,
-            recallResults = recallResults
+            recallResults = recallResults,
+            weatherCard = hasWeatherCard
         )
     }
 }

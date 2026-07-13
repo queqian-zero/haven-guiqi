@@ -55,6 +55,7 @@ class DesktopActivity : AppCompatActivity() {
     private var selectedIndex = -1
     private lateinit var prefs: SharedPreferences
     private var pendingWallpaperSlot = ""
+    private lateinit var bulletinBoardManager: BulletinBoardManager
 
     private val wobbleAnimators = mutableListOf<ObjectAnimator>()
     private val handler = Handler(Looper.getMainLooper())
@@ -177,6 +178,14 @@ class DesktopActivity : AppCompatActivity() {
 
         setupPageDots(3, 0)
 
+        // ===== 留言板 =====
+        bulletinBoardManager = BulletinBoardManager(
+            this,
+            findViewById(R.id.bulletinStrip),
+            findViewById(R.id.bulletinText)
+        )
+        bulletinBoardManager.init()
+
         // ===== 抽屉按钮图标 =====
         drawerBtnIcon.setImageDrawable(LineIconDrawable(this, "grid", dpToPx(20)))
 
@@ -214,6 +223,7 @@ class DesktopActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         handler.post(updateRunnable)
+        bulletinBoardManager.refresh()
         // 返回桌面时重新隐藏底部导航栏
         WindowInsetsControllerCompat(window, window.decorView).apply {
             hide(WindowInsetsCompat.Type.navigationBars())
@@ -509,24 +519,12 @@ class DesktopActivity : AppCompatActivity() {
     }
 
     private fun updateTimeAndDate() {
-        val now = Calendar.getInstance()
-        val timeFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
-        val timeStr = timeFormat.format(now.time)
-
-        val weekDays = arrayOf(
-            "星期日", "星期一", "星期二", "星期三",
-            "星期四", "星期五", "星期六"
-        )
-        val year = now.get(Calendar.YEAR)
-        val month = now.get(Calendar.MONTH) + 1
-        val day = now.get(Calendar.DAY_OF_MONTH)
-        val weekDay = weekDays[now.get(Calendar.DAY_OF_WEEK) - 1]
-        val dateStr = "${year}年${month}月${day}日  $weekDay"
-        val liveDateStr = "${year}/${month}/${day} $weekDay"
-
+        val now = Date()
+        val timeStr = SimpleDateFormat("HH:mm", Locale.getDefault()).format(now)
+        val dateStr = SimpleDateFormat("yyyy年M月d日 EEEE", Locale.CHINESE).format(now)
+        val liveDateStr = SimpleDateFormat("yyyy/M/d EEEE", Locale.CHINESE).format(now)
         desktopTime.text = timeStr
         desktopDate.text = dateStr
-
         liveTime.text = timeStr
         liveDate.text = liveDateStr
     }

@@ -187,6 +187,13 @@ class MemoryStorage(private val context: Context) {
 
     // ===== 废纸篓相关 =====
 
+    /** 公共入口：把任何东西扔进废纸篓 */
+    fun addToTrash(friendId: String, memory: Memory) {
+        val trash = loadTrash(friendId).toMutableList()
+        trash.add(memory)
+        saveTrash(friendId, trash)
+    }
+
     private fun getTrashFile(friendId: String): File = File(memoryDir, "trash_$friendId.json")
 
     fun loadTrash(friendId: String): List<Memory> {

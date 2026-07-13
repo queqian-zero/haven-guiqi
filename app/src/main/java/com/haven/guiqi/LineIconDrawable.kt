@@ -56,6 +56,8 @@ class LineIconDrawable(
                     moveTo(3*u, 17*u); lineTo(3*u, 21*u); lineTo(7*u, 17*u)
                 }
                 canvas.drawPath(path, paint)
+                canvas.drawLine(7*u,8*u,17*u,8*u, paint)
+                canvas.drawLine(7*u,11.5f*u,15*u,11.5f*u, paint)
             }
             "nest" -> {
                 canvas.drawRoundRect(RectF(4*u,3*u,20*u,20*u), 1.5f*u, 1.5f*u, paint)
@@ -66,42 +68,43 @@ class LineIconDrawable(
                 canvas.drawCircle(8*u,15.5f*u,1.2f*u,fillPaint)
             }
             "archive" -> {
-                canvas.drawRoundRect(RectF(3*u,2*u,21*u,22*u), 2*u, 2*u, paint)
-                canvas.drawLine(3*u,12*u,21*u,12*u, paint)
-                canvas.drawRoundRect(RectF(6*u,4*u,10*u,10*u), 1*u, 1*u, paint)
-                canvas.drawRoundRect(RectF(12*u,5*u,16*u,10*u), 1*u, 1*u, paint)
-                val folder = Path().apply {
-                    moveTo(6*u,14*u); lineTo(6*u,20*u); lineTo(18*u,20*u)
-                    lineTo(18*u,14*u); lineTo(13*u,14*u); lineTo(12*u,15.5f*u); lineTo(6*u,15.5f*u)
-                }
-                canvas.drawPath(folder, paint)
+                // 馆藏盒：上盖 + 下箱体 + 中间把手
+                canvas.drawRoundRect(RectF(3*u,3*u,21*u,8.5f*u), 1.5f*u, 1.5f*u, paint)
+                canvas.drawRoundRect(RectF(4.5f*u,8.5f*u,19.5f*u,21*u), 1.5f*u, 1.5f*u, paint)
+                canvas.drawLine(9.5f*u,12.5f*u,14.5f*u,12.5f*u, paint)
             }
             "world" -> {
-                val left = Path().apply {
-                    moveTo(12*u,6*u); lineTo(12*u,20*u); lineTo(3*u,19*u); lineTo(3*u,5*u); close()
+                canvas.drawCircle(12*u,12*u,9*u, paint)
+                canvas.drawLine(3*u,12*u,21*u,12*u, paint)
+                canvas.drawLine(12*u,3*u,12*u,21*u, paint)
+                val m = Path().apply {
+                    moveTo(12*u,3*u); cubicTo(16*u,6*u,16*u,18*u,12*u,21*u)
+                    moveTo(12*u,3*u); cubicTo(8*u,6*u,8*u,18*u,12*u,21*u)
                 }
-                canvas.drawPath(left, paint)
-                val right = Path().apply {
-                    moveTo(12*u,6*u); lineTo(12*u,20*u); lineTo(21*u,19*u); lineTo(21*u,5*u); close()
-                }
-                canvas.drawPath(right, paint)
-                canvas.drawCircle(17*u,3*u,0.8f*u,fillPaint)
-                canvas.drawCircle(20*u,5*u,0.5f*u,fillPaint)
+                canvas.drawPath(m, paint)
+                canvas.drawLine(4.5f*u,7.5f*u,19.5f*u,7.5f*u, paint)
+                canvas.drawLine(4.5f*u,16.5f*u,19.5f*u,16.5f*u, paint)
             }
             "workshop" -> {
-                canvas.drawCircle(9*u,15*u,4*u, paint)
-                canvas.drawCircle(9*u,15*u,1.5f*u, paint)
-                for (i in 0 until 6) {
-                    val a = Math.toRadians((i*60).toDouble())
-                    canvas.drawLine(
-                        9*u+(4*u*Math.cos(a)).toFloat(), 15*u+(4*u*Math.sin(a)).toFloat(),
-                        9*u+(5.5f*u*Math.cos(a)).toFloat(), 15*u+(5.5f*u*Math.sin(a)).toFloat(), paint)
+                // 交叉扳手：两把扳手从中心交叉
+                // 左上→右下扳手
+                canvas.drawLine(6*u,4*u,18*u,20*u, paint)
+                val wrench1 = Path().apply {
+                    moveTo(4*u,3*u); cubicTo(3*u,2*u, 2*u,3*u, 3*u,5*u)
+                    lineTo(5.5f*u,5.5f*u); lineTo(7*u,4*u); lineTo(6.5f*u,2.5f*u)
+                    cubicTo(5.5f*u,2*u, 4.5f*u,2*u, 4*u,3*u)
                 }
-                canvas.drawLine(15*u,3*u,19*u,7*u, paint)
-                canvas.drawLine(19*u,7*u,17*u,9*u, paint)
-                canvas.drawLine(15*u,3*u,13*u,5*u, paint)
-                canvas.drawLine(13*u,5*u,15*u,7*u, paint)
-                canvas.drawLine(15*u,7*u,12*u,10*u, paint)
+                canvas.drawPath(wrench1, paint)
+                canvas.drawCircle(18.5f*u,20.5f*u,1*u, fillPaint)
+                // 右上→左下扳手
+                canvas.drawLine(18*u,4*u,6*u,20*u, paint)
+                val wrench2 = Path().apply {
+                    moveTo(20*u,3*u); cubicTo(21*u,2*u, 22*u,3*u, 21*u,5*u)
+                    lineTo(18.5f*u,5.5f*u); lineTo(17*u,4*u); lineTo(17.5f*u,2.5f*u)
+                    cubicTo(18.5f*u,2*u, 19.5f*u,2*u, 20*u,3*u)
+                }
+                canvas.drawPath(wrench2, paint)
+                canvas.drawCircle(5.5f*u,20.5f*u,1*u, fillPaint)
             }
             "clock" -> {
                 canvas.drawCircle(12*u,12*u,10*u, paint)
@@ -110,19 +113,16 @@ class LineIconDrawable(
                 canvas.drawCircle(12*u,12*u,0.5f*u, fillPaint)
             }
             "weather" -> {
-                canvas.drawCircle(10*u,9*u,3.5f*u, paint)
-                val rays = arrayOf(
-                    floatArrayOf(10f,3f,10f,1.5f), floatArrayOf(10f,15f,10f,16.5f),
-                    floatArrayOf(4f,9f,2.5f,9f), floatArrayOf(16f,9f,17.5f,9f),
-                    floatArrayOf(5.5f,4.5f,4.5f,3.5f), floatArrayOf(14.5f,4.5f,15.5f,3.5f)
-                )
-                for (r in rays) canvas.drawLine(r[0]*u,r[1]*u,r[2]*u,r[3]*u, paint)
+                // 蓬松的云：三个鼓包 + 平底
                 val cloud = Path().apply {
-                    moveTo(8*u,19*u); lineTo(20*u,19*u)
-                    cubicTo(22*u,19*u,22*u,15*u,19*u,15*u)
-                    cubicTo(19*u,13*u,16*u,12*u,14*u,13.5f*u)
-                    cubicTo(12*u,12*u,9*u,12.5f*u,8*u,15*u)
-                    cubicTo(6*u,15*u,6*u,19*u,8*u,19*u)
+                    moveTo(6*u,18*u)
+                    lineTo(19*u,18*u)
+                    cubicTo(22*u,18*u, 22*u,14*u, 19.5f*u,13.5f*u)
+                    cubicTo(20*u,10.5f*u, 18*u,8.5f*u, 15.5f*u,9*u)
+                    cubicTo(14.5f*u,6.5f*u, 11*u,6*u, 9.5f*u,8.5f*u)
+                    cubicTo(7.5f*u,7.5f*u, 5*u,8.5f*u, 5*u,11*u)
+                    cubicTo(2.5f*u,11.5f*u, 2*u,15*u, 4*u,16*u)
+                    cubicTo(3*u,17.5f*u, 4*u,18*u, 6*u,18*u)
                 }
                 canvas.drawPath(cloud, paint)
             }
@@ -159,12 +159,27 @@ class LineIconDrawable(
                 }
             }
             "beautify" -> {
-                canvas.drawCircle(12*u,12*u,9*u, paint)
-                canvas.drawCircle(8*u,8*u,1.5f*u, fillPaint)
-                canvas.drawCircle(14*u,7*u,1.5f*u, fillPaint)
-                canvas.drawCircle(17*u,11*u,1.5f*u, fillPaint)
-                canvas.drawCircle(8*u,14*u,1.5f*u, fillPaint)
-                canvas.drawCircle(14*u,16*u,2.5f*u, paint)
+                // 画笔斜放：笔身 + 笔尖 + 弧形笔触
+                val body = Path().apply {
+                    moveTo(18*u,3*u)
+                    lineTo(20.5f*u,3*u); lineTo(21*u,3.5f*u)
+                    lineTo(12*u,12.5f*u)
+                    lineTo(10.5f*u,14*u); lineTo(10*u,13*u)
+                    lineTo(11*u,12*u); close()
+                }
+                canvas.drawPath(body, paint)
+                // 笔杆顶部横线
+                canvas.drawLine(18.5f*u,3.5f*u,20*u,3.5f*u, paint)
+                // 笔尖到纸面
+                canvas.drawLine(10.5f*u,14*u,8*u,16.5f*u, paint)
+                // 弧形笔触
+                val stroke = Path().apply {
+                    moveTo(8*u,16.5f*u)
+                    cubicTo(6*u,18*u, 4*u,19*u, 4*u,20.5f*u)
+                    cubicTo(4*u,22*u, 6*u,22*u, 7.5f*u,21*u)
+                    cubicTo(8.5f*u,20*u, 9*u,18.5f*u, 8*u,16.5f*u)
+                }
+                canvas.drawPath(stroke, paint)
             }
             "grid" -> {
                 canvas.drawRoundRect(RectF(3*u,3*u,10.5f*u,10.5f*u), 1.5f*u, 1.5f*u, paint)

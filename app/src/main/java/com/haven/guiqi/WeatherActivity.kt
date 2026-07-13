@@ -158,6 +158,24 @@ class WeatherActivity : AppCompatActivity() {
         metricsGrid.addView(row1); metricsGrid.addView(row2)
         mainContainer.addView(metricsGrid)
 
+        // 日出日落卡片
+        mainContainer.addView(makeDivider())
+        val sunMoonCard = SunMoonCardView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { setMargins(dp(16), dp(8), dp(16), dp(8)) }
+            val bg = android.graphics.drawable.GradientDrawable()
+            bg.cornerRadius = dp(12).toFloat(); bg.setColor(c.card)
+            background = bg
+        }
+        mainContainer.addView(sunMoonCard)
+
+        // 生活指数
+        mainContainer.addView(makeDivider())
+        mainContainer.addView(makeSectionTitle("生活指数"))
+        val lifeIndexContainer = LifeIndexManager(this).buildContainer().apply { tag = "life_index" }
+        mainContainer.addView(lifeIndexContainer)
+
         // 分隔 + 逐时标题
         mainContainer.addView(makeDivider())
         mainContainer.addView(makeSectionTitle("今日逐时"))
@@ -278,6 +296,24 @@ class WeatherActivity : AppCompatActivity() {
         windText.text = "${data.windDir} ${WeatherStorage.windLevel(data.windSpeed)}"
         val uvLbl = WeatherStorage.uvLabel(data.uvIndex)
         uvText.text = uvLbl
+
+        // 日出日落
+        val astro = weatherStorage.getCachedAstronomy()
+        if (astro != null) {
+            for (i in 0 until mainContainer.childCount) {
+                val child = mainContainer.getChildAt(i)
+                if (child is SunMoonCardView) { child.setData(astro); break }
+            }
+        }
+
+        // 生活指数
+        val city = weatherStorage.getCity()
+        for (i in 0 until mainContainer.childCount) {
+            val child = mainContainer.getChildAt(i)
+            if (child is LinearLayout && child.tag == "life_index") {
+                LifeIndexManager(this).load(child, data, city); break
+            }
+        }
 
         // 逐时（全部显示，当前时间高亮）
         hourlyContainer.removeAllViews()

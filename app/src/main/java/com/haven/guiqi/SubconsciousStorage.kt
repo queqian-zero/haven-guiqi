@@ -191,6 +191,30 @@ $itemsText
 
     // ===== 自维护 =====
 
+    /** AI 删除一条念头（进废纸篓，用户能看到） */
+    fun deleteItem(friendId: String, keyword: String): Boolean {
+        val items = loadItems(friendId).toMutableList()
+        val idx = items.indexOfFirst { it.status == "active" && it.content.contains(keyword) }
+        if (idx < 0) return false
+        val removed = items.removeAt(idx)
+        val memStorage = MemoryStorage(context)
+        val label = categoryLabel(removed.category)
+        memStorage.addToTrash(friendId, Memory(
+            id = removed.id,
+            content = "【念头·$label】${removed.content}",
+            createdAt = removed.createdAt,
+            updatedAt = System.currentTimeMillis()
+        ))
+        saveItems(friendId, items)
+        return true
+    }
+
+    private fun categoryLabel(category: String): String = when (category) {
+        "like" -> "喜欢"; "want_to" -> "想做"; "care" -> "在意"
+        "interest" -> "兴趣"; "promise" -> "承诺"; "habit" -> "习惯"; "dislike" -> "讨厌"
+        else -> category
+    }
+
     /** AI 标记一条偏好已完成 */
     fun markDone(friendId: String, itemId: String): Boolean {
         val items = loadItems(friendId).toMutableList()

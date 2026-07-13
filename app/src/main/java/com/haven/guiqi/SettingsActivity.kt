@@ -504,15 +504,37 @@ class SettingsActivity : AppCompatActivity() {
             textSize = 13f
             setPadding(dp(12), dp(8), dp(12), dp(8))
         }
+        val modelRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = android.view.Gravity.CENTER_VERTICAL
+        }
         val inputModel = EditText(this).apply {
             hint = "模型名称"
             setText(storage.getHelperApiModel())
             textSize = 13f
             setPadding(dp(12), dp(8), dp(12), dp(8))
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
+        val btnFetch = TextView(this).apply {
+            text = "拉取"
+            textSize = 12f; setTextColor(Color.parseColor("#4A90D9"))
+            setPadding(dp(12), dp(8), dp(4), dp(8))
+            setOnClickListener {
+                val url = inputUrl.text.toString().trim()
+                val key = inputKey.text.toString().trim()
+                if (url.isEmpty() || key.isEmpty()) {
+                    Toast.makeText(this@SettingsActivity, "请先填写地址和密钥", Toast.LENGTH_SHORT).show()
+                    return@setOnClickListener
+                }
+                text = "拉取中..."
+                fetchHelperModels(url, key, inputModel) { text = "拉取" }
+            }
+        }
+        modelRow.addView(inputModel)
+        modelRow.addView(btnFetch)
         layout.addView(inputUrl)
         layout.addView(inputKey)
-        layout.addView(inputModel)
+        layout.addView(modelRow)
 
         AlertDialog.Builder(this)
             .setTitle("小助手 API")
@@ -528,6 +550,37 @@ class SettingsActivity : AppCompatActivity() {
             }
             .setNegativeButton("取消", null)
             .show()
+    }
+
+    /** 拉取小助手 API 的模型列表 */
+    private fun fetchHelperModels(apiUrl: String, apiKey: String, inputModel: EditText, onDone: () -> Unit) {
+        Thread {
+            try {
+                val modelsUrl = if (apiUrl.endsWith("/")) "${apiUrl}models" else "$apiUrl/models"
+                val conn = URL(modelsUrl).openConnection() as HttpURLConnection
+                conn.requestMethod = "GET"
+                conn.setRequestProperty("Authorization", "Bearer $apiKey")
+                conn.connectTimeout = 10000; conn.readTimeout = 10000
+                if (conn.responseCode == 200) {
+                    val json = JSONObject(BufferedReader(InputStreamReader(conn.inputStream)).readText())
+                    val data = json.getJSONArray("data")
+                    val names = (0 until data.length()).map { data.getJSONObject(it).getString("id") }.sorted()
+                    mainHandler.post {
+                        onDone()
+                        AlertDialog.Builder(this)
+                            .setTitle("选择模型 (${names.size})")
+                            .setItems(names.toTypedArray()) { _, i -> inputModel.setText(names[i]) }
+                            .setNegativeButton("取消", null)
+                            .show()
+                    }
+                } else {
+                    mainHandler.post { onDone(); Toast.makeText(this, "拉取失败: ${conn.responseCode}", Toast.LENGTH_SHORT).show() }
+                }
+                conn.disconnect()
+            } catch (e: Exception) {
+                mainHandler.post { onDone(); Toast.makeText(this, "连接失败: ${e.message}", Toast.LENGTH_SHORT).show() }
+            }
+        }.start()
     }
 
     // ===== 保存/读取当前设置 =====

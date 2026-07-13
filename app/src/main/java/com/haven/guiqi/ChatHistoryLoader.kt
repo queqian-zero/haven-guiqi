@@ -177,7 +177,9 @@ class ChatHistoryLoader(
                 .format(Date(msg.timestamp))
             when (msg.role) {
                 "user" -> {
-                    if (msg.imagePath.isNotEmpty()) {
+                    if (msg.type == "weather") {
+                        renderWeatherCard(isUser = true, timeStr = timeStr, fallbackContent = msg.content, extras = msg.extras)
+                    } else if (msg.imagePath.isNotEmpty()) {
                         val caption = msg.content.let {
                             if (it == "[图片]" || it.startsWith("[") && it.endsWith("张图片]")) "" else it
                         }
@@ -201,6 +203,12 @@ class ChatHistoryLoader(
                 "assistant" -> {
                     if (msg.content.trim() == "[SEEN]") {
                         bubbleRenderer.addSeenIndicator()
+                    } else if (msg.type == "weather") {
+                        if (msg.thinking.isNotEmpty()) bubbleRenderer.addThinkingBlock(msg.thinking)
+                        renderWeatherCard(isUser = false, timeStr = timeStr, fallbackContent = msg.content, extras = msg.extras)
+                        // 天气卡片之外还有文字内容的话也要渲染
+                        val text = msg.content.trim()
+                        if (text.isNotEmpty()) bubbleRenderer.addAiBubble(text, timeStr)
                     } else {
                         if (msg.thinking.isNotEmpty()) bubbleRenderer.addThinkingBlock(msg.thinking)
                         bubbleRenderer.addAiBubble(msg.content, timeStr)
@@ -320,5 +328,23 @@ class ChatHistoryLoader(
         }
 
         Toast.makeText(activity, "加载了 $loadCount 条消息", Toast.LENGTH_SHORT).show()
+    }
+
+    /** 渲染天气卡片，优先从 extras 读快照，其次从缓存读，都没有就降级纯文字 */
+    private fun renderWeatherCard(isUser: Boolean, timeStr: String, fallbackContent: String, extras: String) {
+        val snapshot = WeatherStorage.fromExtras(extras)
+        if (snapshot != null) {
+            bubbleRenderer.addWeatherCard(snapshot.first, snapshot.second, isUser = isUser, timeStr = timeStr)
+        } else {
+            val ws = WeatherStorage(activity)
+            val data = ws.getCachedWeather(); val city = ws.getCity()
+            if (data != null && city.isNotEmpty()) {
+                bubbleRenderer.addWeatherCard(data, city, isUser = isUser, timeStr = timeStr)
+            } else if (isUser) {
+                bubbleRenderer.addUserBubble(fallbackContent, timeStr)
+            } else {
+                bubbleRenderer.addAiBubble(fallbackContent, timeStr)
+            }
+        }
     }
 }

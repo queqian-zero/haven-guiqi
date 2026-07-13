@@ -158,27 +158,20 @@ class BubbleRenderer(
     fun formatDateLabel(timestamp: Long): String {
         val msgDate = Calendar.getInstance().apply { timeInMillis = timestamp }
         val today = Calendar.getInstance()
+        val sameYear = msgDate.get(Calendar.YEAR) == today.get(Calendar.YEAR)
+        val sameDay = sameYear && msgDate.get(Calendar.DAY_OF_YEAR) == today.get(Calendar.DAY_OF_YEAR)
+        val yesterday = sameYear && msgDate.get(Calendar.DAY_OF_YEAR) == today.get(Calendar.DAY_OF_YEAR) - 1
         return when {
-            msgDate.get(Calendar.YEAR) == today.get(Calendar.YEAR) &&
-            msgDate.get(Calendar.DAY_OF_YEAR) == today.get(Calendar.DAY_OF_YEAR) -> "今天"
-            msgDate.get(Calendar.YEAR) == today.get(Calendar.YEAR) &&
-            msgDate.get(Calendar.DAY_OF_YEAR) == today.get(Calendar.DAY_OF_YEAR) - 1 -> "昨天"
-            msgDate.get(Calendar.YEAR) == today.get(Calendar.YEAR) ->
-                SimpleDateFormat("M月d日", Locale.CHINESE).format(Date(timestamp))
-            else ->
-                SimpleDateFormat("yyyy年M月d日", Locale.CHINESE).format(Date(timestamp))
+            sameDay -> "今天"; yesterday -> "昨天"
+            sameYear -> SimpleDateFormat("M月d日", Locale.CHINESE).format(Date(timestamp))
+            else -> SimpleDateFormat("yyyy年M月d日", Locale.CHINESE).format(Date(timestamp))
         }
     }
 
     fun formatGapLabel(gapMs: Long): String {
-        val minutes = gapMs / 60000
-        val hours = minutes / 60
-        val days = hours / 24
-        val remainHours = hours % 24
+        val hours = gapMs / 3600000; val days = hours / 24; val rem = hours % 24
         return when {
-            days > 0 && remainHours > 0 -> "${days}天${remainHours}小时"
-            days > 0 -> "${days}天"
-            else -> "${hours}小时"
+            days > 0 && rem > 0 -> "${days}天${rem}小时"; days > 0 -> "${days}天"; else -> "${hours}小时"
         }
     }
 
@@ -720,6 +713,41 @@ class BubbleRenderer(
             setTextColor(c.timeText)
             setPadding(if (isRight) 0 else dp(4), 0, if (isRight) dp(4) else 0, 0)
         }
+    }
+
+    fun addWeatherCard(data: WeatherData, city: String, isUser: Boolean, timeStr: String) {
+        val card = WeatherCardRenderer.buildCard(activity, data, city)
+        val wrapper = LinearLayout(activity).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = dp(8) }
+            orientation = LinearLayout.HORIZONTAL
+            gravity = if (isUser) Gravity.END else Gravity.START
+            setPadding(dp(1), 0, dp(8), 0)
+        }
+        if (!isUser) {
+            val avatar = TextView(activity).apply {
+                layoutParams = LinearLayout.LayoutParams(dp(30), dp(30))
+                    .apply { marginEnd = dp(7); topMargin = dp(2) }
+                gravity = Gravity.CENTER
+                text = friendIcon; textSize = 12f
+                setTextColor(c.accentStrong)
+                setBackgroundResource(R.drawable.icon_bg)
+            }
+            wrapper.addView(avatar)
+        }
+        val col = LinearLayout(activity).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(
+                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f
+            )
+        }
+        col.addView(card)
+        col.addView(makeTimeView(timeStr, if (isUser) Gravity.END else Gravity.START))
+        wrapper.addView(col)
+        messagesContainer.addView(wrapper)
+        scrollToBottom()
     }
 
     /**

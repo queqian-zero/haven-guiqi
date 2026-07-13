@@ -69,6 +69,7 @@ object InstructionRegistry {
         Ability("[INTEREST:内容]", "记住感兴趣的", setOf(Scene.CHAT)),
         Ability("[PROMISE:内容]", "记住答应过的", setOf(Scene.CHAT)),
         Ability("[PREF_DONE:关键词]", "标记偏好已完成", setOf(Scene.CHAT)),
+        Ability("[PREF_DELETE:关键词]", "删除一个念头（进废纸篓）", setOf(Scene.CHAT)),
 
         // ── 天气 ──
         Ability("[WEATHER]", "查看用户所在城市天气", setOf(Scene.CHAT, Scene.WAKE_UP)),
