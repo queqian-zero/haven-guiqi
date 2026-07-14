@@ -27,20 +27,51 @@ class BulletinBoardManager(
     private val bulletinText: TextView
 ) {
     private val storage = BulletinStorage(context)
+    private val handler = android.os.Handler(android.os.Looper.getMainLooper())
+    private var scrollIndex = 0
+    private var todayMessages: List<BulletinMessage> = emptyList()
+
+    private val scrollRunnable = object : Runnable {
+        override fun run() {
+            if (todayMessages.size <= 1) return
+            scrollIndex = (scrollIndex + 1) % todayMessages.size
+            val msg = todayMessages[scrollIndex]
+            // 淡出 → 换文字 → 淡入
+            bulletinText.animate().alpha(0f).setDuration(300).withEndAction {
+                bulletinText.text = "💬 ${msg.authorName} · ${msg.content}"
+                bulletinText.animate().alpha(1f).setDuration(300).start()
+            }.start()
+            handler.postDelayed(this, 5000)
+        }
+    }
 
     fun init() {
         bulletinStrip.setOnClickListener { showTodayDialog() }
         refresh()
     }
 
-    /** 刷新留言条上显示的文字 */
+    /** 刷新留言条并启动滚动 */
     fun refresh() {
-        val latest = storage.getLatestToday()
-        if (latest != null) {
-            bulletinText.text = "💬 ${latest.authorName} · ${latest.content}"
-        } else {
+        todayMessages = storage.getTodayMessages()
+        handler.removeCallbacks(scrollRunnable)
+        if (todayMessages.isEmpty()) {
             bulletinText.text = "💬 暂无留言"
+        } else {
+            scrollIndex = todayMessages.size - 1
+            val msg = todayMessages[scrollIndex]
+            bulletinText.text = "💬 ${msg.authorName} · ${msg.content}"
+            if (todayMessages.size > 1) {
+                handler.postDelayed(scrollRunnable, 5000)
+            }
         }
+    }
+
+    /** 停止滚动（Activity onPause 时调用） */
+    fun stopScroll() { handler.removeCallbacks(scrollRunnable) }
+
+    /** 恢复滚动（Activity onResume 时调用） */
+    fun resumeScroll() {
+        if (todayMessages.size > 1) handler.postDelayed(scrollRunnable, 5000)
     }
 
     // ===== 今日留言弹窗 =====

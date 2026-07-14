@@ -43,17 +43,34 @@ class ProfileTabManager(
         }
 
         val userAvatar = prefs.getString("user_avatar", "") ?: ""
+        val userAvatarPath = prefs.getString("user_avatar_path", "") ?: ""
 
-        val avatarCircle = TextView(activity).apply {
-            layoutParams = LinearLayout.LayoutParams(dp(64), dp(64))
-            gravity = Gravity.CENTER
-            text = if (userAvatar.isNotEmpty()) userAvatar
-                   else if (userName.isNotEmpty()) userName.first().toString()
-                   else "?"
-            textSize = 26f
-            setTextColor(c.accentStrong)
-            setBackgroundResource(R.drawable.icon_bg)
-            setOnClickListener { showAvatarDialog() }
+        val avatarView: android.view.View
+        if (userAvatarPath.isNotEmpty() && java.io.File(userAvatarPath).exists()) {
+            avatarView = android.widget.ImageView(activity).apply {
+                layoutParams = LinearLayout.LayoutParams(dp(64), dp(64))
+                scaleType = android.widget.ImageView.ScaleType.CENTER_CROP
+                setImageURI(android.net.Uri.fromFile(java.io.File(userAvatarPath)))
+                clipToOutline = true
+                outlineProvider = object : android.view.ViewOutlineProvider() {
+                    override fun getOutline(v: android.view.View, outline: android.graphics.Outline) {
+                        outline.setOval(0, 0, v.width, v.height)
+                    }
+                }
+                setOnClickListener { showAvatarDialog() }
+            }
+        } else {
+            avatarView = TextView(activity).apply {
+                layoutParams = LinearLayout.LayoutParams(dp(64), dp(64))
+                gravity = Gravity.CENTER
+                text = if (userAvatar.isNotEmpty()) userAvatar
+                       else if (userName.isNotEmpty()) userName.first().toString()
+                       else "?"
+                textSize = 26f
+                setTextColor(c.accentStrong)
+                setBackgroundResource(R.drawable.icon_bg)
+                setOnClickListener { showAvatarDialog() }
+            }
         }
 
         val nameText = TextView(activity).apply {
@@ -76,7 +93,7 @@ class ProfileTabManager(
             setTextColor(c.dateLabel)
         }
 
-        avatarSection.addView(avatarCircle)
+        avatarSection.addView(avatarView)
         avatarSection.addView(nameText)
         avatarSection.addView(subtitle)
         avatarSection.setOnClickListener { showEditUserNameDialog() }
@@ -170,6 +187,24 @@ class ProfileTabManager(
     }
 
     private fun showAvatarDialog() {
+        AlertDialog.Builder(activity)
+            .setTitle("换个头像")
+            .setItems(arrayOf("从相册选图片", "输入 emoji", "恢复默认")) { _, which ->
+                when (which) {
+                    0 -> pickAvatarImage()
+                    1 -> showEmojiAvatarDialog()
+                    2 -> {
+                        val prefs = activity.getSharedPreferences("haven_prefs", AppCompatActivity.MODE_PRIVATE)
+                        prefs.edit().remove("user_avatar").remove("user_avatar_path").apply()
+                        refresh()
+                    }
+                }
+            }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    private fun showEmojiAvatarDialog() {
         val prefs = activity.getSharedPreferences("haven_prefs", AppCompatActivity.MODE_PRIVATE)
         val input = EditText(activity).apply {
             hint = "输入一个emoji作为头像"
@@ -178,21 +213,39 @@ class ProfileTabManager(
             textSize = 24f
             gravity = android.view.Gravity.CENTER
         }
-
         AlertDialog.Builder(activity)
-            .setTitle("换个头像")
+            .setTitle("emoji 头像")
             .setView(input)
             .setPositiveButton("换") { _, _ ->
                 val avatar = input.text.toString().trim()
-                prefs.edit().putString("user_avatar", avatar).apply()
-                refresh()
-            }
-            .setNeutralButton("恢复默认") { _, _ ->
-                prefs.edit().remove("user_avatar").apply()
+                prefs.edit().putString("user_avatar", avatar).remove("user_avatar_path").apply()
                 refresh()
             }
             .setNegativeButton("取消", null)
             .show()
+    }
+
+    fun pickAvatarImage() {
+        val intent = android.content.Intent(android.content.Intent.ACTION_GET_CONTENT).apply { type = "image/*" }
+        activity.startActivityForResult(intent, 6001)
+    }
+
+    /** ChatActivity.onActivityResult 调用这个 */
+    fun handleAvatarResult(data: android.content.Intent?) {
+        val uri = data?.data ?: return
+        try {
+            val avatarDir = java.io.File(activity.filesDir, "avatars").also { it.mkdirs() }
+            val avatarFile = java.io.File(avatarDir, "user_avatar.jpg")
+            activity.contentResolver.openInputStream(uri)?.use { input ->
+                avatarFile.outputStream().use { output -> input.copyTo(output) }
+            }
+            val prefs = activity.getSharedPreferences("haven_prefs", AppCompatActivity.MODE_PRIVATE)
+            prefs.edit().putString("user_avatar_path", avatarFile.absolutePath).remove("user_avatar").apply()
+            refresh()
+            Toast.makeText(activity, "头像已更新 ♡", Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            Toast.makeText(activity, "头像设置失败", Toast.LENGTH_SHORT).show()
+        }
     }
 
     private fun showEditMyBioDialog() {

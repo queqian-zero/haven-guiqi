@@ -156,9 +156,12 @@ class ChatConversationActivity : AppCompatActivity() {
         friendId = intent.getStringExtra("friend_id") ?: ""
         friendName = intent.getStringExtra("friend_name") ?: "好友"
         friendIcon = intent.getStringExtra("friend_icon") ?: "★"
+        val friend = FriendStorage(this).getFriend(friendId)
+        val avatarPath = friend?.avatarPath ?: ""
         tvFriendName.text = friendName
         bubbleRenderer.friendName = friendName
         bubbleRenderer.friendIcon = friendIcon
+        bubbleRenderer.friendAvatarPath = avatarPath
         chatStorage = ChatStorage(this)
         chatHistoryLoader = ChatHistoryLoader(
             this, chatStorage, bubbleRenderer, chatHistory, messagesContainer, friendId
@@ -276,10 +279,8 @@ class ChatConversationActivity : AppCompatActivity() {
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == 4001 && resultCode == RESULT_OK) {
-            messagesContainer.removeAllViews()
-            chatHistory.clear()
-            initChat()
-            return
+            bubbleRenderer.friendAvatarPath = FriendStorage(this).getFriend(friendId)?.avatarPath ?: ""
+            messagesContainer.removeAllViews(); chatHistory.clear(); initChat(); return
         }
         if (requestCode == PICK_IMAGE && resultCode == RESULT_OK && data != null) {
             chatImageHandler.handleActivityResult(data)
@@ -468,6 +469,7 @@ class ChatConversationActivity : AppCompatActivity() {
                 if (result.newStatus != null) currentAiStatus = result.newStatus!!
                 if (result.newName != null) { friendName = result.newName!!; bubbleRenderer.friendName = friendName }
                 if (result.newIcon != null) { friendIcon = result.newIcon!!; bubbleRenderer.friendIcon = friendIcon }
+                bubbleRenderer.friendAvatarPath = FriendStorage(this@ChatConversationActivity).getFriend(friendId)?.avatarPath ?: "" // 刷新图片头像
                 if (result.userBioContext != null) chatHistory.add(ChatMessage("system", result.userBioContext!!))
                 for (recall in result.recallResults) chatHistory.add(ChatMessage("system", "[留声] $recall"))
                 if (result.shouldDream) triggerDream(friendId)
@@ -686,7 +688,6 @@ class ChatConversationActivity : AppCompatActivity() {
             plusPanel.visibility = View.GONE; insertWeatherCard()
         }
     }
-
     /** 插入天气卡片：开着多条发送就进队列，没开就直接发 */
     private fun insertWeatherCard() {
         val ws = WeatherStorage(this)
@@ -783,18 +784,17 @@ class ChatConversationActivity : AppCompatActivity() {
 
     /** 把异常转成人话 */
     private fun getErrorMessage(e: Exception): String {
-        val msg = e.message?.lowercase() ?: ""
-        val name = e.javaClass.simpleName.lowercase()
+        val msg = e.message?.lowercase() ?: ""; val name = e.javaClass.simpleName.lowercase()
         return when {
             name.contains("unknownhost") -> "网络不通，检查一下 Wi-Fi？"
             name.contains("connect") && name.contains("exception") -> "连不上服务器，API 地址可能有误"
-            name.contains("sockettimeout") || name.contains("timeout") -> "连接超时了，网络可能不太稳"
-            msg.contains("401") || msg.contains("unauthorized") || msg.contains("invalid") && msg.contains("key") -> "API 密钥无效或已过期"
-            msg.contains("403") || msg.contains("forbidden") -> "API 密钥没有这个模型的权限"
-            msg.contains("404") || msg.contains("not found") || msg.contains("not_found") -> "模型名称没找到，去设置检查一下？"
-            msg.contains("429") || msg.contains("rate") || msg.contains("too many") -> "请求太频繁了，歇一会儿再说"
-            msg.contains("500") || msg.contains("502") || msg.contains("503") || msg.contains("overloaded") -> "服务器暂时不可用，过一会儿再试"
-            msg.contains("thinking") -> "模型不支持思维链，可以去设置换一个模型试试"
+            name.contains("timeout") -> "连接超时了，网络可能不太稳"
+            msg.contains("401") || msg.contains("unauthorized") -> "API 密钥无效或已过期"
+            msg.contains("403") || msg.contains("forbidden") -> "API 密钥没有权限"
+            msg.contains("404") || msg.contains("not found") -> "模型名称没找到，去设置检查一下？"
+            msg.contains("429") || msg.contains("rate") -> "请求太频繁了，歇一会儿"
+            msg.contains("500") || msg.contains("502") || msg.contains("503") -> "服务器暂时不可用"
+            msg.contains("thinking") -> "模型不支持思维链，换个模型试试"
             else -> "发送失败了（${e.message?.take(50) ?: "未知错误"}）"
         }
     }

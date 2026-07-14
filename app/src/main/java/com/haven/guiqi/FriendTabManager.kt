@@ -90,15 +90,10 @@ class FriendTabManager(
             ).apply { bottomMargin = dp(8) }
         }
 
-        val avatar = TextView(activity).apply {
+        val avatar = FriendAvatarHelper.create(activity, friend, 42).apply {
             layoutParams = LinearLayout.LayoutParams(dp(42), dp(42)).apply {
                 marginEnd = dp(12)
             }
-            gravity = Gravity.CENTER
-            text = friend.icon
-            textSize = 16f
-            setTextColor(c.accentStrong)
-            setBackgroundResource(R.drawable.icon_bg)
         }
 
         val infoLayout = LinearLayout(activity).apply {

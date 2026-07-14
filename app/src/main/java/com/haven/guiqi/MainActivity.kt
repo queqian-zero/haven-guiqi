@@ -133,10 +133,7 @@ class MainActivity : AppCompatActivity() {
     // ===== 壁纸 =====
 
     private fun loadLockWallpaper() {
-        val isDark = (resources.configuration.uiMode and
-            android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
-            android.content.res.Configuration.UI_MODE_NIGHT_YES
-        val slot = if (isDark) "lock_night" else "lock_day"
+        val slot = if (ThemeHelper.isDark(this)) "lock_night" else "lock_day"
         val path = lockScreenStorage.getWallpaper(slot)
         if (path.isNotEmpty() && File(path).exists()) {
             val bg = ImageView(this).apply {

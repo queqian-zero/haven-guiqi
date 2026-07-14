@@ -55,18 +55,24 @@ object ThemeHelper {
     fun setMode(context: Context, mode: Int) {
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .edit().putInt(KEY_MODE, mode).apply()
-        applyMode(mode)
+        applyMode(mode, context)
     }
 
     /**
      * 应用主题模式到全局
      * 在 Application 或第一个 Activity 的 onCreate 里调用
      */
-    fun applyMode(mode: Int) {
+    fun applyMode(mode: Int, context: Context? = null) {
         when (mode) {
             0 -> AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM)
             1 -> AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES)
             2 -> AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_NO)
+            3 -> if (context != null) {
+                val dark = isDarkBySunCycle(context)
+                AppCompatDelegate.setDefaultNightMode(
+                    if (dark) AppCompatDelegate.MODE_NIGHT_YES else AppCompatDelegate.MODE_NIGHT_NO
+                )
+            }
         }
     }
 
@@ -75,7 +81,7 @@ object ThemeHelper {
      * 在 App 启动时调用一次
      */
     fun init(context: Context) {
-        applyMode(getMode(context))
+        applyMode(getMode(context), context)
     }
 
     /**
@@ -84,14 +90,41 @@ object ThemeHelper {
     fun isDark(context: Context): Boolean {
         val mode = getMode(context)
         return when (mode) {
-            1 -> true   // 始终深色
-            2 -> false  // 始终浅色
+            1 -> true
+            2 -> false
+            3 -> isDarkBySunCycle(context)
             else -> {
-                // 跟随系统
                 val nightMode = context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK
                 nightMode == Configuration.UI_MODE_NIGHT_YES
             }
         }
+    }
+
+    /** 根据日出日落判断现在是不是夜晚 */
+    private fun isDarkBySunCycle(context: Context): Boolean {
+        val astro = WeatherStorage(context).getCachedAstronomy() ?: return isSystemDark(context)
+        val now = java.util.Calendar.getInstance().let { it.get(java.util.Calendar.HOUR_OF_DAY) * 60 + it.get(java.util.Calendar.MINUTE) }
+        val sunrise = parseTimeToMinutes(astro.sunrise)
+        val sunset = parseTimeToMinutes(astro.sunset)
+        if (sunrise < 0 || sunset < 0) return isSystemDark(context)
+        return now < sunrise || now >= sunset
+    }
+
+    private fun isSystemDark(context: Context): Boolean {
+        val nightMode = context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK
+        return nightMode == Configuration.UI_MODE_NIGHT_YES
+    }
+
+    /** "05:24 AM" → 324分钟 */
+    private fun parseTimeToMinutes(str: String): Int {
+        return try {
+            val clean = str.trim().uppercase()
+            val parts = clean.replace(Regex("[^0-9:]"), "").split(":")
+            var h = parts[0].toInt(); val m = parts.getOrNull(1)?.toInt() ?: 0
+            if (clean.contains("PM") && h != 12) h += 12
+            if (clean.contains("AM") && h == 12) h = 0
+            h * 60 + m
+        } catch (_: Exception) { -1 }
     }
 
     /**

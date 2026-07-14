@@ -49,6 +49,7 @@ class FriendStorage(private val context: Context) {
                     name = obj.getString("name"),
                     group = obj.optString("group", "好友"),
                     icon = obj.optString("icon", "★"),
+                    avatarPath = obj.optString("avatar_path", ""),
                     bio = obj.optString("bio", ""),
                     displayCode = obj.optString("display_code", ""),
                     apiUrl = obj.optString("api_url", ""),
@@ -78,6 +79,7 @@ class FriendStorage(private val context: Context) {
                 put("name", f.name)
                 put("group", f.group)
                 put("icon", f.icon)
+                put("avatar_path", f.avatarPath)
                 put("bio", f.bio)
                 put("display_code", f.displayCode)
                 put("api_url", f.apiUrl)
@@ -201,6 +203,7 @@ data class Friend(
     val name: String,              // 显示名称
     val group: String = "好友",     // 分组
     val icon: String = "★",        // 头像字符
+    val avatarPath: String = "",    // 图片头像路径（有就显示图片，没有就显示 icon）
     val bio: String = "",          // AI 简介
     val displayCode: String = "",  // AI 的"手机号"（MYCODE 改的是这个，空则显示 id）
     val apiUrl: String = "",       // 单独 API（空则用全局配置）

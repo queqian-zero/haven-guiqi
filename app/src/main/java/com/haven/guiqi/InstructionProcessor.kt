@@ -67,16 +67,51 @@ class InstructionProcessor(private val context: Context) {
             text = text.replace(match.value, "")
         }
 
-        // ===== [AVATAR:xxx] =====
+        // ===== [AVATAR:xxx] — 换 emoji 头像 =====
         val avatarPattern = Regex("\\[AVATAR:(.+?)]")
         avatarPattern.find(text)?.let { match ->
             val icon = match.groupValues[1].trim()
             if (icon.isNotEmpty() && currentFriend != null) {
-                friendStorage.updateFriend(currentFriend!!.copy(icon = icon))
+                friendStorage.updateFriend(currentFriend!!.copy(icon = icon, avatarPath = ""))
                 newIcon = icon
                 actions.add("🎭 把头像换成了 $icon")
             }
             text = text.replace(match.value, "")
+        }
+
+        // ===== [SET_AVATAR] — AI 把最近收到的图片设为自己的图片头像 =====
+        if (text.contains("[SET_AVATAR]")) {
+            text = text.replace("[SET_AVATAR]", "")
+            if (currentFriend != null) {
+                val chatStorage = ChatStorage(context)
+                val msgs = chatStorage.loadMessages(friendId)
+                val lastImage = msgs.lastOrNull { it.imagePath.isNotEmpty() }
+                if (lastImage != null) {
+                    val src = java.io.File(lastImage.imagePath)
+                    if (src.exists()) {
+                        val avatarDir = java.io.File(context.filesDir, "avatars").also { it.mkdirs() }
+                        val dest = java.io.File(avatarDir, "${friendId}.jpg")
+                        src.copyTo(dest, overwrite = true)
+                        friendStorage.updateFriend(currentFriend!!.copy(avatarPath = dest.absolutePath))
+                        actions.add("🖼 把头像换成了图片")
+                    }
+                } else {
+                    actions.add("没找到图片，换头像失败了")
+                }
+            }
+        }
+
+        // ===== [MY_AVATAR] — AI 查看自己当前的头像 =====
+        if (text.contains("[MY_AVATAR]")) {
+            text = text.replace("[MY_AVATAR]", "")
+            if (currentFriend != null) {
+                val desc = if (currentFriend!!.avatarPath.isNotEmpty()) {
+                    "[你现在的头像是一张图片（${currentFriend!!.avatarPath.substringAfterLast("/")}）]"
+                } else {
+                    "[你现在的头像是 emoji: ${currentFriend!!.icon}]"
+                }
+                recallResults.add(desc)
+            }
         }
 
         // ===== [MYCODE:xxx] =====

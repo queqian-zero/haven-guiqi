@@ -256,15 +256,10 @@ class ChatActivity : AppCompatActivity() {
             }
         }
 
-        val avatar = TextView(this).apply {
+        val avatar = FriendAvatarHelper.create(this, friend, 46).apply {
             layoutParams = LinearLayout.LayoutParams(dp(46), dp(46)).apply {
                 marginEnd = dp(12)
             }
-            gravity = Gravity.CENTER
-            this.text = friend.icon
-            textSize = 18f
-            setTextColor(c.accentStrong)
-            setBackgroundResource(R.drawable.icon_bg)
         }
 
         val infoLayout = LinearLayout(this).apply {
@@ -433,24 +428,25 @@ class ChatActivity : AppCompatActivity() {
         }
 
         val isUser = fp.authorId == "user"
-        // 查好友的真实头像
-        val friendIcon = if (!isUser) {
-            FriendStorage(this).getFriend(fp.authorId)?.icon ?: "★"
-        } else "♡"
-        val avatar = TextView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(dp(28), dp(28)).apply {
-                marginEnd = dp(8)
+        val friend = if (!isUser) FriendStorage(this).getFriend(fp.authorId) else null
+        val avatar = if (isUser) {
+            FriendAvatarHelper.createUserAvatar(this, 28).apply {
+                layoutParams = LinearLayout.LayoutParams(dp(28), dp(28)).apply { marginEnd = dp(8) }
             }
-            gravity = Gravity.CENTER
-            this.text = friendIcon
-            textSize = 12f
-            setTextColor(if (isUser) c.textSecondary else c.accentStrong)
-            setBackgroundResource(R.drawable.icon_bg)
+        } else if (friend != null) {
+            FriendAvatarHelper.create(this, friend, 28).apply {
+                layoutParams = LinearLayout.LayoutParams(dp(28), dp(28)).apply { marginEnd = dp(8) }
+            }
+        } else {
+            FriendAvatarHelper.create(this, "", "★", 28).apply {
+                layoutParams = LinearLayout.LayoutParams(dp(28), dp(28)).apply { marginEnd = dp(8) }
+            }
         }
 
+        val displayName = if (isUser) fp.authorName else (friend?.name ?: fp.authorName)
         val name = TextView(this).apply {
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-            this.text = fp.authorName
+            this.text = displayName
             textSize = 13f
             setTextColor(c.textSecondary)
         }
@@ -686,8 +682,11 @@ class ChatActivity : AppCompatActivity() {
     // ===== 处理文件选择结果 =====
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == 6001 && resultCode == RESULT_OK) {
+            profileTabManager.handleAvatarResult(data)
+            return
+        }
         if (resultCode != RESULT_OK || data?.data == null) return
-
         when (requestCode) {
             EXPORT_REQUEST -> doExport(data.data!!)
             IMPORT_REQUEST -> doImport(data.data!!)

@@ -224,6 +224,7 @@ class DesktopActivity : AppCompatActivity() {
         super.onResume()
         handler.post(updateRunnable)
         bulletinBoardManager.refresh()
+        bulletinBoardManager.resumeScroll()
         // 返回桌面时重新隐藏底部导航栏
         WindowInsetsControllerCompat(window, window.decorView).apply {
             hide(WindowInsetsCompat.Type.navigationBars())
@@ -235,6 +236,7 @@ class DesktopActivity : AppCompatActivity() {
     override fun onPause() {
         super.onPause()
         handler.removeCallbacks(updateRunnable)
+        bulletinBoardManager.stopScroll()
     }
 
     private fun saveIconOrder() {
@@ -328,7 +330,10 @@ class DesktopActivity : AppCompatActivity() {
         liveBgImage.visibility = View.VISIBLE
         drawerBtn.visibility = View.VISIBLE
 
-        val bgUri = prefs.getString("live_bg_uri", null)
+        // 立绘壁纸（昼/夜自动切换）
+        val liveSlot = if (isDarkMode()) "live2d_night" else "live2d_day"
+        val livePath = LockScreenStorage(this).getWallpaper(liveSlot)
+        val bgUri = if (livePath.isNotEmpty()) livePath else prefs.getString("live_bg_uri", null)
         if (bgUri != null) {
             try {
                 liveBgImage.setImageURI(Uri.parse(bgUri))
@@ -340,9 +345,7 @@ class DesktopActivity : AppCompatActivity() {
     }
 
     /** 判断当前是否深色模式 */
-    private fun isDarkMode(): Boolean =
-        (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
-            android.content.res.Configuration.UI_MODE_NIGHT_YES
+    private fun isDarkMode(): Boolean = ThemeHelper.isDark(this)
 
     /** 加载普通桌面壁纸（昼/夜自动切换） */
     private fun loadDesktopWallpaper() {

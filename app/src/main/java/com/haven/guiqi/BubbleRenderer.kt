@@ -47,6 +47,15 @@ class BubbleRenderer(
     // ——— 外部可设属性 ———
     var friendName: String = ""
     var friendIcon: String = "🤖"
+    var friendAvatarPath: String = ""
+
+    /** 创建 AI 头像 View（统一入口） */
+    fun createAvatar(): View {
+        val view = FriendAvatarHelper.create(activity, friendAvatarPath, friendIcon, 30)
+        view.layoutParams = LinearLayout.LayoutParams(dp(30), dp(30))
+            .apply { marginEnd = dp(7); topMargin = dp(2) }
+        return view
+    }
     /** 长按→引用回复 的回调 */
     var onQuote: ((author: String, content: String) -> Unit)? = null
     /** "加载更多"按钮的回调 */
@@ -267,14 +276,7 @@ class BubbleRenderer(
             ).apply { bottomMargin = dp(8) }
             orientation = LinearLayout.HORIZONTAL; gravity = Gravity.START
         }
-        val avatar = TextView(activity).apply {
-            layoutParams = LinearLayout.LayoutParams(dp(30), dp(30))
-                .apply { marginEnd = dp(7); topMargin = dp(2) }
-            gravity = Gravity.CENTER
-            text = friendIcon; textSize = 12f
-            setTextColor(c.accentStrong)
-            setBackgroundResource(R.drawable.icon_bg)
-        }
+        val avatar = createAvatar()
         val column = LinearLayout(activity).apply {
             orientation = LinearLayout.VERTICAL
             layoutParams = LinearLayout.LayoutParams(
@@ -360,14 +362,7 @@ class BubbleRenderer(
             ).apply { bottomMargin = dp(8) }
             orientation = LinearLayout.HORIZONTAL; gravity = Gravity.START
         }
-        val avatar = TextView(activity).apply {
-            layoutParams = LinearLayout.LayoutParams(dp(30), dp(30))
-                .apply { marginEnd = dp(7); topMargin = dp(2) }
-            gravity = Gravity.CENTER
-            text = friendIcon; textSize = 12f
-            setTextColor(c.accentStrong)
-            setBackgroundResource(R.drawable.icon_bg)
-        }
+        val avatar = createAvatar()
         val column = LinearLayout(activity).apply {
             orientation = LinearLayout.VERTICAL
             layoutParams = LinearLayout.LayoutParams(
@@ -554,14 +549,7 @@ class BubbleRenderer(
             ).apply { bottomMargin = dp(8) }
             orientation = LinearLayout.HORIZONTAL; gravity = Gravity.START
         }
-        val avatar = TextView(activity).apply {
-            layoutParams = LinearLayout.LayoutParams(dp(30), dp(30))
-                .apply { marginEnd = dp(7); topMargin = dp(2) }
-            gravity = Gravity.CENTER
-            text = friendIcon; textSize = 12f
-            setTextColor(c.accentStrong)
-            setBackgroundResource(R.drawable.icon_bg)
-        }
+        val avatar = createAvatar()
         val column = LinearLayout(activity).apply {
             orientation = LinearLayout.VERTICAL
             layoutParams = LinearLayout.LayoutParams(
@@ -675,14 +663,7 @@ class BubbleRenderer(
             ).apply { bottomMargin = dp(8) }
             orientation = LinearLayout.HORIZONTAL; gravity = Gravity.START
         }
-        val avatar = TextView(activity).apply {
-            layoutParams = LinearLayout.LayoutParams(dp(30), dp(30))
-                .apply { marginEnd = dp(7); topMargin = dp(2) }
-            gravity = Gravity.CENTER
-            text = friendIcon; textSize = 12f
-            setTextColor(c.accentStrong)
-            setBackgroundResource(R.drawable.icon_bg)
-        }
+        val avatar = createAvatar()
         val bubble = TextView(activity).apply {
             text = "$friendName 正在输入..."
             textSize = 12f; setTextColor(c.accent)
@@ -727,14 +708,7 @@ class BubbleRenderer(
             setPadding(dp(1), 0, dp(8), 0)
         }
         if (!isUser) {
-            val avatar = TextView(activity).apply {
-                layoutParams = LinearLayout.LayoutParams(dp(30), dp(30))
-                    .apply { marginEnd = dp(7); topMargin = dp(2) }
-                gravity = Gravity.CENTER
-                text = friendIcon; textSize = 12f
-                setTextColor(c.accentStrong)
-                setBackgroundResource(R.drawable.icon_bg)
-            }
+            val avatar = createAvatar()
             wrapper.addView(avatar)
         }
         val col = LinearLayout(activity).apply {

@@ -90,14 +90,7 @@ class FriendDetailActivity : AppCompatActivity() {
             setPadding(0, dp(24), 0, dp(20))
         }
 
-        val avatarCircle = TextView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(dp(72), dp(72))
-            gravity = Gravity.CENTER
-            this.text = friend.icon
-            textSize = 28f
-            setTextColor(c.accentStrong)
-            setBackgroundResource(R.drawable.icon_bg)
-        }
+        val avatarCircle = FriendAvatarHelper.create(this, friend, 72)
         avatarCircle.setOnClickListener { showEditIconDialog(friend) }
 
         val nameText = TextView(this).apply {

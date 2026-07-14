@@ -33,7 +33,9 @@ object InstructionRegistry {
 
         // ── 社交 ──
         Ability("[RENAME:新名字]", "给自己改名", setOf(Scene.CHAT)),
-        Ability("[AVATAR:emoji]", "换头像", setOf(Scene.CHAT)),
+        Ability("[AVATAR:emoji]", "换 emoji 头像", setOf(Scene.CHAT)),
+        Ability("[SET_AVATAR]", "把最近收到的图片设为自己的头像", setOf(Scene.CHAT)),
+        Ability("[MY_AVATAR]", "查看自己当前的头像", setOf(Scene.CHAT)),
         Ability("[MYCODE:新编码]", "换编码", setOf(Scene.CHAT)),
         Ability("[BIO:内容]", "写自我认识", setOf(Scene.CHAT)),
 

@@ -384,11 +384,7 @@ class ArchiveActivity : AppCompatActivity() {
         labelColumn.addView(statView)
 
         // 头像
-        val avatar = TextView(this).apply {
-            text = friend.icon
-            textSize = 22f
-            gravity = Gravity.CENTER
-        }
+        val avatar = FriendAvatarHelper.create(this, friend, 36)
 
         drawer.addView(handle)
         drawer.addView(labelColumn)

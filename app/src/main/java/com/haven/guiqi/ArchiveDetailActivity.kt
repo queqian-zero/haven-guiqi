@@ -88,10 +88,11 @@ class ArchiveDetailActivity : AppCompatActivity() {
             ).apply { bottomMargin = dp(16) }
         }
 
-        val avatarView = TextView(this).apply {
-            text = friendIcon
-            textSize = 44f
-            gravity = Gravity.CENTER
+        val friend = FriendStorage(this).getFriend(friendId)
+        val avatarView = if (friend != null) {
+            FriendAvatarHelper.create(this, friend, 64)
+        } else {
+            FriendAvatarHelper.create(this, "", friendIcon, 64)
         }
         header.addView(avatarView)
 

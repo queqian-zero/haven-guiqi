@@ -64,20 +64,41 @@ class EchoStorage(context: Context) {
         getFile(friendId).writeText(arr.toString())
     }
 
-    // ===== 同步：单条消息追加 =====
+    // ===== 同步：单条消息追加（优化：直接追加，不全量读写） =====
 
     fun addFromChat(friendId: String, msg: StoredMessage) {
         if (msg.type == "tip") return
         val echoId = "C-${msg.timestamp}"
-        val existing = loadAll(friendId)
-        if (existing.any { it.id == echoId }) return
-        save(friendId, existing + EchoMessage(
-            id = echoId,
-            role = msg.role,
-            content = msg.content,
-            timestamp = msg.timestamp,
-            source = "chat"
-        ))
+        val file = getFile(friendId)
+        // 快速去重：只读最后几条检查
+        if (file.exists()) {
+            val text = file.readText()
+            if (text.contains("\"$echoId\"")) return
+            // 追加到现有数组末尾
+            val entry = JSONObject().apply {
+                put("id", echoId); put("role", msg.role)
+                put("content", msg.content); put("timestamp", msg.timestamp)
+                put("source", "chat")
+            }
+            val trimmed = text.trimEnd()
+            if (trimmed.endsWith("]")) {
+                val insertPos = trimmed.lastIndexOf(']')
+                val before = trimmed.substring(0, insertPos).trimEnd()
+                val separator = if (before.endsWith("[")) "" else ","
+                file.writeText(before + separator + entry.toString() + "]")
+            } else {
+                // 文件格式异常，回退到全量写
+                save(friendId, loadAll(friendId) + EchoMessage(echoId, msg.role, msg.content, msg.timestamp, "chat"))
+            }
+        } else {
+            val arr = JSONArray()
+            arr.put(JSONObject().apply {
+                put("id", echoId); put("role", msg.role)
+                put("content", msg.content); put("timestamp", msg.timestamp)
+                put("source", "chat")
+            })
+            file.writeText(arr.toString())
+        }
     }
 
     // ===== 同步：从聊天记录批量追加 =====
