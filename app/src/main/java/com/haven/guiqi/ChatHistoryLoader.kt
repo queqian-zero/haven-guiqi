@@ -32,6 +32,8 @@ class ChatHistoryLoader(
     private var loadedMessageCount = 0
     private val messagesPerPage = 50
     private var allSavedMessages: List<StoredMessage> = emptyList()
+    private var totalMessageCount = 0        // 存档里的总条数（只数行，很快）
+    private var fullHistoryLoaded = false    // 完整历史是否已加载（点"加载更早"才加载）
 
     // 日期分隔线状态
     var lastMessageDate = ""
@@ -74,14 +76,27 @@ class ChatHistoryLoader(
      * 渲染最近 50 条消息的气泡（给用户看）
      */
     fun initChat(apiConfigured: Boolean, currentAiStatus: String) {
+        // 重置状态（页面刷新会重复调用 initChat）
+        loadedMessageCount = 0
+        allSavedMessages = emptyList()
+        fullHistoryLoaded = false
+        lastMessageDate = ""
+        lastMessageTimestamp = 0L
+
         val timeInfo = SimpleDateFormat("yyyy年M月d日 EEEE HH:mm", Locale.CHINESE).format(Date())
         val userName = activity.getSharedPreferences("haven_prefs", android.content.Context.MODE_PRIVATE)
             .getString("user_name", "") ?: ""
         val userInfo = if (userName.isNotEmpty()) "\n用户名称: $userName" else ""
         chatHistory.add(ChatMessage("system", "当前时间: $timeInfo$userInfo"))
 
-        allSavedMessages = chatStorage.loadMessages(friendId)
-        if (allSavedMessages.isEmpty()) {
+        // ★ 关键优化：不再把整个仓库搬进来
+        // 只解析真正需要的部分：AI 上下文条数 和 首屏渲染条数，取大者
+        val ctxCount = activity.getSharedPreferences("haven_chat_prefs", android.content.Context.MODE_PRIVATE)
+            .getInt("context_$friendId", 30)
+        totalMessageCount = chatStorage.getMessageCount(friendId)
+        val recentMessages = chatStorage.loadRecentMessages(friendId, maxOf(messagesPerPage, ctxCount))
+
+        if (totalMessageCount == 0) {
             lastMessageDate = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
             bubbleRenderer.addDaySeparator(System.currentTimeMillis())
             if (!apiConfigured) {
@@ -92,19 +107,19 @@ class ChatHistoryLoader(
                 onSetStatus?.invoke("online")
             }
         } else {
-            // 所有消息都加进 chatHistory（给 API 用的上下文）
-            buildChatHistoryFromSaved()
+            // 给 API 的上下文：只需要用户设置的条数
+            buildChatHistoryFromSaved(recentMessages.takeLast(ctxCount))
 
             // 只渲染最近 50 条消息的气泡（性能优化）
-            val recentMessages = if (allSavedMessages.size > messagesPerPage) {
+            val toRender = if (totalMessageCount > messagesPerPage) {
                 bubbleRenderer.addLoadMoreButton()
-                allSavedMessages.takeLast(messagesPerPage)
+                recentMessages.takeLast(messagesPerPage)
             } else {
-                allSavedMessages
+                recentMessages
             }
-            loadedMessageCount = recentMessages.size
+            loadedMessageCount = toRender.size
 
-            renderMessages(recentMessages)
+            renderMessages(toRender)
 
             // 显示保存的 AI 状态
             if (currentAiStatus.isNotEmpty()) {
@@ -121,10 +136,10 @@ class ChatHistoryLoader(
     /**
      * 从保存的消息构建 chatHistory（给 API 上下文用）
      */
-    private fun buildChatHistoryFromSaved() {
+    private fun buildChatHistoryFromSaved(saved: List<StoredMessage>) {
         var prevTimestamp = 0L
         var prevDateStr = ""
-        for (msg in allSavedMessages) {
+        for (msg in saved) {
             val timeStr = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
                 .format(Date(msg.timestamp))
             val dateStr = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
@@ -225,8 +240,26 @@ class ChatHistoryLoader(
 
     /**
      * 加载更早的消息（分页，每次 50 条）
+     * 完整历史只在第一次点击时才去加载，而且放在后台线程，不卡界面
      */
     fun loadEarlierMessages() {
+        if (fullHistoryLoaded) {
+            doLoadEarlier()
+            return
+        }
+        Toast.makeText(activity, "加载中…", Toast.LENGTH_SHORT).show()
+        Thread {
+            val full = chatStorage.loadMessages(friendId)
+            activity.runOnUiThread {
+                if (activity.isFinishing || activity.isDestroyed) return@runOnUiThread
+                allSavedMessages = full
+                fullHistoryLoaded = true
+                doLoadEarlier()
+            }
+        }.start()
+    }
+
+    private fun doLoadEarlier() {
         val total = allSavedMessages.size
         val alreadyLoaded = loadedMessageCount
         val remaining = total - alreadyLoaded

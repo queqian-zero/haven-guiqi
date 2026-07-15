@@ -282,10 +282,12 @@ class ApiHelper(
     // ===== Gemini 原生格式 =====
     private fun sendGemini(messages: List<ChatMessage>): ApiResponse {
         val baseUrl = apiUrl.trimEnd('/')
-        val chatUrl = "$baseUrl/v1beta/models/$model:generateContent?key=$apiKey"
+        // 密钥放请求头而不是拼在 URL 里（URL 容易被各种日志记录，泄露密钥）
+        val chatUrl = "$baseUrl/v1beta/models/$model:generateContent"
 
         val connection = URL(chatUrl).openConnection() as HttpURLConnection
         connection.requestMethod = "POST"
+        connection.setRequestProperty("x-goog-api-key", apiKey)
         connection.setRequestProperty("Content-Type", "application/json")
         connection.connectTimeout = 30000
         connection.readTimeout = 60000
@@ -384,13 +386,13 @@ class ApiHelper(
 
     // ===== 从文本中提取 <think> 标签 =====
     private fun extractThinkTags(content: String): ApiResponse {
-        // 匹配 <think>...</think> 或 <thinking>...</thinking>
+        // 匹配 <think>...</think> 或 <thinking>...</thinking>（可能有多段，全部提取）
         val thinkRegex = Regex("<think(?:ing)?>(.*?)</think(?:ing)?>", RegexOption.DOT_MATCHES_ALL)
-        val match = thinkRegex.find(content)
+        val matches = thinkRegex.findAll(content).toList()
 
-        return if (match != null) {
-            val thinking = match.groupValues[1].trim()
-            val text = content.replace(match.value, "").trim()
+        return if (matches.isNotEmpty()) {
+            val thinking = matches.joinToString("\n\n") { it.groupValues[1].trim() }
+            val text = thinkRegex.replace(content, "").trim()
             ApiResponse(thinking = thinking, text = text)
         } else {
             ApiResponse(thinking = "", text = content)
@@ -403,9 +405,14 @@ class ApiHelper(
         return try {
             val errText = BufferedReader(InputStreamReader(errorStream)).readText()
             val errJson = JSONObject(errText)
-            errJson.optJSONObject("error")?.optString("message")
-                ?: errJson.optString("message")
-                ?: "请求失败 ($code)"
+            // optString 找不到时返回空字符串而不是 null，所以要用 isNotEmpty 判断
+            val msg1 = errJson.optJSONObject("error")?.optString("message") ?: ""
+            val msg2 = errJson.optString("message")
+            when {
+                msg1.isNotEmpty() -> msg1
+                msg2.isNotEmpty() -> msg2
+                else -> "请求失败 ($code): ${errText.take(120)}"
+            }
         } catch (e: Exception) {
             "请求失败 ($code)"
         }

@@ -271,9 +271,23 @@ class ChatConversationActivity : AppCompatActivity() {
         initChat()
     }
 
+    // 离开页面时记下消息条数；回来时如果对不上（比如 TA 在你不在时主动说话了），自动刷新
+    private var pausedMessageCount = -1
+
     override fun onResume() {
         super.onResume()
         loadApiConfig()
+        if (pausedMessageCount >= 0 && chatStorage.getMessageCount(friendId) != pausedMessageCount) {
+            messagesContainer.removeAllViews()
+            chatHistory.clear()
+            initChat()
+        }
+        pausedMessageCount = -1
+    }
+
+    override fun onPause() {
+        super.onPause()
+        pausedMessageCount = chatStorage.getMessageCount(friendId)
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
@@ -345,6 +359,16 @@ class ChatConversationActivity : AppCompatActivity() {
         }
     }
 
+    // ===== 锁定/解锁输入区 =====
+    // 等 AI 回复期间锁住发送，防止连发导致多个 API 请求同时在跑、上下文乱套
+    private fun setInputLocked(locked: Boolean) {
+        btnSend.isEnabled = !locked
+        inputMessage.isEnabled = !locked
+        btnSend.alpha = if (locked) 0.4f else 1f
+        findViewById<TextView>(R.id.btnSendAll)?.isEnabled = !locked
+        findViewById<TextView>(R.id.btnExpandSend)?.isEnabled = !locked
+    }
+
     // ===== 展开/收起输入框 =====
     private fun toggleExpandedInput(expand: Boolean) {
         if (expand) {
@@ -414,15 +438,15 @@ class ChatConversationActivity : AppCompatActivity() {
             Toast.makeText(this, "请先去设置页配置 API", Toast.LENGTH_SHORT).show()
             return
         }
-        btnSend.isEnabled = false
-        inputMessage.isEnabled = false
+        setInputLocked(true)
         var index = 0
 
         val sendNext = object : Runnable {
             override fun run() {
+                // 逐条上屏期间用户可能退出页面：直接停止，消息已边发边存不会丢
+                if (isFinishing || isDestroyed) return
                 if (index >= parts.size) {
-                    btnSend.isEnabled = true
-                    inputMessage.isEnabled = true
+                    // 不在这里解锁——callApiForReply 会保持锁定直到 AI 回复完成
                     callApiForReply()
                     return
                 }
@@ -451,6 +475,7 @@ class ChatConversationActivity : AppCompatActivity() {
         rollbackText: String? = null
     ) {
         setStatus("sending")
+        setInputLocked(true)
         bubbleRenderer.showTypingIndicator()
         Thread {
             try {
@@ -487,14 +512,26 @@ class ChatConversationActivity : AppCompatActivity() {
                 chatHistory.add(ChatMessage("assistant", cleanText))
 
                 // 检查是否该触发聊天总结
-                val msgCount = chatStorage.loadMessages(friendId).size
+                val msgCount = chatStorage.getMessageCount(friendId)  // 只数行数，不全量解析
                 if (summaryStorage.shouldTriggerSummary(friendId, msgCount)) {
                     triggerChatSummary(friendId, msgCount)
                 }
 
                 handler.post {
+                    // 页面已经关闭：不碰任何界面（防闪退），但通知照常发出去
+                    // 数据在上面已经存好了，回来还能看到
+                    if (isFinishing || isDestroyed) {
+                        if (!isSeen) {
+                            NotificationHelper(applicationContext).sendChatNotification(
+                                friendId, friendName, friendIcon, cleanText
+                            )
+                        }
+                        return@post
+                    }
+
                     bubbleRenderer.removeTypingIndicator()
                     setStatus("online")
+                    setInputLocked(false)
 
                     if (currentAiStatus.isNotEmpty()) {
                         tvStatus.text = currentAiStatus
@@ -527,16 +564,17 @@ class ChatConversationActivity : AppCompatActivity() {
             } catch (e: Exception) {
                 val friendlyMsg = getErrorMessage(e)
                 handler.post {
+                    // 页面已经关闭：什么都不用做，防止操作已销毁的界面导致闪退
+                    if (isFinishing || isDestroyed) return@post
+
                     bubbleRenderer.removeTypingIndicator()
+                    setInputLocked(false)
                     if (rollbackView != null) {
                         // 单条发送失败：撤回用户消息，恢复输入框
+                        // （发送期间输入已锁定，最后一条一定是这次发的，可以安全删除）
                         messagesContainer.removeView(rollbackView)
                         if (chatHistory.isNotEmpty()) chatHistory.removeAt(chatHistory.size - 1)
-                        val saved = chatStorage.loadMessages(friendId).toMutableList()
-                        if (saved.isNotEmpty()) {
-                            saved.removeAt(saved.size - 1)
-                            chatStorage.saveMessages(friendId, saved)
-                        }
+                        chatStorage.removeLastMessage(friendId)
                         if (rollbackText != null) inputMessage.setText(rollbackText)
                     }
                     setStatus("error", friendlyMsg)
@@ -707,6 +745,7 @@ class ChatConversationActivity : AppCompatActivity() {
     /** 发送全部待发消息 */
     private fun sendAllPending() {
         if (batchModeManager.isEmpty()) return
+        setInputLocked(true)  // 逐条上屏+等回复期间锁住输入
         val items = batchModeManager.getItemsAndClear()
         val handler = android.os.Handler(android.os.Looper.getMainLooper())
         var delay = 0L
@@ -725,6 +764,7 @@ class ChatConversationActivity : AppCompatActivity() {
             }
 
             handler.postDelayed({
+                if (isFinishing || isDestroyed) return@postDelayed
                 val now = System.currentTimeMillis()
                 val timeStr = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date(now))
                 checkDateSeparator(now)
@@ -776,10 +816,11 @@ class ChatConversationActivity : AppCompatActivity() {
     }
     private fun triggerDream(friendId: String) { DreamEngine(this).triggerDream(friendId, chatHistory) }
     private fun addAndSaveSystemTip(msg: String) {
-        bubbleRenderer.addSystemTip(msg)
-        val saved = chatStorage.loadMessages(friendId).toMutableList()
-        saved.add(StoredMessage("system", msg, System.currentTimeMillis(), type = "tip"))
-        chatStorage.saveMessages(friendId, saved)
+        // 先落盘（追加一行，不再整本重抄），再安全地画到界面上
+        chatStorage.appendMessage(friendId, StoredMessage("system", msg, System.currentTimeMillis(), type = "tip"))
+        runOnUiThread {
+            if (!isFinishing && !isDestroyed) bubbleRenderer.addSystemTip(msg)
+        }
     }
 
     /** 把异常转成人话 */

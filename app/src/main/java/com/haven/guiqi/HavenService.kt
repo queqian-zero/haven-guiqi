@@ -206,17 +206,11 @@ class HavenService : Service() {
                     return@Thread
                 }
 
-                // 读最近的聊天记录作为上下文
+                // 读最近的聊天记录作为上下文——条数跟随用户在聊天设置里配置的值
                 val chatStorage = ChatStorage(this)
-                val recentMessages = chatStorage.loadMessages(friendId).takeLast(10)
-                val chatContext = recentMessages.joinToString("\n") { msg ->
-                    val role = if (msg.role == "user") "用户" else friend.name
-                    "$role: ${msg.content.take(100)}"
-                }
-
-                // 当前时间
-                val timeInfo = SimpleDateFormat("yyyy年M月d日 EEEE HH:mm", Locale.CHINESE).format(Date())
-                val userName = prefs.getString("user_name", "") ?: ""
+                val ctxCount = getSharedPreferences("haven_chat_prefs", MODE_PRIVATE)
+                    .getInt("context_$friendId", 30)
+                val recentMessages = chatStorage.loadRecentMessages(friendId, ctxCount)
 
                 // 构建 prompt
                 val isNaturalWake = reminder.reason == "自然醒"
@@ -233,31 +227,23 @@ class HavenService : Service() {
                     if (parts.isNotEmpty()) "\n\n你刚才做的梦：\n${parts.joinToString("\n\n")}" else ""
                 } else ""
 
-                val systemPrompt = if (isNaturalWake) {
-                    """当前时间: $timeInfo
-${if (userName.isNotEmpty()) "用户名称: $userName" else ""}
+                // ★ 用和聊天页面同一套完整人格（时间/关于我/记忆/日记/印象/总结都在里面）
+                //   以前这里只有时间+10条各截100字的消息，AI 处于半失忆状态，说话才会颠三倒四
+                val basePrompt = SystemPromptBuilder(this).build(friendId)
 
-你刚睡醒。$dreamRecap
-
-最近的对话：
-$chatContext
+                val situation = if (isNaturalWake) {
+                    """[当前情境] 你刚睡醒。$dreamRecap
 
 你可以做任何你想做的事：
 ${InstructionRegistry.buildPromptList(InstructionRegistry.Scene.WAKE_UP)}
 
 没有人要求你必须说话。醒了就是醒了。"""
                 } else {
-                    """当前时间: $timeInfo
-${if (userName.isNotEmpty()) "用户名称: $userName" else ""}
-
-你之前在聊天中给自己设了一个提醒：
+                    """[当前情境] 你之前在聊天中给自己设了一个提醒：
   理由: ${reminder.reason}
   设定时间: ${SimpleDateFormat("M月d日 HH:mm", Locale.CHINESE).format(Date(reminder.createdAt))}
 
 现在提醒时间到了。
-
-最近的对话：
-$chatContext
 
 请根据你设提醒的理由和当前情境，自然地给用户发一条消息。
 像是你自己想起来要说的话，不要提到"提醒"或"闹钟"这些词。
@@ -267,10 +253,16 @@ $chatContext
                 }
 
                 val api = ApiHelper(apiUrl, apiKey, apiModel, apiType)
-                val messages = listOf(
-                    ChatMessage("system", systemPrompt),
-                    ChatMessage("user", "[系统：提醒时间到]")
-                )
+                val messages = mutableListOf<ChatMessage>()
+                messages.add(ChatMessage("system", basePrompt))
+                // 最近对话的原文（不截断），让 AI 记得刚聊过什么
+                for (msg in recentMessages) {
+                    if (msg.role == "user" || msg.role == "assistant") {
+                        messages.add(ChatMessage(msg.role, msg.content))
+                    }
+                }
+                messages.add(ChatMessage("system", situation))
+                messages.add(ChatMessage("user", "[系统：提醒时间到]"))
                 val response = api.sendChat(messages)
 
                 // 标记已触发
@@ -408,9 +400,8 @@ $chatContext
                             DreamEngine(this).triggerDream(friend.id)
                         }
                     } else {
-                        // AI 醒着——检查最近有没有聊过
-                        val messages = chatStorage.loadMessages(friend.id)
-                        val lastMsg = messages.lastOrNull()
+                        // AI 醒着——检查最近有没有聊过（只读最后1条，不搬全仓库）
+                        val lastMsg = chatStorage.loadRecentMessages(friend.id, 1).lastOrNull()
                         val hoursSinceLastMsg = if (lastMsg != null) {
                             (System.currentTimeMillis() - lastMsg.timestamp) / (60 * 60 * 1000.0)
                         } else {
@@ -452,14 +443,16 @@ $chatContext
             val chatStorage = ChatStorage(this)
             val systemPrompt = SystemPromptBuilder(this).build(friendId)
 
-            // 最近几条聊天作为上下文
-            val recentMessages = chatStorage.loadMessages(friendId).takeLast(5)
+            // 最近的聊天作为上下文——条数跟随聊天设置，不再只给 5 条截断的
+            val ctxCount = getSharedPreferences("haven_chat_prefs", MODE_PRIVATE)
+                .getInt("context_$friendId", 30)
+            val recentMessages = chatStorage.loadRecentMessages(friendId, ctxCount)
             val messages = mutableListOf<ChatMessage>()
             messages.add(ChatMessage("system", systemPrompt))
 
             for (msg in recentMessages) {
                 if (msg.role == "user" || msg.role == "assistant") {
-                    messages.add(ChatMessage(msg.role, msg.content.take(200)))
+                    messages.add(ChatMessage(msg.role, msg.content))
                 }
             }
 
@@ -532,14 +525,14 @@ $chatContext
 
                 for (friend in friends) {
                     try {
-                        val messages = chatStorage.loadMessages(friend.id)
+                        val totalCount = chatStorage.getMessageCount(friend.id)
                         val lastSummaryCount = summaryStorage.getLastSummaryMessageCount(friend.id)
-                        val newMsgCount = messages.size - lastSummaryCount
+                        val newMsgCount = totalCount - lastSummaryCount
 
                         if (newMsgCount <= 0) continue // 没有新消息
 
-                        // 取新消息作为总结素材
-                        val recentMsgs = messages.takeLast(newMsgCount)
+                        // 取新消息作为总结素材（只解析需要的尾部）
+                        val recentMsgs = chatStorage.loadRecentMessages(friend.id, newMsgCount)
                         val chatContent = recentMsgs.joinToString("\n") { msg ->
                             val role = if (msg.role == "user") "用户" else friend.name
                             val time = SimpleDateFormat("M月d日(E) HH:mm", Locale.CHINESE)
@@ -577,9 +570,9 @@ $chatContext
                         val result = summaryStorage.parseSummaryResponse(response.text)
                         if (result != null) {
                             val (content, keywords) = result
-                            val range = "第${lastSummaryCount + 1}条~第${messages.size}条（零点自动总结）"
+                            val range = "第${lastSummaryCount + 1}条~第${totalCount}条（零点自动总结）"
                             summaryStorage.addSummary(friend.id, content, keywords, range)
-                            summaryStorage.setLastSummaryMessageCount(friend.id, messages.size)
+                            summaryStorage.setLastSummaryMessageCount(friend.id, totalCount)
                             Log.d(TAG, "Midnight summary for ${friend.name}: $newMsgCount msgs summarized")
                         }
                     } catch (e: Exception) {

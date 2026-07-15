@@ -136,9 +136,74 @@ class EchoActivity : AppCompatActivity() {
         showAll()
     }
 
+    // 分页状态：一次只画一页卡片（几千张卡片一次性画出来会把界面卡死）
+    private var allEchoMessages: List<EchoStorage.EchoMessage> = emptyList()
+    private var renderedCount = 0
+    private val echoPageSize = 100
+
     private fun showAll() {
-        val messages = echoStorage.loadAll(friendId)
-        renderMessages(messages, "留声里还没有记录")
+        listContainer.removeAllViews()
+        listContainer.addView(TextView(this).apply {
+            text = "加载中…"
+            textSize = 12f
+            setTextColor(c.textHint)
+            gravity = Gravity.CENTER
+            setPadding(0, dp(40), 0, 0)
+        })
+        // 读文件放后台线程，读完再回界面线程画卡片
+        Thread {
+            val messages = echoStorage.loadAll(friendId)
+            runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                allEchoMessages = messages
+                renderedCount = 0
+                listContainer.removeAllViews()
+                if (messages.isEmpty()) {
+                    listContainer.addView(TextView(this).apply {
+                        text = "留声里还没有记录"
+                        textSize = 13f
+                        setTextColor(c.textHint)
+                        gravity = Gravity.CENTER
+                        setPadding(0, dp(40), 0, 0)
+                    })
+                    return@runOnUiThread
+                }
+                listContainer.addView(TextView(this).apply {
+                    text = "共 ${messages.size} 条记录（最新的在前面）"
+                    textSize = 11f
+                    setTextColor(c.textHint)
+                    setPadding(0, dp(4), 0, dp(8))
+                })
+                echoLastDate = ""
+                renderNextEchoPage()
+            }
+        }.start()
+    }
+
+    /** 画下一页（100条），底部放"加载更早"按钮 */
+    private fun renderNextEchoPage() {
+        listContainer.findViewWithTag<android.view.View>("echo_more_btn")?.let {
+            listContainer.removeView(it)
+        }
+
+        val newestFirst = allEchoMessages.asReversed()
+        val from = renderedCount
+        val to = minOf(from + echoPageSize, newestFirst.size)
+        if (from >= to) return
+        appendEchoCards(newestFirst.subList(from, to))
+        renderedCount = to
+
+        if (renderedCount < newestFirst.size) {
+            listContainer.addView(TextView(this).apply {
+                tag = "echo_more_btn"
+                text = "▽ 加载更早的记录（还有 ${newestFirst.size - renderedCount} 条）"
+                textSize = 12f
+                setTextColor(c.accent)
+                gravity = Gravity.CENTER
+                setPadding(0, dp(12), 0, dp(16))
+                setOnClickListener { renderNextEchoPage() }
+            })
+        }
     }
 
     private fun showSearchResults(query: String) {
@@ -171,7 +236,16 @@ class EchoActivity : AppCompatActivity() {
             setPadding(0, dp(4), 0, dp(8))
         })
 
-        var lastDate = ""
+        echoLastDate = ""
+        appendEchoCards(messages)
+    }
+
+    // 日期分隔线状态（分页和搜索共用）
+    private var echoLastDate = ""
+
+    /** 追加一批留声卡片到列表末尾 */
+    private fun appendEchoCards(messages: List<EchoStorage.EchoMessage>) {
+        var lastDate = echoLastDate
         for (msg in messages) {
             // 日期分隔
             val dateStr = if (msg.timestamp > 0) {
@@ -244,14 +318,21 @@ class EchoActivity : AppCompatActivity() {
 
             listContainer.addView(card)
         }
+        echoLastDate = lastDate
     }
 
     // ===== 同步聊天记录 =====
     private fun syncFromChat() {
-        val chatMessages = ChatStorage(this).loadMessages(friendId)
-        echoStorage.syncFromChat(friendId, chatMessages)
-        showAll()
-        Toast.makeText(this, "同步完成", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, "同步中…", Toast.LENGTH_SHORT).show()
+        Thread {
+            val chatMessages = ChatStorage(this).loadMessages(friendId)
+            echoStorage.syncFromChat(friendId, chatMessages)
+            runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                showAll()
+                Toast.makeText(this, "同步完成", Toast.LENGTH_SHORT).show()
+            }
+        }.start()
     }
 
     // ===== 导入文件 =====
