@@ -80,6 +80,7 @@ object InstructionRegistry {
 
         // ── 留言板 ──
         Ability("[BULLETIN:内容]", "在桌面留言板写一条留言", setOf(Scene.ALL)),
+        Ability("[CAPSULE:日期:内容]", "埋一个时间胶囊（到期才能拆封）", setOf(Scene.CHAT)),
 
         // ── 静默 ──
         Ability("[NO_ACTION]", "什么都不做", setOf(Scene.WAKE_UP, Scene.IDLE))

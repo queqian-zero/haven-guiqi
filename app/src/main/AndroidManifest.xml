@@ -46,6 +46,7 @@
             android:screenOrientation="unspecified" />
         <activity android:name=".SubconsciousActivity" />
         <activity android:name=".EchoActivity" />
+        <activity android:name=".CapsuleActivity" />
         <service
             android:name=".HavenService"
             android:enabled="true"

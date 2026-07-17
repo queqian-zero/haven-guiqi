@@ -530,6 +530,13 @@ class DesktopActivity : AppCompatActivity() {
         desktopDate.text = dateStr
         liveTime.text = timeStr
         liveDate.text = liveDateStr
+        // 相遇第N天
+        val encounter = findViewById<TextView>(R.id.desktopEncounter)
+        val earliest = FriendStorage(this).loadFriends().minOfOrNull { it.createdAt } ?: 0L
+        if (earliest > 0) {
+            val days = ((System.currentTimeMillis() - earliest) / 86400000) + 1
+            encounter.text = "相遇的第 $days 天"
+        }
     }
 
     private fun fillIcons(

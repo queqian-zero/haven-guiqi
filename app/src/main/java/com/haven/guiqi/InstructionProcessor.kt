@@ -299,11 +299,22 @@ class InstructionProcessor(private val context: Context) {
         val subconsciousStorage = SubconsciousStorage(context)
         var prefCleanText = cleanText
         for (cat in prefCategories) {
-            val regex = Regex("\\[$cat:([^]]+)]")
+            val regex = Regex("\\[$cat:([^\\]]+)]")
             for (match in regex.findAll(prefCleanText)) {
-                val content = match.groupValues[1].trim()
-                if (content.isNotEmpty()) {
-                    subconsciousStorage.addItem(friendId, cat.lowercase(), content)
+                val raw = match.groupValues[1].trim()
+                // 支持 [CARE:内容|22:00~02:00] 指定时间段
+                val timeSep = raw.lastIndexOf("|")
+                if (timeSep > 0) {
+                    val content = raw.substring(0, timeSep).trim()
+                    val timeRange = raw.substring(timeSep + 1).trim()
+                    val parts = timeRange.split("~", "～", "-")
+                    if (parts.size == 2 && content.isNotEmpty()) {
+                        subconsciousStorage.addItem(friendId, cat.lowercase(), content, parts[0].trim(), parts[1].trim())
+                    } else if (content.isNotEmpty()) {
+                        subconsciousStorage.addItem(friendId, cat.lowercase(), content)
+                    }
+                } else if (raw.isNotEmpty()) {
+                    subconsciousStorage.addItem(friendId, cat.lowercase(), raw)
                 }
             }
             prefCleanText = regex.replace(prefCleanText, "").trim()
@@ -485,6 +496,28 @@ class InstructionProcessor(private val context: Context) {
                 val friendName = FriendStorage(context).getFriend(friendId)?.name ?: "AI"
                 bs.addMessage(friendId, friendName, content)
                 actions.add("📌 在留言板写了一条")
+            }
+            stickerCleanText = stickerCleanText.replace(match.value, "")
+        }
+
+        // ===== [CAPSULE:日期:内容] — 时间胶囊 =====
+        val capsulePattern = Regex("\\[CAPSULE:([^:]+):([^\\]]+)]")
+        capsulePattern.find(stickerCleanText)?.let { match ->
+            val dateStr = match.groupValues[1].trim()
+            val content = match.groupValues[2].trim()
+            val unlockTime = CapsuleStorage.parseDate(dateStr)
+            if (unlockTime != null && content.isNotEmpty()) {
+                val cs = CapsuleStorage(context)
+                val friendName = FriendStorage(context).getFriend(friendId)?.name ?: "AI"
+                val prefs = context.getSharedPreferences("haven_prefs", android.content.Context.MODE_PRIVATE)
+                val userName = prefs.getString("user_name", "你") ?: "你"
+                cs.bury(friendId, CapsuleStorage.Capsule(
+                    id = "CAP-${System.currentTimeMillis()}",
+                    authorId = friendId, authorName = friendName,
+                    recipientName = userName, content = content,
+                    buriedAt = System.currentTimeMillis(), unlockAt = unlockTime
+                ))
+                actions.add("✉ 埋了一个时间胶囊")
             }
             stickerCleanText = stickerCleanText.replace(match.value, "")
         }

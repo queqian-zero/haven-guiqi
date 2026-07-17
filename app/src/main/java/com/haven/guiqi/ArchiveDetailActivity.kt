@@ -250,10 +250,33 @@ class ArchiveDetailActivity : AppCompatActivity() {
             tabText = "留声",
             tabColor = c.folderDiary,
             preview = if (echoCount > 0) "$echoCount 条记录" else "点击同步或导入聊天记录",
-            isEmpty = false,  // 留声始终可点——进去才能同步/导入
+            isEmpty = false,
             dp = dp
         ) {
             val intent = Intent(this, EchoActivity::class.java)
+            intent.putExtra("friend_id", friendId)
+            intent.putExtra("friend_name", friendName)
+            startActivity(intent)
+        }
+
+        // 时间胶囊
+        val capsuleStorage = CapsuleStorage(this)
+        capsuleStorage.ensureTestCapsule(friendId, friendName)
+        val capsuleCount = capsuleStorage.count(friendId)
+        val sealedCount = capsuleStorage.sealedCount(friendId)
+        val capsulePreview = when {
+            capsuleCount == 0 -> "还没有胶囊"
+            sealedCount > 0 -> "$capsuleCount 封信，$sealedCount 封未拆"
+            else -> "$capsuleCount 封信，全部已拆封"
+        }
+        addFolder(
+            tabText = "时间胶囊",
+            tabColor = c.accent,
+            preview = capsulePreview,
+            isEmpty = capsuleCount == 0,
+            dp = dp
+        ) {
+            val intent = Intent(this, CapsuleActivity::class.java)
             intent.putExtra("friend_id", friendId)
             intent.putExtra("friend_name", friendName)
             startActivity(intent)

@@ -31,22 +31,25 @@ class SubconsciousStorage(private val context: Context) {
         val showCount: Int = 0,     // 被展示过几次
         val createdAt: Long = System.currentTimeMillis(),
         val lastShownAt: Long = 0,
-        val status: String = "active"   // active / done
+        val status: String = "active",   // active / done
+        val activeFrom: String = "",     // 时间段开始（如 "22:00"），空=永远激活
+        val activeTo: String = ""        // 时间段结束（如 "02:00"），空=永远激活
     )
 
     // ===== 写入 =====
 
     /** AI 说了一句流露偏好的话，捡起来存下 */
-    fun addItem(friendId: String, category: String, content: String): PreferenceItem {
+    fun addItem(friendId: String, category: String, content: String, activeFrom: String = "", activeTo: String = ""): PreferenceItem {
         val items = loadItems(friendId).toMutableList()
-        // 去重：内容太像的不重复存
         if (items.any { it.category == category && it.content == content && it.status == "active" }) {
             return items.first { it.category == category && it.content == content }
         }
         val item = PreferenceItem(
             id = "PREF-${System.currentTimeMillis()}-${(Math.random() * 1000).toInt()}",
             category = category,
-            content = content
+            content = content,
+            activeFrom = activeFrom,
+            activeTo = activeTo
         )
         items.add(item)
         saveItems(friendId, items)
@@ -57,14 +60,10 @@ class SubconsciousStorage(private val context: Context) {
 
     /**
      * 从偏好库里抽一张潜意识便签
-     *
-     * @param friendId AI 的 ID
-     * @param category 如果决策树选了方向就传，null 表示随机
-     * @param count 抽几条
-     * @return 被抽中的条目列表
+     * 自动过滤：无条件便签 + 当前时刻命中窗口的便签
      */
     fun drawStickyNote(friendId: String, category: String? = null, count: Int = 3): List<PreferenceItem> {
-        val items = loadItems(friendId).filter { it.status == "active" }
+        val items = filterByTime(loadItems(friendId).filter { it.status == "active" })
         if (items.isEmpty()) return emptyList()
 
         val pool = if (category != null) items.filter { it.category == category } else items
@@ -273,7 +272,9 @@ $itemsText
                     showCount = obj.optInt("show_count", 0),
                     createdAt = obj.optLong("created_at", 0),
                     lastShownAt = obj.optLong("last_shown_at", 0),
-                    status = obj.optString("status", "active")
+                    status = obj.optString("status", "active"),
+                    activeFrom = obj.optString("active_from", ""),
+                    activeTo = obj.optString("active_to", "")
                 )
             }
         } catch (_: Exception) { emptyList() }
@@ -291,8 +292,41 @@ $itemsText
                 put("created_at", item.createdAt)
                 put("last_shown_at", item.lastShownAt)
                 put("status", item.status)
+                if (item.activeFrom.isNotEmpty()) put("active_from", item.activeFrom)
+                if (item.activeTo.isNotEmpty()) put("active_to", item.activeTo)
             })
         }
         File(dir, "prefs_$friendId.json").writeText(arr.toString())
+    }
+
+    companion object {
+        /**
+         * 过滤当前时刻生效的便签（公共函数，聊天和HavenService共用）
+         * 无时间段 = 永远生效；有时间段 = 当前时刻在窗口内才生效
+         * 支持跨午夜（如 22:00~02:00）
+         */
+        fun filterByTime(items: List<PreferenceItem>): List<PreferenceItem> {
+            val cal = java.util.Calendar.getInstance()
+            val nowMinutes = cal.get(java.util.Calendar.HOUR_OF_DAY) * 60 + cal.get(java.util.Calendar.MINUTE)
+            return items.filter { item ->
+                if (item.activeFrom.isEmpty() || item.activeTo.isEmpty()) return@filter true
+                val from = parseHHMM(item.activeFrom) ?: return@filter true
+                val to = parseHHMM(item.activeTo) ?: return@filter true
+                if (from <= to) {
+                    nowMinutes in from..to
+                } else {
+                    // 跨午夜：22:00~02:00 → 22:00~23:59 或 00:00~02:00
+                    nowMinutes >= from || nowMinutes <= to
+                }
+            }
+        }
+
+        private fun parseHHMM(str: String): Int? {
+            return try {
+                val parts = str.trim().split(":")
+                val h = parts[0].toInt(); val m = parts.getOrNull(1)?.toInt() ?: 0
+                h * 60 + m
+            } catch (_: Exception) { null }
+        }
     }
 }
