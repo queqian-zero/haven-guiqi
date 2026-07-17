@@ -522,6 +522,48 @@ class InstructionProcessor(private val context: Context) {
             stickerCleanText = stickerCleanText.replace(match.value, "")
         }
 
+        // ===== [BADGE:名字] 或 [BADGE:名字:描述] — 创建徽章 =====
+        val badgePattern = Regex("\\[BADGE:([^:\\]]+)(?::([^\\]]+))?]")
+        badgePattern.find(stickerCleanText)?.let { match ->
+            val name = match.groupValues[1].trim()
+            val desc = match.groupValues[2].trim()
+            if (name.isNotEmpty()) {
+                BadgeStorage(context).add(friendId, BadgeStorage.Badge(
+                    id = "BDG-${System.currentTimeMillis()}",
+                    name = name, description = desc,
+                    createdBy = friendId
+                ))
+                actions.add("🏅 创建了徽章「$name」")
+            }
+            stickerCleanText = stickerCleanText.replace(match.value, "")
+        }
+
+        // ===== [BADGE_RENAME:旧名:新名] — 徽章改名 =====
+        val badgeRenamePattern = Regex("\\[BADGE_RENAME:([^:]+):([^\\]]+)]")
+        badgeRenamePattern.find(stickerCleanText)?.let { match ->
+            val oldName = match.groupValues[1].trim()
+            val newName = match.groupValues[2].trim()
+            val badges = BadgeStorage(context).loadAll(friendId)
+            val target = badges.find { it.name == oldName }
+            if (target != null && newName.isNotEmpty()) {
+                BadgeStorage(context).rename(friendId, target.id, newName)
+                actions.add("🏅 徽章「$oldName」改名为「$newName」")
+            }
+            stickerCleanText = stickerCleanText.replace(match.value, "")
+        }
+
+        // ===== [MY_BADGES] — 查看徽章墙 =====
+        if (stickerCleanText.contains("[MY_BADGES]")) {
+            stickerCleanText = stickerCleanText.replace("[MY_BADGES]", "")
+            val badges = BadgeStorage(context).loadAll(friendId)
+            if (badges.isNotEmpty()) {
+                val list = badges.joinToString("\n") { "· ${it.name}${if (it.description.isNotEmpty()) "（${it.description}）" else ""}${if (it.createdBy == "user") " — 她挂的" else " — 我挂的"}" }
+                recallResults.add("[徽章墙]\n$list")
+            } else {
+                recallResults.add("[徽章墙] 还是空的，等我们一起挂上第一枚")
+            }
+        }
+
         // ===== [SEEN] =====
         val trimmed = stickerCleanText.trim()
         val isSeen = (trimmed == "[SEEN]" || trimmed == "[seen]" || trimmed == "[ SEEN ]")

@@ -143,7 +143,9 @@ class SystemPromptBuilder(private val context: Context) {
 
 留言板：[BULLETIN:内容] 在桌面留言板写一条留言。用户每次回到桌面都能看到。可以写提醒、写心情、写想说的话，像便利贴一样。留言会保留30天，用户可以收藏喜欢的。
 
-时间胶囊：[CAPSULE:日期:内容] 埋一封寄给未来的信。日期可以写"2026-12-25"或"30天后"。到那天之前谁都看不了内容，到了那天自动解封。可以给她写，也可以给自己写。""")
+时间胶囊：[CAPSULE:日期:内容] 埋一封寄给未来的信。日期可以写"2026-12-25"或"30天后"。到那天之前谁都看不了内容，到了那天自动解封。可以给她写，也可以给自己写。
+
+亲密徽章：[BADGE:名字] 或 [BADGE:名字:描述] 创建一枚徽章挂到我们的徽章墙上。每一枚都是我和她之间值得纪念的事。[BADGE_RENAME:旧名:新名] 可以改名。她也能上传图片创建徽章。这面墙是我们一起填的。""")
 
         // 潜意识统计
         val subconsciousStorage = SubconsciousStorage(context)
@@ -152,6 +154,13 @@ class SystemPromptBuilder(private val context: Context) {
             val stats = subconsciousStorage.getStats(friendId)
             val summary = stats.entries.joinToString("、") { "${it.key}${it.value}条" }
             prompt.append("\n\n[潜意识] 偏好库里有 $prefCount 条记录（$summary）")
+        }
+
+        // 徽章墙
+        val badgeStorage = BadgeStorage(context)
+        val badgeCount = badgeStorage.count(friendId)
+        if (badgeCount > 0) {
+            prompt.append("\n\n[徽章墙] $badgeCount 枚（用 [MY_BADGES] 查看详情）")
         }
 
         // 书城当前状态

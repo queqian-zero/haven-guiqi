@@ -1,32 +1,32 @@
 {
   "allFiles": [
     {
-      "file": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/java/com/haven/guiqi/SubconsciousStorage.kt",
+      "file": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/java/com/haven/guiqi/BadgeStorage.kt",
       "selection": {
         "end": {
           "column": 1,
-          "index": 11763,
-          "line": 331
+          "index": 2761,
+          "line": 88
         },
         "start": {
           "column": 1,
-          "index": 11763,
-          "line": 331
+          "index": 2761,
+          "line": 88
         }
       }
     },
     {
-      "file": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/java/com/haven/guiqi/SubconsciousActivity.kt",
+      "file": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/java/com/haven/guiqi/FriendDetailActivity.kt",
       "selection": {
         "end": {
           "column": 1,
-          "index": 7815,
-          "line": 200
+          "index": 26648,
+          "line": 693
         },
         "start": {
           "column": 1,
-          "index": 7815,
-          "line": 200
+          "index": 26648,
+          "line": 693
         }
       }
     },
@@ -35,13 +35,28 @@
       "selection": {
         "end": {
           "column": 1,
-          "index": 24317,
-          "line": 543
+          "index": 26378,
+          "line": 585
         },
         "start": {
           "column": 1,
-          "index": 24317,
-          "line": 543
+          "index": 26378,
+          "line": 585
+        }
+      }
+    },
+    {
+      "file": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/java/com/haven/guiqi/InstructionRegistry.kt",
+      "selection": {
+        "end": {
+          "column": 1,
+          "index": 4148,
+          "line": 101
+        },
+        "start": {
+          "column": 1,
+          "index": 4148,
+          "line": 101
         }
       }
     },
@@ -50,18 +65,18 @@
       "selection": {
         "end": {
           "column": 1,
-          "index": 8755,
-          "line": 210
+          "index": 9103,
+          "line": 219
         },
         "start": {
           "column": 1,
-          "index": 8755,
-          "line": 210
+          "index": 9103,
+          "line": 219
         }
       }
     },
     {
-      "file": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/java/com/haven/guiqi/InstructionRegistry.kt",
+      "file": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/java/com/haven/guiqi/FriendTabManager.kt",
       "selection": {
         "end": {
           "column": 0,
@@ -76,5 +91,5 @@
       }
     }
   ],
-  "selectedFile": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/java/com/haven/guiqi/InstructionRegistry.kt"
+  "selectedFile": "/storage/emulated/0/AndroidIDEProjects/归栖/app/src/main/java/com/haven/guiqi/FriendDetailActivity.kt"
 }
