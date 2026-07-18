@@ -499,6 +499,11 @@ class ChatConversationActivity : AppCompatActivity() {
                 for (recall in result.recallResults) chatHistory.add(ChatMessage("system", "[留声] $recall"))
                 if (result.shouldDream) triggerDream(friendId)
 
+                // 徽章解锁弹窗
+                if (result.pendingBadge != null) {
+                    handler.post { showBadgeUnlockDialog(result.pendingBadge!!) }
+                }
+
                 // 保存到聊天记录
                 val msgType = if (result.weatherCard) "weather" else "text"
                 val msgExtras = if (result.weatherCard) {
@@ -809,6 +814,23 @@ class ChatConversationActivity : AppCompatActivity() {
         chatImageHandler.pendingPaths.clear()
         chatImageHandler.pendingPaths.add(stickerFile.absolutePath)
         stickerPanelManager.hide(); sendMessage()
+    }
+    private fun showBadgeUnlockDialog(badgeName: String) {
+        val bs = BadgeStorage(this)
+        val badge = bs.loadAll(friendId).find { it.name == badgeName && !it.isUnlocked } ?: return
+        android.app.AlertDialog.Builder(this)
+            .setTitle("🏅 TA 想解锁一枚徽章")
+            .setMessage("「$badgeName」\n\n同意解锁吗？")
+            .setPositiveButton("同意") { _, _ ->
+                bs.unlock(friendId, badge.id)
+                bubbleRenderer.addSystemTip("🏅 徽章「$badgeName」已解锁！")
+            }
+            .setNegativeButton("拒绝") { _, _ ->
+                bs.rejectUnlock(friendId, badge.id)
+                bubbleRenderer.addSystemTip("🏅 拒绝了解锁「$badgeName」")
+            }
+            .setCancelable(false)
+            .show()
     }
     private fun triggerChatSummary(friendId: String, currentCount: Int) {
         summaryStorage.triggerSummary(friendId, currentCount, chatStorage, apiUrl, apiKey, apiModel, apiType)

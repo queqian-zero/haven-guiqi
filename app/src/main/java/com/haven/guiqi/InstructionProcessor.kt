@@ -30,7 +30,8 @@ class InstructionProcessor(private val context: Context) {
         val userBioContext: String?,
         val stickerPaths: List<String> = emptyList(),
         val recallResults: List<String> = emptyList(),
-        val weatherCard: Boolean = false
+        val weatherCard: Boolean = false,
+        val pendingBadge: String? = null  // AI申请解锁的徽章名
     )
 
     fun process(friendId: String, rawText: String): Result {
@@ -522,18 +523,35 @@ class InstructionProcessor(private val context: Context) {
             stickerCleanText = stickerCleanText.replace(match.value, "")
         }
 
-        // ===== [BADGE:名字] 或 [BADGE:名字:描述] — 创建徽章 =====
+        // ===== [BADGE:名字] 或 [BADGE:名字:条件] — 创建徽章（有条件默认锁着） =====
         val badgePattern = Regex("\\[BADGE:([^:\\]]+)(?::([^\\]]+))?]")
         badgePattern.find(stickerCleanText)?.let { match ->
             val name = match.groupValues[1].trim()
-            val desc = match.groupValues[2].trim()
+            val condition = match.groupValues[2].trim()
             if (name.isNotEmpty()) {
+                // 自动识别结构化条件（如 messages>=1000, days>=100）
+                val isAutoCondition = condition.matches(Regex("\\w+\\s*>=?\\s*\\d+"))
                 BadgeStorage(context).add(friendId, BadgeStorage.Badge(
                     id = "BDG-${System.currentTimeMillis()}",
-                    name = name, description = desc,
+                    name = name,
+                    unlockCondition = condition,
+                    autoCondition = if (isAutoCondition) condition else "",
                     createdBy = friendId
                 ))
-                actions.add("🏅 创建了徽章「$name」")
+                val status = if (condition.isEmpty()) "（已解锁）" else "（待解锁：$condition）"
+                actions.add("🏅 创建了徽章「$name」$status")
+            }
+            stickerCleanText = stickerCleanText.replace(match.value, "")
+        }
+
+        // ===== [BADGE_UNLOCK:名字] — AI 申请解锁徽章（弹窗让人类确认） =====
+        var pendingBadgeName: String? = null
+        val badgeUnlockPattern = Regex("\\[BADGE_UNLOCK:([^\\]]+)]")
+        badgeUnlockPattern.find(stickerCleanText)?.let { match ->
+            val name = match.groupValues[1].trim()
+            if (BadgeStorage(context).requestUnlock(friendId, name)) {
+                pendingBadgeName = name
+                actions.add("🏅 申请解锁徽章「$name」")
             }
             stickerCleanText = stickerCleanText.replace(match.value, "")
         }
@@ -557,7 +575,12 @@ class InstructionProcessor(private val context: Context) {
             stickerCleanText = stickerCleanText.replace("[MY_BADGES]", "")
             val badges = BadgeStorage(context).loadAll(friendId)
             if (badges.isNotEmpty()) {
-                val list = badges.joinToString("\n") { "· ${it.name}${if (it.description.isNotEmpty()) "（${it.description}）" else ""}${if (it.createdBy == "user") " — 她挂的" else " — 我挂的"}" }
+                val list = badges.joinToString("\n") { b ->
+                    val lock = if (b.isUnlocked) "🔓" else "🔒"
+                    val cond = if (!b.isUnlocked && b.unlockCondition.isNotEmpty()) "（${b.unlockCondition}）" else ""
+                    val who = if (b.createdBy == "user") "她挂的" else "我挂的"
+                    "$lock ${b.name}$cond — $who"
+                }
                 recallResults.add("[徽章墙]\n$list")
             } else {
                 recallResults.add("[徽章墙] 还是空的，等我们一起挂上第一枚")
@@ -580,7 +603,8 @@ class InstructionProcessor(private val context: Context) {
             userBioContext = userBioContext,
             stickerPaths = stickerPaths,
             recallResults = recallResults,
-            weatherCard = hasWeatherCard
+            weatherCard = hasWeatherCard,
+            pendingBadge = pendingBadgeName
         )
     }
 }

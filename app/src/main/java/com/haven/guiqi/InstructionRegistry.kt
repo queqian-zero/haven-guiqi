@@ -81,8 +81,8 @@ object InstructionRegistry {
         // ── 留言板 ──
         Ability("[BULLETIN:内容]", "在桌面留言板写一条留言", setOf(Scene.ALL)),
         Ability("[CAPSULE:日期:内容]", "埋一个时间胶囊（到期才能拆封）", setOf(Scene.CHAT)),
-        Ability("[BADGE:名字]", "创建一枚亲密徽章", setOf(Scene.CHAT)),
-        Ability("[BADGE:名字:描述]", "创建一枚带描述的亲密徽章", setOf(Scene.CHAT)),
+        Ability("[BADGE:名字:解锁条件]", "创建一枚带解锁条件的亲密徽章", setOf(Scene.CHAT)),
+        Ability("[BADGE_UNLOCK:名字]", "申请解锁一枚徽章（等人类确认）", setOf(Scene.CHAT)),
         Ability("[BADGE_RENAME:旧名:新名]", "给徽章改名", setOf(Scene.CHAT)),
         Ability("[MY_BADGES]", "查看徽章墙上有什么", setOf(Scene.CHAT)),
 

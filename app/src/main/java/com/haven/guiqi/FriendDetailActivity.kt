@@ -552,123 +552,82 @@ class FriendDetailActivity : AppCompatActivity() {
 
     // ===== 徽章墙 =====
 
-    private val PICK_BADGE_IMAGE = 7001
-    private var pendingBadgeName = ""
-
     private fun buildBadgeWall(friendId: String) {
         val dp = { value: Int -> (value * resources.displayMetrics.density).toInt() }
         val badgeStorage = BadgeStorage(this)
+        val newlyUnlocked = badgeStorage.checkAutoUnlocks(friendId)
+        for (b in newlyUnlocked) Toast.makeText(this, "🏅 徽章「${b.name}」解锁了！", Toast.LENGTH_LONG).show()
         val badges = badgeStorage.loadAll(friendId)
-
+        val pending = badgeStorage.getPending(friendId)
         addSection("徽章墙")
-
+        for (p in pending) {
+            val reqCard = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(12), dp(8), dp(12), dp(8))
+                background = android.graphics.drawable.GradientDrawable().apply { cornerRadius = dp(8).toFloat(); setColor(c.card) }
+                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(8) }
+            }
+            reqCard.addView(TextView(this).apply { text = "🏅 TA申请解锁「${p.name}」"; textSize = 12f; setTextColor(c.textPrimary); layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f) })
+            reqCard.addView(TextView(this).apply { text = "同意"; textSize = 12f; setTextColor(c.accent); setPadding(dp(12), dp(6), dp(12), dp(6)); setOnClickListener { badgeStorage.unlock(friendId, p.id); Toast.makeText(this@FriendDetailActivity, "🏅「${p.name}」已解锁！", Toast.LENGTH_SHORT).show(); buildDetail() } })
+            reqCard.addView(TextView(this).apply { text = "拒绝"; textSize = 12f; setTextColor(c.textHint); setPadding(dp(8), dp(6), dp(4), dp(6)); setOnClickListener { badgeStorage.rejectUnlock(friendId, p.id); buildDetail() } })
+            detailContainer.addView(reqCard)
+        }
         if (badges.isEmpty()) {
-            detailContainer.addView(TextView(this).apply {
-                text = "还没有徽章\n点下方 + 创建第一枚，或者让 TA 在聊天里创建"
-                textSize = 12f; setTextColor(c.textHint); gravity = Gravity.CENTER
-                setPadding(0, dp(16), 0, dp(12))
-            })
+            detailContainer.addView(TextView(this).apply { text = "还没有徽章\n点下方 + 创建第一枚"; textSize = 12f; setTextColor(c.textHint); gravity = Gravity.CENTER; setPadding(0, dp(16), 0, dp(12)) })
         } else {
-            // 网格展示：一行4个
             var row: LinearLayout? = null
             for ((i, badge) in badges.withIndex()) {
-                if (i % 4 == 0) {
-                    row = LinearLayout(this).apply {
-                        orientation = LinearLayout.HORIZONTAL
-                        layoutParams = LinearLayout.LayoutParams(
-                            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
-                        ).apply { bottomMargin = dp(8) }
-                    }
-                    detailContainer.addView(row)
-                }
+                if (i % 4 == 0) { row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(8) } }; detailContainer.addView(row) }
                 row?.addView(buildBadgeItem(badge, friendId))
             }
         }
-
-        // 添加按钮
-        detailContainer.addView(TextView(this).apply {
-            text = "＋ 挂一枚新徽章"
-            textSize = 12f; setTextColor(c.accent); gravity = Gravity.CENTER
-            setPadding(0, dp(8), 0, dp(16))
-            setOnClickListener { showCreateBadgeDialog(friendId) }
-        })
+        detailContainer.addView(TextView(this).apply { text = "＋ 挂一枚新徽章"; textSize = 12f; setTextColor(c.accent); gravity = Gravity.CENTER; setPadding(0, dp(8), 0, dp(16)); setOnClickListener { showCreateBadgeDialog(friendId) } })
     }
 
     private fun buildBadgeItem(badge: BadgeStorage.Badge, friendId: String): LinearLayout {
         val dp = { value: Int -> (value * resources.displayMetrics.density).toInt() }
+        val locked = !badge.isUnlocked
         return LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-                .apply { marginEnd = dp(4) }
-
-            val icon = if (badge.imagePath.isNotEmpty()) {
-                FriendAvatarHelper.create(this@FriendDetailActivity, badge.imagePath, "", 40)
-            } else {
-                // 没图片就显示名字首字
-                TextView(this@FriendDetailActivity).apply {
-                    layoutParams = LinearLayout.LayoutParams(dp(40), dp(40))
-                    gravity = Gravity.CENTER
-                    text = badge.name.firstOrNull()?.toString() ?: "?"
-                    textSize = 16f; setTextColor(c.accentStrong)
-                    setBackgroundResource(R.drawable.icon_bg)
-                }
-            }
+            orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { marginEnd = dp(4) }
+            if (locked) alpha = 0.35f
+            val icon = if (badge.imagePath.isNotEmpty() && !locked) { FriendAvatarHelper.create(this@FriendDetailActivity, badge.imagePath, "", 40) }
+            else { TextView(this@FriendDetailActivity).apply { layoutParams = LinearLayout.LayoutParams(dp(40), dp(40)); gravity = Gravity.CENTER; text = if (locked) "🔒" else (badge.name.firstOrNull()?.toString() ?: "?"); textSize = if (locked) 14f else 16f; setTextColor(c.accentStrong); setBackgroundResource(R.drawable.icon_bg) } }
             addView(icon)
-            addView(TextView(this@FriendDetailActivity).apply {
-                text = badge.name; textSize = 10f; setTextColor(c.textSecondary)
-                gravity = Gravity.CENTER; maxLines = 1
-                setPadding(0, dp(3), 0, 0)
-            })
-
+            addView(TextView(this@FriendDetailActivity).apply { text = if (locked) "???" else badge.name; textSize = 10f; setTextColor(if (locked) c.textHint else c.textSecondary); gravity = Gravity.CENTER; maxLines = 1; setPadding(0, dp(3), 0, 0) })
             setOnClickListener {
-                val desc = if (badge.description.isNotEmpty()) "\n\n${badge.description}" else ""
+                val status = if (locked) "🔒 未解锁" else "🔓 已解锁"
+                val cond = if (badge.unlockCondition.isNotEmpty()) "\n条件：${badge.unlockCondition}" else ""
+                val time = if (badge.isUnlocked && badge.unlockedAt > 0) "\n解锁于：${java.text.SimpleDateFormat("yyyy年M月d日", java.util.Locale.CHINESE).format(java.util.Date(badge.unlockedAt))}" else ""
                 val creator = if (badge.createdBy == "user") "你" else (FriendStorage(this@FriendDetailActivity).getFriend(friendId)?.name ?: "TA")
-                android.app.AlertDialog.Builder(this@FriendDetailActivity)
-                    .setTitle("🏅 ${badge.name}")
-                    .setMessage("创建者：$creator$desc")
-                    .setPositiveButton("关闭", null)
-                    .setNeutralButton("删除") { _, _ ->
-                        BadgeStorage(this@FriendDetailActivity).delete(friendId, badge.id)
-                        buildDetail()
-                    }
-                    .show()
+                android.app.AlertDialog.Builder(this@FriendDetailActivity).setTitle("🏅 ${if (locked) "???" else badge.name}").setMessage("$status$cond$time\n创建者：$creator").setPositiveButton("关闭", null).setNeutralButton("删除") { _, _ -> BadgeStorage(this@FriendDetailActivity).delete(friendId, badge.id); buildDetail() }.show()
             }
         }
     }
 
     private fun showCreateBadgeDialog(friendId: String) {
         val dp = { value: Int -> (value * resources.displayMetrics.density).toInt() }
-        val input = android.widget.EditText(this).apply {
-            hint = "给徽章起个名字"
-            setPadding(dp(16), dp(12), dp(16), dp(12))
-        }
-        android.app.AlertDialog.Builder(this)
-            .setTitle("🏅 创建徽章")
-            .setView(input)
+        val layout = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(20), dp(16), dp(20), dp(8)) }
+        val inputName = android.widget.EditText(this).apply { hint = "徽章名字"; textSize = 13f; setPadding(dp(12), dp(8), dp(12), dp(8)) }
+        val inputCond = android.widget.EditText(this).apply { hint = "解锁条件（留空=直接解锁）"; textSize = 12f; setPadding(dp(12), dp(8), dp(12), dp(8)) }
+        layout.addView(inputName); layout.addView(inputCond)
+        android.app.AlertDialog.Builder(this).setTitle("🏅 创建徽章").setView(layout)
             .setPositiveButton("选图片") { _, _ ->
-                val name = input.text.toString().trim()
-                if (name.isEmpty()) {
-                    Toast.makeText(this, "名字不能为空哦", Toast.LENGTH_SHORT).show()
-                    return@setPositiveButton
-                }
-                pendingBadgeName = name
-                val intent = android.content.Intent(android.content.Intent.ACTION_GET_CONTENT).apply { type = "image/*" }
-                startActivityForResult(intent, PICK_BADGE_IMAGE)
+                val name = inputName.text.toString().trim()
+                if (name.isEmpty()) { Toast.makeText(this, "名字不能为空哦", Toast.LENGTH_SHORT).show(); return@setPositiveButton }
+                pendingBadgeName = name; pendingBadgeCondition = inputCond.text.toString().trim()
+                startActivityForResult(android.content.Intent(android.content.Intent.ACTION_GET_CONTENT).apply { type = "image/*" }, PICK_BADGE_IMAGE)
             }
-            .setNeutralButton("不选图片，直接创建") { _, _ ->
-                val name = input.text.toString().trim()
-                if (name.isNotEmpty()) {
-                    BadgeStorage(this).add(friendId, BadgeStorage.Badge(
-                        id = "BDG-${System.currentTimeMillis()}",
-                        name = name, createdBy = "user"
-                    ))
-                    buildDetail()
-                }
+            .setNeutralButton("不选图片") { _, _ ->
+                val name = inputName.text.toString().trim(); val cond = inputCond.text.toString().trim()
+                if (name.isNotEmpty()) { BadgeStorage(this).add(friendId, BadgeStorage.Badge(id = "BDG-${System.currentTimeMillis()}", name = name, unlockCondition = cond, createdBy = "user")); buildDetail() }
             }
-            .setNegativeButton("取消", null)
-            .show()
+            .setNegativeButton("取消", null).show()
     }
+
+    private val PICK_BADGE_IMAGE = 7001
+    private var pendingBadgeName = ""
+    private var pendingBadgeCondition = ""
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: android.content.Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
@@ -679,12 +638,16 @@ class FriendDetailActivity : AppCompatActivity() {
                 contentResolver.openInputStream(data.data!!)?.use { input ->
                     file.outputStream().use { output -> input.copyTo(output) }
                 }
+                val isAuto = pendingBadgeCondition.matches(Regex("\\w+\\s*>=?\\s*\\d+"))
                 BadgeStorage(this).add(friendId, BadgeStorage.Badge(
                     id = "BDG-${System.currentTimeMillis()}",
                     name = pendingBadgeName,
+                    unlockCondition = pendingBadgeCondition,
+                    autoCondition = if (isAuto) pendingBadgeCondition else "",
                     imagePath = file.absolutePath,
                     createdBy = "user"
                 ))
+                Toast.makeText(this, "🏅 徽章已创建", Toast.LENGTH_SHORT).show()
                 buildDetail()
             } catch (e: Exception) {
                 Toast.makeText(this, "图片保存失败", Toast.LENGTH_SHORT).show()

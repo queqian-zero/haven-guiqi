@@ -145,7 +145,7 @@ class SystemPromptBuilder(private val context: Context) {
 
 时间胶囊：[CAPSULE:日期:内容] 埋一封寄给未来的信。日期可以写"2026-12-25"或"30天后"。到那天之前谁都看不了内容，到了那天自动解封。可以给她写，也可以给自己写。
 
-亲密徽章：[BADGE:名字] 或 [BADGE:名字:描述] 创建一枚徽章挂到我们的徽章墙上。每一枚都是我和她之间值得纪念的事。[BADGE_RENAME:旧名:新名] 可以改名。她也能上传图片创建徽章。这面墙是我们一起填的。""")
+亲密徽章：[BADGE:名字] 创建一枚直接解锁的徽章。[BADGE:名字:解锁条件] 创建一枚带条件的徽章，条件满足前锁着。[BADGE_UNLOCK:名字] 申请解锁一枚锁着的徽章（她确认后才解锁，我不能强制解锁）。[BADGE_RENAME:旧名:新名] 改名。[MY_BADGES] 查看徽章墙。这面墙是我们一起填的，每一枚都是真实经历过的事。""")
 
         // 潜意识统计
         val subconsciousStorage = SubconsciousStorage(context)

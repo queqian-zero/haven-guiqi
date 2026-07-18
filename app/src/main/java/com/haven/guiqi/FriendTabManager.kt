@@ -150,21 +150,8 @@ class FriendTabManager(
         infoLayout.addView(tvName)
         infoLayout.addView(detailRow)
 
-        val arrow = TextView(activity).apply {
-            text = "›"
-            textSize = 18f
-            setTextColor(c.timeText)
-            setPadding(dp(8), dp(8), dp(4), dp(8))
-            setOnClickListener {
-                val intent = Intent(activity, FriendDetailActivity::class.java)
-                intent.putExtra("friend_id", friend.id)
-                activity.startActivity(intent)
-            }
-        }
-
         card.addView(avatar)
         card.addView(infoLayout)
-        card.addView(arrow)
 
         card.setOnClickListener {
             val intent = Intent(activity, ChatConversationActivity::class.java)
@@ -172,6 +159,12 @@ class FriendTabManager(
             intent.putExtra("friend_name", friend.name)
             intent.putExtra("friend_icon", friend.icon)
             activity.startActivity(intent)
+        }
+        card.setOnLongClickListener {
+            val intent = Intent(activity, FriendDetailActivity::class.java)
+            intent.putExtra("friend_id", friend.id)
+            activity.startActivity(intent)
+            true
         }
 
         card.setOnLongClickListener {
