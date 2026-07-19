@@ -136,8 +136,10 @@ class BadgeStorage(private val context: Context) {
 
         val actual = when (key) {
             "days" -> {
-                val friends = FriendStorage(context).loadFriends()
-                val earliest = friends.find { it.id == friendId }?.createdAt ?: 0L
+                // 优先用第一条消息的时间（"相遇那天"），没有聊天记录再退回好友创建时间
+                val firstMsg = ChatStorage(context).getFirstTimestamp(friendId)
+                val created = FriendStorage(context).loadFriends().find { it.id == friendId }?.createdAt ?: 0L
+                val earliest = if (firstMsg > 0) firstMsg else created
                 if (earliest > 0) ((System.currentTimeMillis() - earliest) / 86400000).toInt() else 0
             }
             "messages" -> ChatStorage(context).getMessageCount(friendId)

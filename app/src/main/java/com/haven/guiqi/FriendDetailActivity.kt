@@ -638,20 +638,61 @@ class FriendDetailActivity : AppCompatActivity() {
                 contentResolver.openInputStream(data.data!!)?.use { input ->
                     file.outputStream().use { output -> input.copyTo(output) }
                 }
+                showBadgePreviewDialog(file)
+            } catch (e: Exception) {
+                Toast.makeText(this, "图片保存失败", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    /**
+     * 创建前的确认预览：展示徽章图 + 名字 + 条件，确认才真正保存
+     * （取消则删掉已复制的图片文件，不留垃圾）
+     */
+    private fun showBadgePreviewDialog(imageFile: java.io.File) {
+        val dp = { value: Int -> (value * resources.displayMetrics.density).toInt() }
+        val layout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+            setPadding(dp(20), dp(16), dp(20), dp(8))
+        }
+        try {
+            val bitmap = android.graphics.BitmapFactory.decodeFile(imageFile.absolutePath)
+            if (bitmap != null) {
+                layout.addView(android.widget.ImageView(this).apply {
+                    setImageBitmap(bitmap)
+                    scaleType = android.widget.ImageView.ScaleType.CENTER_CROP
+                    layoutParams = LinearLayout.LayoutParams(dp(96), dp(96)).apply { bottomMargin = dp(12) }
+                })
+            }
+        } catch (e: Exception) { /* 图预览失败不影响文字预览 */ }
+        val condText = if (pendingBadgeCondition.isNotEmpty()) "解锁条件：$pendingBadgeCondition" else "无条件（创建即解锁）"
+        layout.addView(TextView(this).apply {
+            text = "「$pendingBadgeName」\n$condText"
+            textSize = 13f
+            gravity = Gravity.CENTER
+            setPadding(0, 0, 0, dp(8))
+        })
+
+        android.app.AlertDialog.Builder(this)
+            .setTitle("🏅 确认创建这枚徽章？")
+            .setView(layout)
+            .setPositiveButton("确认创建") { _, _ ->
                 val isAuto = pendingBadgeCondition.matches(Regex("\\w+\\s*>=?\\s*\\d+"))
                 BadgeStorage(this).add(friendId, BadgeStorage.Badge(
                     id = "BDG-${System.currentTimeMillis()}",
                     name = pendingBadgeName,
                     unlockCondition = pendingBadgeCondition,
                     autoCondition = if (isAuto) pendingBadgeCondition else "",
-                    imagePath = file.absolutePath,
+                    imagePath = imageFile.absolutePath,
                     createdBy = "user"
                 ))
                 Toast.makeText(this, "🏅 徽章已创建", Toast.LENGTH_SHORT).show()
                 buildDetail()
-            } catch (e: Exception) {
-                Toast.makeText(this, "图片保存失败", Toast.LENGTH_SHORT).show()
             }
-        }
+            .setNegativeButton("重新来") { _, _ ->
+                imageFile.delete()  // 不留垃圾图片
+            }
+            .show()
     }
 }

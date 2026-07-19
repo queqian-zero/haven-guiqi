@@ -165,6 +165,42 @@ class ChatStorage(private val context: Context) {
     }
 
     /**
+     * 第一条消息的时间戳（"相遇那天"）；没有记录返回 0
+     * 只解析第一行，开销极小
+     */
+    fun getFirstTimestamp(friendId: String): Long {
+        synchronized(LOCK) {
+            migrateIfNeeded(friendId)
+            val file = jsonlFile(friendId)
+            if (!file.exists()) return 0L
+            try {
+                file.bufferedReader().useLines { lines ->
+                    for (line in lines) {
+                        if (line.isBlank()) continue
+                        return try { JSONObject(line.trim()).optLong("timestamp", 0L) } catch (e: Exception) { 0L }
+                    }
+                }
+            } catch (e: Exception) { }
+            return 0L
+        }
+    }
+
+    /**
+     * 最后一条消息的时间戳；没有记录返回 0
+     */
+    fun getLastTimestamp(friendId: String): Long {
+        synchronized(LOCK) {
+            migrateIfNeeded(friendId)
+            val file = jsonlFile(friendId)
+            if (!file.exists()) return 0L
+            val last = try {
+                file.readLines().lastOrNull { it.isNotBlank() } ?: return 0L
+            } catch (e: Exception) { return 0L }
+            return try { JSONObject(last.trim()).optLong("timestamp", 0L) } catch (e: Exception) { 0L }
+        }
+    }
+
+    /**
      * 删除最后一条消息（发送失败撤回用）
      * 在锁内完成"读-删-写"，不会误删并发写入的其他消息
      */

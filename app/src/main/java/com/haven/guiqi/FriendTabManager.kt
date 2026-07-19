@@ -161,13 +161,6 @@ class FriendTabManager(
             activity.startActivity(intent)
         }
         card.setOnLongClickListener {
-            val intent = Intent(activity, FriendDetailActivity::class.java)
-            intent.putExtra("friend_id", friend.id)
-            activity.startActivity(intent)
-            true
-        }
-
-        card.setOnLongClickListener {
             showFriendOptions(friend)
             true
         }
@@ -235,15 +228,20 @@ class FriendTabManager(
 
     // ===== 好友选项菜单 =====
     private fun showFriendOptions(friend: Friend) {
-        val options = arrayOf("编辑名称", "修改分组", "配置 API", "删除好友")
+        val options = arrayOf("查看详情", "编辑名称", "修改分组", "配置 API", "删除好友")
         AlertDialog.Builder(activity)
             .setTitle(friend.name)
             .setItems(options) { _, which ->
                 when (which) {
-                    0 -> showEditNameDialog(friend)
-                    1 -> showEditGroupDialog(friend)
-                    2 -> showApiConfigDialog(friend)
-                    3 -> showDeleteConfirm(friend)
+                    0 -> {
+                        val intent = Intent(activity, FriendDetailActivity::class.java)
+                        intent.putExtra("friend_id", friend.id)
+                        activity.startActivity(intent)
+                    }
+                    1 -> showEditNameDialog(friend)
+                    2 -> showEditGroupDialog(friend)
+                    3 -> showApiConfigDialog(friend)
+                    4 -> showDeleteConfirm(friend)
                 }
             }
             .show()

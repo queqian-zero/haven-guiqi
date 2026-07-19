@@ -89,6 +89,25 @@ class ChatConversationActivity : AppCompatActivity() {
     // 聊天历史加载器（initChat、loadEarlierMessages、日期分隔线）
     private lateinit var chatHistoryLoader: ChatHistoryLoader
 
+    // ===== 拆分出去的管理器（懒加载：首次使用时才构造，保证字段已就绪）=====
+    private val plusMenuManager by lazy {
+        PlusMenuManager(this, stickerPanelManager,
+            onPickImage = {
+                val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
+                    type = "image/*"; putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+                }
+                startActivityForResult(intent, PICK_IMAGE)
+            },
+            onInsertWeather = { weatherCardManager.insert() })
+    }
+    private val weatherCardManager by lazy {
+        WeatherCardManager(this, bubbleRenderer, chatStorage, friendId, chatHistory,
+            batchModeManager, ::checkDateSeparator) { callApiForReply() }
+    }
+    private val badgeUnlockDialog by lazy {
+        BadgeUnlockDialog(this, friendId) { bubbleRenderer.addSystemTip(it) }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -232,7 +251,7 @@ class ChatConversationActivity : AppCompatActivity() {
             }
         }
 
-        btnPlus.setOnClickListener { showPlusMenu() }
+        btnPlus.setOnClickListener { plusMenuManager.toggle() }
 
         // 分条模式按钮
         findViewById<TextView>(R.id.btnBatch).setOnClickListener { batchModeManager.toggle() }
@@ -501,7 +520,7 @@ class ChatConversationActivity : AppCompatActivity() {
 
                 // 徽章解锁弹窗
                 if (result.pendingBadge != null) {
-                    handler.post { showBadgeUnlockDialog(result.pendingBadge!!) }
+                    handler.post { badgeUnlockDialog.show(result.pendingBadge!!) }
                 }
 
                 // 保存到聊天记录
@@ -711,42 +730,6 @@ class ChatConversationActivity : AppCompatActivity() {
     }
 
     /** 加号菜单 */
-    private fun showPlusMenu() {
-        val plusPanel = findViewById<LinearLayout>(R.id.plusPanel)
-        if (plusPanel.visibility == View.VISIBLE) { plusPanel.visibility = View.GONE; return }
-        stickerPanelManager.hide()
-        plusPanel.visibility = View.VISIBLE
-
-        findViewById<LinearLayout>(R.id.plusBtnImage).setOnClickListener {
-            plusPanel.visibility = View.GONE
-            val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
-                type = "image/*"; putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
-            }
-            startActivityForResult(intent, PICK_IMAGE)
-        }
-        findViewById<LinearLayout>(R.id.plusBtnSticker).setOnClickListener {
-            plusPanel.visibility = View.GONE; stickerPanelManager.toggle()
-        }
-        findViewById<LinearLayout>(R.id.plusBtnWeather).setOnClickListener {
-            plusPanel.visibility = View.GONE; insertWeatherCard()
-        }
-    }
-    /** 插入天气卡片：开着多条发送就进队列，没开就直接发 */
-    private fun insertWeatherCard() {
-        val ws = WeatherStorage(this)
-        val data = ws.getCachedWeather(); val city = ws.getCity()
-        if (data == null || city.isEmpty()) { Toast.makeText(this, "还没有天气数据，先去窗外看看？", Toast.LENGTH_SHORT).show(); return }
-        if (batchModeManager.isBatchMode) { batchModeManager.addWeather(); return }
-        val now = System.currentTimeMillis()
-        val timeStr = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date(now))
-        checkDateSeparator(now)
-        bubbleRenderer.addWeatherCard(data, city, isUser = true, timeStr = timeStr)
-        val extras = WeatherStorage.toExtras(data, city)
-        chatStorage.appendMessage(friendId, StoredMessage("user", ws.buildWeatherSummary(), now, type = "weather", extras = extras))
-        chatHistory.add(ChatMessage("user", ws.buildWeatherSummary()))
-        callApiForReply()
-    }
-
     /** 发送全部待发消息 */
     private fun sendAllPending() {
         if (batchModeManager.isEmpty()) return
@@ -781,15 +764,7 @@ class ChatConversationActivity : AppCompatActivity() {
                         chatStorage.appendMessage(friendId, StoredMessage("user", display, now, imagePath = item.imagePaths[0], type = "image"))
                         chatHistory.add(ChatMessage("user", if (item.text.isNotEmpty()) item.text else "[用户发送了图片]", item.imagePaths.map { ImageHelper.toBase64(File(it)) }))
                     }
-                    "weather" -> {
-                        val ws = WeatherStorage(this)
-                        val data = ws.getCachedWeather(); val city = ws.getCity()
-                        if (data != null && city.isNotEmpty()) {
-                            bubbleRenderer.addWeatherCard(data, city, isUser = true, timeStr = timeStr)
-                            val extras = WeatherStorage.toExtras(data, city)
-                            chatStorage.appendMessage(friendId, StoredMessage("user", ws.buildWeatherSummary(), now, type = "weather", extras = extras))
-                        }
-                    }
+                    "weather" -> weatherCardManager.renderAndStore(now)
                     else -> {
                         if (item.quoteAuthor != null && item.quoteContent != null) {
                             bubbleRenderer.addQuoteBubble(item.quoteAuthor, item.quoteContent, item.text, timeStr)
@@ -814,23 +789,6 @@ class ChatConversationActivity : AppCompatActivity() {
         chatImageHandler.pendingPaths.clear()
         chatImageHandler.pendingPaths.add(stickerFile.absolutePath)
         stickerPanelManager.hide(); sendMessage()
-    }
-    private fun showBadgeUnlockDialog(badgeName: String) {
-        val bs = BadgeStorage(this)
-        val badge = bs.loadAll(friendId).find { it.name == badgeName && !it.isUnlocked } ?: return
-        android.app.AlertDialog.Builder(this)
-            .setTitle("🏅 TA 想解锁一枚徽章")
-            .setMessage("「$badgeName」\n\n同意解锁吗？")
-            .setPositiveButton("同意") { _, _ ->
-                bs.unlock(friendId, badge.id)
-                bubbleRenderer.addSystemTip("🏅 徽章「$badgeName」已解锁！")
-            }
-            .setNegativeButton("拒绝") { _, _ ->
-                bs.rejectUnlock(friendId, badge.id)
-                bubbleRenderer.addSystemTip("🏅 拒绝了解锁「$badgeName」")
-            }
-            .setCancelable(false)
-            .show()
     }
     private fun triggerChatSummary(friendId: String, currentCount: Int) {
         summaryStorage.triggerSummary(friendId, currentCount, chatStorage, apiUrl, apiKey, apiModel, apiType)
