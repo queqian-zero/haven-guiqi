@@ -2,6 +2,7 @@
 <manifest 
     xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
@@ -10,6 +11,15 @@
     <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.CAMERA" />
+
+    <!-- Android 11+ 包可见性：声明需要查询相机 app -->
+    <queries>
+        <intent>
+            <action android:name="android.media.action.IMAGE_CAPTURE" />
+        </intent>
+    </queries>
+
     <application 
         android:allowBackup="false" 
         android:icon="@mipmap/ic_launcher" 
@@ -17,6 +27,18 @@
         android:label="@string/app_name" 
         android:supportsRtl="true" 
         android:theme="@style/AppTheme">
+
+        <!-- FileProvider：拍照时用的临时 URI -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
         <activity 
             android:name=".MainActivity" 
             android:exported="true">
@@ -30,7 +52,8 @@
         <activity android:name=".DesktopActivity" />
         <activity android:name=".SettingsActivity" />
         <activity android:name=".ChatActivity" />
-        <activity android:name=".ChatConversationActivity" />
+        <activity android:name=".ChatConversationActivity"
+            android:windowSoftInputMode="adjustResize" />
         <activity android:name=".ChatSettingsActivity" />
         <activity android:name=".ArchiveActivity" />
         <activity android:name=".ArchiveDetailActivity" />

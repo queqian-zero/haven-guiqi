@@ -359,6 +359,8 @@ class InstructionProcessor(private val context: Context) {
                 val result = EchoStorage(context).buildRecallPrompt(friendId, query)
                 recallResults.add(result)
                 actions.add("🔍 翻了翻留声")
+                // ★ 回忆回升：搜留声时顺便加固相关的聊天总结
+                ChatSummaryStorage(context).reinforceByKeyword(friendId, query)
             }
         }
         prefCleanText = recallRegex.replace(prefCleanText, "").trim()

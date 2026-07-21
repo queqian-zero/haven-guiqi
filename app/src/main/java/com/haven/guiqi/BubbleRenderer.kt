@@ -71,8 +71,18 @@ class BubbleRenderer(
 
     private val screenWidth get() = activity.resources.displayMetrics.widthPixels
 
+    /**
+     * 批量渲染时置 true，scrollToBottom() 变成空操作。
+     * renderMessages 全跑完后置回 false 再手动调一次 scrollToBottom()。
+     * 这样 50 条消息不会排 50 个 fullScroll 导致界面跳动。
+     */
+    var suppressScroll = false
+
     fun scrollToBottom() {
-        scrollView.post { scrollView.fullScroll(View.FOCUS_DOWN) }
+        if (suppressScroll) return
+        // 双 post：第一帧等 layout 算完高度，第二帧再滚，
+        // 避免图片 adjustViewBounds 导致的 layout 滞后。
+        scrollView.post { scrollView.post { scrollView.fullScroll(View.FOCUS_DOWN) } }
     }
 
     fun addSystemTip(msg: String) {

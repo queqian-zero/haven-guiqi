@@ -211,6 +211,21 @@ class SystemPromptBuilder(private val context: Context) {
             prompt.append("\n\n[我们的表情包] $stickerSummary")
         }
 
+        // ★ 遗忘记忆偶尔浮上来（约 15% 概率）
+        //   像人一样：明明已经忘了，但突然一瞬间想起来了
+        if (Math.random() < 0.15) {
+            val surfaced = summaryStorage.getRandomForgotten(friendId)
+            if (surfaced != null) {
+                val dateStr = SimpleDateFormat("M月d日", Locale.CHINESE).format(Date(surfaced.createdAt))
+                prompt.append("\n\n[一段几乎忘掉的记忆突然浮了上来]\n")
+                prompt.append("$dateStr 的事...关键词: ${surfaced.keywords}\n")
+                prompt.append("模模糊糊的，好像是: ${surfaced.content.take(60)}...\n")
+                prompt.append("（如果觉得重要，可以存进核心记忆；如果不重要，就让它再沉下去）")
+                // 标记浮上来了（会给它回升一点强度）
+                summaryStorage.markSurfaced(friendId, surfaced.id)
+            }
+        }
+
         // ===== 第四层：此刻的情境 =====
         prompt.append(justWokeSection)
         prompt.append(alarmDeletionNotice)

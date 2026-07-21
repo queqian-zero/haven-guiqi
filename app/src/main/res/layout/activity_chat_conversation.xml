@@ -77,6 +77,20 @@
         android:layout_width="match_parent"
         android:layout_height="0.5dp"
         android:background="@color/haven_divider" />
+
+    <!-- ===== 断网提示条 ===== -->
+    <TextView
+        android:id="@+id/networkBanner"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="#CC333333"
+        android:gravity="center"
+        android:paddingVertical="6dp"
+        android:text="网络已断开，消息可能发不出去"
+        android:textColor="#FFCCCCCC"
+        android:textSize="12sp"
+        android:visibility="gone" />
+
     <!-- ===== 搜索面板 ===== -->
     <LinearLayout
         android:id="@+id/searchPanel"
@@ -110,6 +124,15 @@
                 android:imeOptions="actionSearch"
                 android:inputType="text" />
  
+            <TextView
+                android:id="@+id/btnDatePicker"
+                android:layout_width="wrap_content"
+                android:layout_height="36dp"
+                android:gravity="center"
+                android:text="📅"
+                android:textSize="18sp"
+                android:paddingHorizontal="8dp" />
+
             <TextView
                 android:id="@+id/btnCloseSearch"
                 android:layout_width="wrap_content"
@@ -330,6 +353,27 @@
         android:visibility="gone">
 
         <LinearLayout
+            android:id="@+id/plusBtnCamera"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:orientation="vertical"
+            android:padding="8dp">
+            <View
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:background="@drawable/settings_item_bg" />
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="拍照"
+                android:textColor="@color/haven_text_secondary"
+                android:textSize="11sp"
+                android:layout_marginTop="6dp" />
+        </LinearLayout>
+
+        <LinearLayout
             android:id="@+id/plusBtnImage"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
@@ -483,7 +527,7 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:text="展开模式 · 回车换行"
+                android:text="展开模式 · 回车换行 · 用 --- 分条发送"
                 android:textColor="@color/haven_text_hint"
                 android:textSize="11sp" />
 

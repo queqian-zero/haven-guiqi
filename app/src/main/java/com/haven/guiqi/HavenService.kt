@@ -155,6 +155,10 @@ class HavenService : Service() {
                     return@Thread
                 }
 
+                // ★ 立刻标记已触发，防止 AlarmManager 重复投递导致双重唤醒
+                //   （某些 ROM 会在短时间内多次触发同一个闹钟）
+                reminderStorage.markTriggered(reminderId)
+
                 // 读好友信息和 API 配置
                 val friendStorage = FriendStorage(this)
                 val friend = friendStorage.getFriend(friendId) ?: return@Thread
@@ -202,7 +206,6 @@ class HavenService : Service() {
 
                 if (apiUrl.isEmpty() || apiKey.isEmpty()) {
                     Log.e(TAG, "No API config for friend $friendId")
-                    reminderStorage.markTriggered(reminderId)
                     return@Thread
                 }
 
@@ -265,9 +268,6 @@ ${InstructionRegistry.buildPromptList(InstructionRegistry.Scene.WAKE_UP)}
                 messages.add(ChatMessage("user", "[系统：提醒时间到]"))
                 val response = api.sendChat(messages)
 
-                // 标记已触发
-                reminderStorage.markTriggered(reminderId)
-
                 // 处理回复
                 val responseText = response.text.trim()
                 if (responseText == "[NO_ACTION]" || responseText.isEmpty()) {
@@ -279,6 +279,13 @@ ${InstructionRegistry.buildPromptList(InstructionRegistry.Scene.WAKE_UP)}
                 val result = InstructionProcessor(this).process(friendId, responseText)
                 val cleanText = result.cleanText
 
+                // ★ 先存指令小字（顺序与聊天页面一致：小字在前、正文在后）
+                val replyTime = System.currentTimeMillis()
+                for (action in result.actions) {
+                    chatStorage.appendMessage(friendId,
+                        StoredMessage("system", action, replyTime, type = "tip"))
+                }
+
                 if (cleanText.isBlank() || result.isSeen) {
                     Log.d(TAG, "AI response was empty or SEEN after processing")
                     return@Thread
@@ -288,7 +295,6 @@ ${InstructionRegistry.buildPromptList(InstructionRegistry.Scene.WAKE_UP)}
                 // 因为 InstructionProcessor 以后会在 process() 里处理
 
                 // 存入聊天记录
-                val replyTime = System.currentTimeMillis()
                 chatStorage.appendMessage(friendId, StoredMessage(
                     "assistant", cleanText, replyTime, response.thinking
                 ))
@@ -481,10 +487,16 @@ ${InstructionRegistry.buildPromptList(InstructionRegistry.Scene.WAKE_UP)}
             // 处理指令
             val result = InstructionProcessor(this).process(friendId, text)
 
+            // ★ 先存指令小字（顺序与聊天页面一致：小字在前、正文在后）
+            val now = System.currentTimeMillis()
+            for (action in result.actions) {
+                chatStorage.appendMessage(friendId,
+                    StoredMessage("system", action, now, type = "tip"))
+            }
+
             // 如果有实质性回复（不只是指令），保存并推通知
             val cleanText = result.cleanText.trim()
             if (cleanText.isNotEmpty() && cleanText.length > 2) {
-                val now = System.currentTimeMillis()
                 chatStorage.appendMessage(friendId, StoredMessage(
                     "assistant", cleanText, now,
                     thinking = response.thinking

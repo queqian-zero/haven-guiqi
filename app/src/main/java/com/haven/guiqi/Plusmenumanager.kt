@@ -6,12 +6,13 @@ import android.widget.LinearLayout
 
 /**
  * 加号菜单管理器 —— 从 ChatConversationActivity 拆出（军规二：拆文件）
- * 负责加号面板的展开/收起，以及三个入口（图片/表情包/天气卡片）的点击分发。
+ * 负责加号面板的展开/收起，以及四个入口（拍照/图片/表情包/天气卡片）的点击分发。
  * 具体动作通过回调交还给 Activity，本类不持有业务逻辑。
  */
 class PlusMenuManager(
     private val activity: Activity,
     private val stickerPanelManager: StickerPanelManager,
+    private val onTakePhoto: () -> Unit,
     private val onPickImage: () -> Unit,
     private val onInsertWeather: () -> Unit
 ) {
@@ -28,6 +29,10 @@ class PlusMenuManager(
 
         if (listenersBound) return
         listenersBound = true
+        activity.findViewById<LinearLayout>(R.id.plusBtnCamera).setOnClickListener {
+            plusPanel.visibility = View.GONE
+            onTakePhoto()
+        }
         activity.findViewById<LinearLayout>(R.id.plusBtnImage).setOnClickListener {
             plusPanel.visibility = View.GONE
             onPickImage()

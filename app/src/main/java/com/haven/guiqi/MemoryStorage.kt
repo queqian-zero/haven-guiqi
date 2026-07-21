@@ -123,11 +123,14 @@ class MemoryStorage(private val context: Context) {
         if (memories.isEmpty()) return "\n\n[我的核心记忆]\n还没有记过什么。想记的时候用 [MEMORY:内容] 就行。"
 
         val sb = StringBuilder("\n\n[我的核心记忆]\n")
+        val dateFmt = java.text.SimpleDateFormat("M月d日", java.util.Locale.CHINESE)
         for ((index, m) in memories.withIndex()) {
-            sb.append("${index + 1}. [${m.id}] ${m.content}\n")
+            val dateStr = dateFmt.format(java.util.Date(m.createdAt))
+            sb.append("${index + 1}. [${m.id}] ($dateStr 记) ${m.content}\n")
         }
         sb.append("\n写新记忆: [MEMORY:内容]  |  删记忆: [FORGET:记忆ID]  |  改记忆: [EDIT_MEMORY:记忆ID:新内容]\n")
-        sb.append("删掉的会去废纸篓，不会真的消失。")
+        sb.append("删掉的会去废纸篓，不会真的消失。\n")
+        sb.append("注意：核心记忆是永久的。如果记的是临时状态（比如身体不舒服、临时安排），过期了要自己 FORGET 或 EDIT_MEMORY 更新，别让旧信息误导自己。")
         return sb.toString()
     }
 

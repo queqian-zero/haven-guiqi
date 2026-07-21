@@ -64,6 +64,8 @@ class ChatConversationActivity : AppCompatActivity() {
     private val handler = Handler(Looper.getMainLooper())
     private val PICK_IMAGE = 3001
     private val PICK_STICKER = 3002
+    private val TAKE_PHOTO = 3003
+    private val CAMERA_PERMISSION = 3004
 
     private var friendId = ""
     private var friendName = "好友"
@@ -81,6 +83,8 @@ class ChatConversationActivity : AppCompatActivity() {
 
     // 图片选择和预览（委托给 ChatImageHandler）
     private lateinit var chatImageHandler: ChatImageHandler
+    // 拍照临时文件
+    private var pendingCameraFile: java.io.File? = null
 
     // 待引用的消息
     private var pendingQuoteAuthor: String? = null
@@ -88,10 +92,12 @@ class ChatConversationActivity : AppCompatActivity() {
 
     // 聊天历史加载器（initChat、loadEarlierMessages、日期分隔线）
     private lateinit var chatHistoryLoader: ChatHistoryLoader
+    private lateinit var networkMonitor: NetworkMonitor
 
     // ===== 拆分出去的管理器（懒加载：首次使用时才构造，保证字段已就绪）=====
     private val plusMenuManager by lazy {
         PlusMenuManager(this, stickerPanelManager,
+            onTakePhoto = { launchCamera() },
             onPickImage = {
                 val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
                     type = "image/*"; putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
@@ -105,7 +111,7 @@ class ChatConversationActivity : AppCompatActivity() {
             batchModeManager, ::checkDateSeparator) { callApiForReply() }
     }
     private val badgeUnlockDialog by lazy {
-        BadgeUnlockDialog(this, friendId) { bubbleRenderer.addSystemTip(it) }
+        BadgeUnlockDialog(this, friendId) { addAndSaveSystemTip(it) }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -130,7 +136,11 @@ class ChatConversationActivity : AppCompatActivity() {
         val contentView = findViewById<View>(android.R.id.content)
         ViewCompat.setOnApplyWindowInsetsListener(contentView) { view, insets ->
             val top = insets.getInsets(WindowInsetsCompat.Type.statusBars()).top
-            view.setPadding(0, top, 0, 0)
+            // ★ 键盘弹起时加底部 padding，让输入框不被盖住
+            val imeBottom = insets.getInsets(WindowInsetsCompat.Type.ime()).bottom
+            val navBottom = insets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom
+            val bottom = maxOf(imeBottom, navBottom)
+            view.setPadding(0, top, 0, bottom)
             insets
         }
 
@@ -151,6 +161,8 @@ class ChatConversationActivity : AppCompatActivity() {
         connectionBar = findViewById(R.id.connectionBar)
         imagePreviewContainer = findViewById(R.id.imagePreviewContainer)
         chatImageHandler = ChatImageHandler(this, imagePreviewContainer)
+        networkMonitor = NetworkMonitor(this, findViewById(R.id.networkBanner))
+        networkMonitor.start()
         chatImageHandler.onPickMore = {
             val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
                 type = "image/*"
@@ -226,7 +238,8 @@ class ChatConversationActivity : AppCompatActivity() {
         )
         searchManager.setupListeners(
             findViewById(R.id.btnSearch),
-            findViewById(R.id.btnCloseSearch)
+            findViewById(R.id.btnCloseSearch),
+            findViewById(R.id.btnDatePicker)
         )
 
         loadApiConfig()
@@ -296,6 +309,20 @@ class ChatConversationActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         loadApiConfig()
+
+        // ★ 从 FriendStorage 刷新名字/头像/头像图片
+        //   AI 在后台（独处/提醒）可能通过指令改了名字或头像，
+        //   而 onCreate 时用的是 intent 带进来的旧值，这里同步一下。
+        val latestFriend = FriendStorage(this).getFriend(friendId)
+        if (latestFriend != null) {
+            friendName = latestFriend.name
+            friendIcon = latestFriend.icon
+            tvFriendName.text = friendName
+            bubbleRenderer.friendName = friendName
+            bubbleRenderer.friendIcon = friendIcon
+            bubbleRenderer.friendAvatarPath = latestFriend.avatarPath
+        }
+
         if (pausedMessageCount >= 0 && chatStorage.getMessageCount(friendId) != pausedMessageCount) {
             messagesContainer.removeAllViews()
             chatHistory.clear()
@@ -309,11 +336,24 @@ class ChatConversationActivity : AppCompatActivity() {
         pausedMessageCount = chatStorage.getMessageCount(friendId)
     }
 
+    override fun onDestroy() {
+        super.onDestroy()
+        networkMonitor.stop()
+    }
+
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == 4001 && resultCode == RESULT_OK) {
             bubbleRenderer.friendAvatarPath = FriendStorage(this).getFriend(friendId)?.avatarPath ?: ""
             messagesContainer.removeAllViews(); chatHistory.clear(); initChat(); return
+        }
+        if (requestCode == TAKE_PHOTO && resultCode == RESULT_OK) {
+            // 拍照成功：把照片压缩存入 chat_images，交给预览流程
+            val file = pendingCameraFile ?: return
+            pendingCameraFile = null
+            val uri = Uri.fromFile(file)
+            chatImageHandler.handlePickedImage(uri)
+            return
         }
         if (requestCode == PICK_IMAGE && resultCode == RESULT_OK && data != null) {
             chatImageHandler.handleActivityResult(data)
@@ -391,20 +431,26 @@ class ChatConversationActivity : AppCompatActivity() {
     // ===== 展开/收起输入框 =====
     private fun toggleExpandedInput(expand: Boolean) {
         if (expand) {
-            expandedInput.setText(inputMessage.text)
+            // 只在大输入框为空时才从小输入框搬文字过来
+            // 否则保留上次收起时留下的内容
+            if (expandedInput.text.isNullOrEmpty()) {
+                expandedInput.setText(inputMessage.text)
+            }
             expandedInput.setSelection(expandedInput.text.length)
             inputBar.visibility = View.GONE
             expandedInputPanel.visibility = View.VISIBLE
             expandedInput.requestFocus()
-            // 关掉可能冲突的面板
             stickerPanelManager.hide()
             findViewById<LinearLayout>(R.id.plusPanel).visibility = View.GONE
             if (batchModeManager.isBatchMode) {
                 batchModeManager.exit()
             }
         } else {
-            inputMessage.setText(expandedInput.text)
-            inputMessage.setSelection(inputMessage.text.length)
+            val text = expandedInput.text.toString()
+            if (text.length <= 100) {
+                inputMessage.setText(text)
+                inputMessage.setSelection(inputMessage.text.length)
+            }
             expandedInputPanel.visibility = View.GONE
             inputBar.visibility = View.VISIBLE
         }
@@ -524,6 +570,13 @@ class ChatConversationActivity : AppCompatActivity() {
                 }
 
                 // 保存到聊天记录
+                // ★ 先存指令小字，再存 AI 正文，保证磁盘顺序 = 屏幕顺序
+                //   屏幕上：小字在上、正文在下；磁盘里也必须如此，
+                //   否则退出重进后 ChatHistoryLoader 按文件行序渲染会错位。
+                for (action in result.actions) {
+                    chatStorage.appendMessage(friendId,
+                        StoredMessage("system", action, replyTime, type = "tip"))
+                }
                 val msgType = if (result.weatherCard) "weather" else "text"
                 val msgExtras = if (result.weatherCard) {
                     val ws = WeatherStorage(this@ChatConversationActivity)
@@ -565,8 +618,9 @@ class ChatConversationActivity : AppCompatActivity() {
                     }
                     tvFriendName.text = friendName
 
+                    // 小字已在后台线程落盘，这里只上屏
                     for (action in result.actions) {
-                        addAndSaveSystemTip(action)
+                        bubbleRenderer.addSystemTip(action)
                     }
 
                     if (isSeen) {
@@ -690,7 +744,12 @@ class ChatConversationActivity : AppCompatActivity() {
                 // 带引用的消息：先显示引用块再显示气泡
                 bubbleRenderer.addQuoteBubble(quoteAuthor, quoteContent, msg, timeStr)
                 val shortQuote = if (quoteContent.length > 50) quoteContent.substring(0, 50) + "..." else quoteContent
-                chatStorage.appendMessage(friendId, StoredMessage("user", "「回复 $quoteAuthor: $shortQuote」\n$msg", now))
+                // ★ 引用元数据存进 extras，type 标记为 quote，content 只放回复正文
+                val quoteExtras = JSONObject().apply {
+                    put("quote_author", quoteAuthor)
+                    put("quote_content", shortQuote)
+                }.toString()
+                chatStorage.appendMessage(friendId, StoredMessage("user", msg, now, type = "quote", extras = quoteExtras))
                 chatHistory.add(ChatMessage("user", "[$timeStr] [引用 $quoteAuthor 说的: $shortQuote]\n$msg"))
                 removeQuotePreview()
             } else {
@@ -800,6 +859,42 @@ class ChatConversationActivity : AppCompatActivity() {
         chatStorage.appendMessage(friendId, StoredMessage("system", msg, System.currentTimeMillis(), type = "tip"))
         runOnUiThread {
             if (!isFinishing && !isDestroyed) bubbleRenderer.addSystemTip(msg)
+        }
+    }
+
+    /** 启动系统相机拍照 */
+    private fun launchCamera() {
+        // 运行时权限：Android 6+ 必须先申请 CAMERA
+        if (checkSelfPermission(android.Manifest.permission.CAMERA)
+            != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(arrayOf(android.Manifest.permission.CAMERA), CAMERA_PERMISSION)
+            return
+        }
+        val imageDir = File(filesDir, "chat_images").also { it.mkdirs() }
+        val photoFile = File(imageDir, "camera_${System.currentTimeMillis()}.jpg")
+        pendingCameraFile = photoFile
+        val uri = androidx.core.content.FileProvider.getUriForFile(
+            this, "$packageName.fileprovider", photoFile
+        )
+        val intent = Intent(android.provider.MediaStore.ACTION_IMAGE_CAPTURE).apply {
+            putExtra(android.provider.MediaStore.EXTRA_OUTPUT, uri)
+            addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+        }
+        try {
+            startActivityForResult(intent, TAKE_PHOTO)
+        } catch (_: Exception) {
+            Toast.makeText(this, "没有可用的相机应用", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == CAMERA_PERMISSION) {
+            if (grantResults.isNotEmpty() && grantResults[0] == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                launchCamera()  // 权限通过，重新走一遍
+            } else {
+                Toast.makeText(this, "需要相机权限才能拍照", Toast.LENGTH_SHORT).show()
+            }
         }
     }
 

@@ -119,7 +119,11 @@ class ChatHistoryLoader(
             }
             loadedMessageCount = toRender.size
 
+            // ★ 批量渲染期间关掉逐条滚动，渲染完后统一滚一次
+            bubbleRenderer.suppressScroll = true
             renderMessages(toRender)
+            bubbleRenderer.suppressScroll = false
+            bubbleRenderer.scrollToBottom()
 
             // 显示保存的 AI 状态
             if (currentAiStatus.isNotEmpty()) {
@@ -190,49 +194,79 @@ class ChatHistoryLoader(
             checkDateSeparator(msg.timestamp)
             val timeStr = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
                 .format(Date(msg.timestamp))
-            when (msg.role) {
-                "user" -> {
-                    if (msg.type == "weather") {
-                        renderWeatherCard(isUser = true, timeStr = timeStr, fallbackContent = msg.content, extras = msg.extras)
-                    } else if (msg.imagePath.isNotEmpty()) {
-                        val caption = msg.content.let {
-                            if (it == "[图片]" || it.startsWith("[") && it.endsWith("张图片]")) "" else it
-                        }
-                        val allPaths = if (msg.extras.isNotEmpty()) {
-                            try {
-                                val arr = JSONObject(msg.extras).optJSONArray("paths")
-                                if (arr != null) (0 until arr.length()).map { arr.getString(it) }
-                                else listOf(msg.imagePath)
-                            } catch (e: Exception) { listOf(msg.imagePath) }
-                        } else listOf(msg.imagePath)
+            renderOneMessage(msg, timeStr, skipThinking = false)
+        }
+    }
 
-                        if (allPaths.size > 1) {
-                            bubbleRenderer.addMultiImageBubble(allPaths, timeStr, caption)
+    /**
+     * 统一渲染一条消息——所有消息类型的渲染逻辑只写在这一个地方。
+     * renderMessages 和 doLoadEarlier 共用，避免加新类型时漏一边。
+     *
+     * @param skipThinking 加载更早的历史时跳过思维链（太多会卡）
+     */
+    private fun renderOneMessage(msg: StoredMessage, timeStr: String, skipThinking: Boolean = false) {
+        when (msg.role) {
+            "user" -> {
+                if (msg.type == "weather") {
+                    renderWeatherCard(isUser = true, timeStr = timeStr, fallbackContent = msg.content, extras = msg.extras)
+                } else if (msg.type == "quote" && msg.extras.isNotEmpty()) {
+                    try {
+                        val q = JSONObject(msg.extras)
+                        val qAuthor = q.optString("quote_author", "")
+                        val qContent = q.optString("quote_content", "")
+                        if (qAuthor.isNotEmpty()) {
+                            bubbleRenderer.addQuoteBubble(qAuthor, qContent, msg.content, timeStr)
                         } else {
-                            bubbleRenderer.addImageBubble(msg.imagePath, timeStr, caption)
+                            bubbleRenderer.addUserBubble(msg.content, timeStr)
                         }
+                    } catch (_: Exception) {
+                        bubbleRenderer.addUserBubble(msg.content, timeStr)
+                    }
+                } else if (msg.imagePath.isNotEmpty()) {
+                    val caption = msg.content.let {
+                        if (it == "[图片]" || it.startsWith("[") && it.endsWith("张图片]")) "" else it
+                    }
+                    val allPaths = if (msg.extras.isNotEmpty()) {
+                        try {
+                            val arr = JSONObject(msg.extras).optJSONArray("paths")
+                            if (arr != null) (0 until arr.length()).map { arr.getString(it) }
+                            else listOf(msg.imagePath)
+                        } catch (e: Exception) { listOf(msg.imagePath) }
+                    } else listOf(msg.imagePath)
+
+                    if (allPaths.size > 1) {
+                        bubbleRenderer.addMultiImageBubble(allPaths, timeStr, caption)
+                    } else {
+                        bubbleRenderer.addImageBubble(msg.imagePath, timeStr, caption)
+                    }
+                } else {
+                    // 旧数据兼容：之前存的「回复 xxx: yyy」格式
+                    val oldQuoteRegex = Regex("^「回复 (.+?): (.+?)」\n(.+)$", RegexOption.DOT_MATCHES_ALL)
+                    val oldMatch = oldQuoteRegex.matchEntire(msg.content)
+                    if (oldMatch != null) {
+                        val (oAuthor, oQuote, oReply) = oldMatch.destructured
+                        bubbleRenderer.addQuoteBubble(oAuthor, oQuote, oReply, timeStr)
                     } else {
                         bubbleRenderer.addUserBubble(msg.content, timeStr)
                     }
                 }
-                "assistant" -> {
-                    if (msg.content.trim() == "[SEEN]") {
-                        bubbleRenderer.addSeenIndicator()
-                    } else if (msg.type == "weather") {
-                        if (msg.thinking.isNotEmpty()) bubbleRenderer.addThinkingBlock(msg.thinking)
-                        renderWeatherCard(isUser = false, timeStr = timeStr, fallbackContent = msg.content, extras = msg.extras)
-                        // 天气卡片之外还有文字内容的话也要渲染
-                        val text = msg.content.trim()
-                        if (text.isNotEmpty()) bubbleRenderer.addAiBubble(text, timeStr)
-                    } else {
-                        if (msg.thinking.isNotEmpty()) bubbleRenderer.addThinkingBlock(msg.thinking)
-                        bubbleRenderer.addAiBubble(msg.content, timeStr)
-                    }
+            }
+            "assistant" -> {
+                if (msg.content.trim() == "[SEEN]") {
+                    if (!skipThinking) bubbleRenderer.addSeenIndicator()
+                } else if (msg.type == "weather") {
+                    if (!skipThinking && msg.thinking.isNotEmpty()) bubbleRenderer.addThinkingBlock(msg.thinking)
+                    renderWeatherCard(isUser = false, timeStr = timeStr, fallbackContent = msg.content, extras = msg.extras)
+                    val text = msg.content.trim()
+                    if (text.isNotEmpty()) bubbleRenderer.addAiBubble(text, timeStr)
+                } else {
+                    if (!skipThinking && msg.thinking.isNotEmpty()) bubbleRenderer.addThinkingBlock(msg.thinking)
+                    bubbleRenderer.addAiBubble(msg.content, timeStr)
                 }
-                "system" -> {
-                    if (msg.type == "tip") {
-                        bubbleRenderer.addSystemTip(msg.content)
-                    }
+            }
+            "system" -> {
+                if (msg.type == "tip") {
+                    bubbleRenderer.addSystemTip(msg.content)
                 }
             }
         }
@@ -266,6 +300,9 @@ class ChatHistoryLoader(
 
         if (remaining <= 0) return
 
+        // ★ 加载更早的消息时也关掉逐条滚动（加载完不滚到底，留在原位）
+        bubbleRenderer.suppressScroll = true
+
         // 计算要加载的消息范围
         val loadCount = minOf(messagesPerPage, remaining)
         val startIndex = remaining - loadCount
@@ -284,6 +321,7 @@ class ChatHistoryLoader(
         var insertIndex = btnIndex
         var prevDate = ""
         for (msg in olderMessages) {
+            // 日期分隔线
             val msgDate = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
                 .format(Date(msg.timestamp))
             if (msgDate != prevDate) {
@@ -305,51 +343,26 @@ class ChatHistoryLoader(
 
             val timeStr = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
                 .format(Date(msg.timestamp))
-            when (msg.role) {
-                "user" -> {
-                    if (msg.imagePath.isNotEmpty()) {
-                        bubbleRenderer.addImageBubbleAt(msg.imagePath, timeStr,
-                            msg.content.let { if (it == "[图片]") "" else it }, insertIndex)
-                        insertIndex++
-                    } else {
-                        val bubble = bubbleRenderer.addUserBubble(msg.content, timeStr)
-                        messagesContainer.removeView(bubble)
-                        messagesContainer.addView(bubble, insertIndex)
-                        insertIndex++
-                    }
+
+            // ★ 快照差值法：renderOneMessage 会把 View 追加到容器末尾，
+            //   我们记录前后的 childCount 差值，再把新增的 View 移到正确位置。
+            //   这样所有消息类型的渲染逻辑只维护 renderOneMessage 一处。
+            val before = messagesContainer.childCount
+            renderOneMessage(msg, timeStr, skipThinking = true)
+            val addedCount = messagesContainer.childCount - before
+
+            if (addedCount > 0) {
+                // 收集末尾新增的 View
+                val newViews = (0 until addedCount).map { i ->
+                    messagesContainer.getChildAt(before + i)
                 }
-                "assistant" -> {
-                    if (msg.content.trim() == "[SEEN]") {
-                        // 历史里跳过已读标记
-                    } else {
-                        if (msg.thinking.isNotEmpty()) {
-                            // 历史加载时跳过思维链，太多了会卡
-                        }
-                        val bubble = bubbleRenderer.createAiBubbleView(msg.content, timeStr)
-                        messagesContainer.addView(bubble, insertIndex)
-                        insertIndex++
-                    }
+                // 从末尾移除（倒序避免索引偏移）
+                for (v in newViews.reversed()) messagesContainer.removeView(v)
+                // 插入到正确位置
+                for ((i, v) in newViews.withIndex()) {
+                    messagesContainer.addView(v, insertIndex + i)
                 }
-                "system" -> {
-                    if (msg.type == "tip") {
-                        val tipView = TextView(activity).apply {
-                            layoutParams = LinearLayout.LayoutParams(
-                                LinearLayout.LayoutParams.MATCH_PARENT,
-                                LinearLayout.LayoutParams.WRAP_CONTENT
-                            ).apply {
-                                topMargin = dp(4)
-                                bottomMargin = dp(10)
-                            }
-                            gravity = Gravity.CENTER
-                            text = msg.content
-                            textSize = 11f
-                            setTextColor(c.textHint)
-                            setPadding(dp(20), 0, dp(20), 0)
-                        }
-                        messagesContainer.addView(tipView, insertIndex)
-                        insertIndex++
-                    }
-                }
+                insertIndex += addedCount
             }
         }
 
@@ -361,6 +374,8 @@ class ChatHistoryLoader(
         }
 
         Toast.makeText(activity, "加载了 $loadCount 条消息", Toast.LENGTH_SHORT).show()
+        bubbleRenderer.suppressScroll = false
+        // 加载更早消息后不滚到底——用户想看的是刚加载出来的历史
     }
 
     /** 渲染天气卡片，优先从 extras 读快照，其次从缓存读，都没有就降级纯文字 */
