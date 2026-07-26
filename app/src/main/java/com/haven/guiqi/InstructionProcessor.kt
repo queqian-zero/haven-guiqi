@@ -589,6 +589,14 @@ class InstructionProcessor(private val context: Context) {
             }
         }
 
+        // ===== [READ_WALL] — 查看施工日志墙（只读） =====
+        if (stickerCleanText.contains("[READ_WALL]")) {
+            stickerCleanText = stickerCleanText.replace("[READ_WALL]", "")
+            val wallContent = WallStorage(context).buildWallPromptForAI()
+            recallResults.add(wallContent)
+            actions.add("🧱 翻看了施工日志墙")
+        }
+
         // ===== [SEEN] =====
         val trimmed = stickerCleanText.trim()
         val isSeen = (trimmed == "[SEEN]" || trimmed == "[seen]" || trimmed == "[ SEEN ]")

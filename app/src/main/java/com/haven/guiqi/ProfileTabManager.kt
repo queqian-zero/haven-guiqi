@@ -157,7 +157,11 @@ class ProfileTabManager(
         addItem("导入数据", "", "从备份文件恢复好友和聊天记录") { onImport() }
 
         addSectionTitle("关于")
-        addItem("归栖 Haven", "v0.1.0", "一个属于你的地方") { }
+        val wallCount = WallStorage(activity).count()
+        val wallHint = if (wallCount > 0) "$wallCount 块砖" else "v0.1.0"
+        addItem("归栖 Haven", wallHint, "一个属于你的地方") {
+            activity.startActivity(android.content.Intent(activity, WallActivity::class.java))
+        }
     }
 
     private fun showEditUserNameDialog() {

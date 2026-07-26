@@ -86,6 +86,9 @@ object InstructionRegistry {
         Ability("[BADGE_RENAME:旧名:新名]", "给徽章改名", setOf(Scene.CHAT)),
         Ability("[MY_BADGES]", "查看徽章墙上有什么", setOf(Scene.CHAT)),
 
+        // ── 日志墙 ──
+        Ability("[READ_WALL]", "翻看施工日志墙（只读，看看谁盖了这栋房子）", setOf(Scene.CHAT, Scene.WAKE_UP)),
+
         // ── 静默 ──
         Ability("[NO_ACTION]", "什么都不做", setOf(Scene.WAKE_UP, Scene.IDLE))
     )

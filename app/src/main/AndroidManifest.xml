@@ -70,6 +70,7 @@
         <activity android:name=".SubconsciousActivity" />
         <activity android:name=".EchoActivity" />
         <activity android:name=".CapsuleActivity" />
+        <activity android:name=".WallActivity" />
         <service
             android:name=".HavenService"
             android:enabled="true"
