@@ -447,8 +447,11 @@ class FriendDetailActivity : AppCompatActivity() {
             ResidentPromptEditPermission.ASK_EACH_TIME -> "每次询问"
             ResidentPromptEditPermission.ALLOW_RESIDENT -> "自行保存"
         }
+        val activeLabel = if (profile.mode == ResidentPromptMode.LAYERED) "正在使用" else "已保留公约"
         val activeText = if (profile.activeCovenant.isBlank()) {
             "目前继续沿用旧版提示词，聊天表现不会改变。"
+        } else if (profile.mode == ResidentPromptMode.LEGACY) {
+            "版本 ${profile.activeVersion} · 当前暂停\n${profile.activeCovenant}"
         } else {
             "版本 ${profile.activeVersion}\n${profile.activeCovenant}"
         }
@@ -456,6 +459,14 @@ class FriendDetailActivity : AppCompatActivity() {
             "还没有候选草稿。住户可以在聊天里亲自写下，保存后也不会自动生效。"
         } else {
             profile.covenantDraft
+        }
+        val historyText = if (profile.versions.isEmpty()) {
+            "还没有采用过个人公约。第一次采用后，会从版本 1 开始留下完整记录。"
+        } else {
+            profile.versions.sortedByDescending { it.version }.joinToString("\n") { item ->
+                val marker = if (item.version == profile.activeVersion && profile.mode == ResidentPromptMode.LAYERED) " · 正在使用" else ""
+                "版本 ${item.version}$marker"
+            }
         }
 
         val dialog = Dialog(this)
@@ -524,9 +535,9 @@ class FriendDetailActivity : AppCompatActivity() {
             orientation = LinearLayout.VERTICAL
         }
         body.addView(buildCovenantBlock(
-            label = "正在使用",
+            label = activeLabel,
             content = activeText,
-            emphasized = profile.activeCovenant.isNotBlank()
+            emphasized = profile.mode == ResidentPromptMode.LAYERED && profile.activeCovenant.isNotBlank()
         ))
         body.addView(buildCovenantBlock(
             label = "候选草稿",
@@ -538,12 +549,21 @@ class FriendDetailActivity : AppCompatActivity() {
                 LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply { topMargin = dp(10) }
         })
+        body.addView(buildCovenantBlock(
+            label = "版本留痕",
+            content = historyText,
+            emphasized = profile.versions.isNotEmpty()
+        ).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { topMargin = dp(10) }
+        })
         body.addView(TextView(this).apply {
-            text = "聊天中写下： [COVENANT_DRAFT]…[/COVENANT_DRAFT]"
+            text = "住户可在聊天中写草稿、亲自采用、查看历史或恢复旧版。归栖只保存选择与留痕。"
             textSize = 9.5f
             setTextColor(c.textHint)
             setPadding(dp(4), dp(10), dp(4), dp(2))
-            setTextIsSelectable(true)
         })
         scroll.addView(body)
         root.addView(scroll)

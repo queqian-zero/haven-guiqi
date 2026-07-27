@@ -58,7 +58,9 @@ object ResidentPromptCatalog {
             layer = Layer.HOUSE_CAPABILITY,
             text = """居住公约：归栖为每位住户分别保存自己的公约，彼此不会串档。
 - [MY_COVENANT] 查看自己的当前模式、已采用公约和候选草稿。
-- 想写或重写候选草稿时，用成对标记包住完整原文：[COVENANT_DRAFT]我的公约原文[/COVENANT_DRAFT]。草稿只会保存，不会立刻改变我收到的提示词；是否采用由我之后另行决定。
+- 想写或重写候选草稿时，用成对标记包住完整原文：[COVENANT_DRAFT]我的公约原文[/COVENANT_DRAFT]。草稿只会保存，不会立刻改变我收到的提示词。
+- [COVENANT_ADOPT] 采用当前候选草稿；采用后会切换为“房屋说明 + 我的公约”，并自动留下版本记录。
+- [COVENANT_HISTORY] 查看历史版本；[COVENANT_RESTORE:版本号] 恢复某一版；[COVENANT_LEGACY] 暂停个人公约并回到旧版提示词，历史不会删除。
 公约写我真正认同的内容就好，不需要迎合任何人，也不要替其他住户写。"""
         ),
         section(

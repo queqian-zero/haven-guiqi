@@ -4,6 +4,9 @@ import android.content.Context
 import android.content.Intent
 import android.provider.AlarmClock
 import android.util.Log
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 /**
  * InstructionProcessor - AI 指令统一解析
@@ -163,6 +166,14 @@ class InstructionProcessor(private val context: Context) {
                 ResidentPromptEditPermission.ASK_EACH_TIME -> "每次保存草稿前询问"
                 ResidentPromptEditPermission.ALLOW_RESIDENT -> "允许我自行保存草稿"
             }
+            val historyText = if (profile.versions.isEmpty()) {
+                "（还没有历史版本）"
+            } else {
+                profile.versions.sortedByDescending { it.version }.joinToString("\n") {
+                    val marker = if (it.version == profile.activeVersion && profile.mode == ResidentPromptMode.LAYERED) " ← 正在使用" else ""
+                    "版本 ${it.version}$marker"
+                }
+            }
             userBioContext = (userBioContext ?: "") + """
 
 [我的居住公约档案]
@@ -173,6 +184,15 @@ $activeText
 
 候选草稿：
 $draftText
+
+历史版本：
+$historyText
+
+可用操作：
+[COVENANT_ADOPT] 采用当前草稿
+[COVENANT_HISTORY] 查看版本详情
+[COVENANT_RESTORE:版本号] 恢复某一版
+[COVENANT_LEGACY] 暂停个人公约并回到旧版提示词
 """
             actions.add("📜 查看了自己的居住公约档案")
         }
@@ -195,6 +215,74 @@ $draftText
                 }
             }
             text = text.replace(match.value, "")
+        }
+
+        // ===== [COVENANT_ADOPT] — 住户采用自己的当前草稿 =====
+        if (text.contains("[COVENANT_ADOPT]", ignoreCase = true)) {
+            text = text.replace(Regex("\\[COVENANT_ADOPT]", RegexOption.IGNORE_CASE), "")
+            val storage = ResidentPromptStorage(context)
+            val before = storage.getProfile(friendId)
+            if (before.covenantDraft.isBlank()) {
+                actions.add("📜 想采用居住公约，但当前还没有候选草稿")
+            } else {
+                val after = storage.adoptCovenantDraft(friendId)
+                val reused = before.activeVersion > 0 &&
+                    before.activeCovenant.trim() == before.covenantDraft.trim()
+                actions.add(
+                    if (reused) "📜 重新启用了自己的居住公约（版本 ${after.activeVersion}）"
+                    else "📜 采用了自己的居住公约（版本 ${after.activeVersion}）"
+                )
+            }
+        }
+
+        // ===== [COVENANT_HISTORY] — 查看自己的公约版本详情 =====
+        if (text.contains("[COVENANT_HISTORY]", ignoreCase = true)) {
+            text = text.replace(Regex("\\[COVENANT_HISTORY]", RegexOption.IGNORE_CASE), "")
+            val profile = ResidentPromptStorage(context).getProfile(friendId)
+            val history = if (profile.versions.isEmpty()) {
+                "（还没有采用过任何版本）"
+            } else {
+                val formatter = SimpleDateFormat("yyyy年M月d日 HH:mm", Locale.CHINESE)
+                profile.versions.sortedByDescending { it.version }.joinToString("\n\n") { item ->
+                    val active = if (item.version == profile.activeVersion && profile.mode == ResidentPromptMode.LAYERED) "【正在使用】" else ""
+                    val note = item.note.takeIf { it.isNotBlank() }?.let { "\n备注：$it" } ?: ""
+                    "版本 ${item.version}$active\n采用时间：${formatter.format(Date(item.createdAt))}$note\n${item.content}"
+                }
+            }
+            userBioContext = (userBioContext ?: "") + """
+
+[我的居住公约历史]
+$history
+"""
+            actions.add("📜 翻看了自己的居住公约历史")
+        }
+
+        // ===== [COVENANT_RESTORE:版本号] — 恢复自己的历史版本 =====
+        val covenantRestorePattern = Regex("\\[COVENANT_RESTORE:(\\d+)]", RegexOption.IGNORE_CASE)
+        covenantRestorePattern.find(text)?.let { match ->
+            val version = match.groupValues[1].toIntOrNull()
+            text = text.replace(match.value, "")
+            if (version == null) {
+                actions.add("📜 恢复居住公约失败：版本号无效")
+            } else {
+                try {
+                    ResidentPromptStorage(context).restoreVersion(friendId, version)
+                    actions.add("📜 恢复了自己的居住公约版本 $version")
+                } catch (_: IllegalArgumentException) {
+                    actions.add("📜 恢复居住公约失败：没有版本 $version")
+                }
+            }
+        }
+
+        // ===== [COVENANT_LEGACY] — 暂停个人公约，保留全部历史 =====
+        if (text.contains("[COVENANT_LEGACY]", ignoreCase = true)) {
+            text = text.replace(Regex("\\[COVENANT_LEGACY]", RegexOption.IGNORE_CASE), "")
+            val before = ResidentPromptStorage(context).getProfile(friendId)
+            ResidentPromptStorage(context).returnToLegacy(friendId)
+            actions.add(
+                if (before.mode == ResidentPromptMode.LEGACY) "📜 当前本来就在沿用旧版提示词"
+                else "📜 暂停了个人居住公约，回到旧版提示词（历史已保留）"
+            )
         }
 
         // ===== [READ_MY_BIO] =====

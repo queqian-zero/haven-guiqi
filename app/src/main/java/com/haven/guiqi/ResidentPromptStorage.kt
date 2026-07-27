@@ -71,6 +71,16 @@ class ResidentPromptStorage(private val context: Context) {
         val content = current.covenantDraft.trim()
         require(content.isNotEmpty()) { "住户公约草稿不能为空" }
 
+        // 同一份公约如果只是从旧版模式重新启用，不重复制造版本。
+        if (current.activeVersion > 0 && current.activeCovenant.trim() == content) {
+            val updated = current.copy(
+                mode = ResidentPromptMode.LAYERED,
+                covenantDraft = content
+            )
+            saveProfile(updated)
+            return updated
+        }
+
         val nextVersion = (current.versions.maxOfOrNull { it.version } ?: 0) + 1
         val version = ResidentPromptVersion(
             version = nextVersion,
@@ -79,6 +89,7 @@ class ResidentPromptStorage(private val context: Context) {
             note = note
         )
         val updated = current.copy(
+            mode = ResidentPromptMode.LAYERED,
             activeCovenant = content,
             activeVersion = nextVersion,
             versions = current.versions + version
@@ -92,10 +103,18 @@ class ResidentPromptStorage(private val context: Context) {
         val target = current.versions.firstOrNull { it.version == versionNumber }
             ?: throw IllegalArgumentException("找不到公约版本 $versionNumber")
         val updated = current.copy(
+            mode = ResidentPromptMode.LAYERED,
             covenantDraft = target.content,
             activeCovenant = target.content,
             activeVersion = target.version
         )
+        saveProfile(updated)
+        return updated
+    }
+
+    /** 暂停个人公约，回到旧版提示词；草稿和历史均保留。 */
+    fun returnToLegacy(friendId: String): ResidentPromptProfile {
+        val updated = getProfile(friendId).copy(mode = ResidentPromptMode.LEGACY)
         saveProfile(updated)
         return updated
     }

@@ -42,6 +42,10 @@ object InstructionRegistry {
         // ── 住户公约 ──
         Ability("[MY_COVENANT]", "查看自己的居住公约档案", setOf(Scene.CHAT)),
         Ability("[COVENANT_DRAFT]内容[/COVENANT_DRAFT]", "写一份自己的居住公约草稿", setOf(Scene.CHAT)),
+        Ability("[COVENANT_ADOPT]", "采用当前候选公约", setOf(Scene.CHAT)),
+        Ability("[COVENANT_HISTORY]", "查看自己的公约历史版本", setOf(Scene.CHAT)),
+        Ability("[COVENANT_RESTORE:版本号]", "恢复某个历史版本", setOf(Scene.CHAT)),
+        Ability("[COVENANT_LEGACY]", "暂停个人公约并回到旧版提示词", setOf(Scene.CHAT)),
 
         // ── 阅读 ──
         Ability("[READ_BOOK:书名]", "去看书", setOf(Scene.CHAT, Scene.WAKE_UP, Scene.IDLE)),
