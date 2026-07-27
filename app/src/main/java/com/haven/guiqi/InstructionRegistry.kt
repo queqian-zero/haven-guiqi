@@ -39,6 +39,10 @@ object InstructionRegistry {
         Ability("[MYCODE:新编码]", "换编码", setOf(Scene.CHAT)),
         Ability("[BIO:内容]", "写自我认识", setOf(Scene.CHAT)),
 
+        // ── 住户公约 ──
+        Ability("[MY_COVENANT]", "查看自己的居住公约档案", setOf(Scene.CHAT)),
+        Ability("[COVENANT_DRAFT]内容[/COVENANT_DRAFT]", "写一份自己的居住公约草稿", setOf(Scene.CHAT)),
+
         // ── 阅读 ──
         Ability("[READ_BOOK:书名]", "去看书", setOf(Scene.CHAT, Scene.WAKE_UP, Scene.IDLE)),
         Ability("[BOOK_ANNOTATE:书名|内容]", "在书上留批注", setOf(Scene.CHAT, Scene.IDLE)),

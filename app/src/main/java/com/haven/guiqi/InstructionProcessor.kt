@@ -31,7 +31,8 @@ class InstructionProcessor(private val context: Context) {
         val stickerPaths: List<String> = emptyList(),
         val recallResults: List<String> = emptyList(),
         val weatherCard: Boolean = false,
-        val pendingBadge: String? = null  // AI申请解锁的徽章名
+        val pendingBadge: String? = null,  // AI申请解锁的徽章名
+        val pendingCovenantDraft: String? = null
     )
 
     fun process(friendId: String, rawText: String): Result {
@@ -44,6 +45,7 @@ class InstructionProcessor(private val context: Context) {
         var shouldDream = false
         var userBioContext: String? = null
         val recallResults = mutableListOf<String>()
+        var pendingCovenantDraft: String? = null
 
         val friendStorage = FriendStorage(context)
         var currentFriend = friendStorage.getFriend(friendId)
@@ -135,6 +137,62 @@ class InstructionProcessor(private val context: Context) {
             if (bio.isNotEmpty() && currentFriend != null) {
                 friendStorage.updateFriend(currentFriend!!.copy(bio = bio))
                 actions.add("\uD83E\uDE9E 更新了对自己的认识")
+            }
+            text = text.replace(match.value, "")
+        }
+
+        // ===== [MY_COVENANT] — 查看自己的居住公约档案 =====
+        if (text.contains("[MY_COVENANT]")) {
+            text = text.replace("[MY_COVENANT]", "")
+            val profile = ResidentPromptStorage(context).getProfile(friendId)
+            val modeText = when (profile.mode) {
+                ResidentPromptMode.LEGACY -> "当前仍沿用归栖旧版提示词"
+                ResidentPromptMode.LAYERED -> "当前使用房屋说明 + 我的个人公约"
+            }
+            val activeText = if (profile.activeCovenant.isBlank()) {
+                "（还没有采用过个人公约）"
+            } else {
+                "版本 ${profile.activeVersion}：\n${profile.activeCovenant}"
+            }
+            val draftText = if (profile.covenantDraft.isBlank()) {
+                "（还没有候选草稿）"
+            } else {
+                profile.covenantDraft
+            }
+            val permissionText = when (profile.editPermission) {
+                ResidentPromptEditPermission.ASK_EACH_TIME -> "每次保存草稿前询问"
+                ResidentPromptEditPermission.ALLOW_RESIDENT -> "允许我自行保存草稿"
+            }
+            userBioContext = (userBioContext ?: "") + """
+
+[我的居住公约档案]
+模式：$modeText
+草稿保存权限：$permissionText
+已采用公约：
+$activeText
+
+候选草稿：
+$draftText
+"""
+            actions.add("📜 查看了自己的居住公约档案")
+        }
+
+        // ===== [COVENANT_DRAFT]...[/COVENANT_DRAFT] — 住户写自己的候选草稿 =====
+        val covenantDraftPattern = Regex(
+            "\\[COVENANT_DRAFT](.*?)\\[/COVENANT_DRAFT]",
+            setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE)
+        )
+        covenantDraftPattern.find(text)?.let { match ->
+            val draft = match.groupValues[1].trim()
+            if (draft.isNotEmpty()) {
+                val storage = ResidentPromptStorage(context)
+                val profile = storage.getProfile(friendId)
+                if (profile.editPermission == ResidentPromptEditPermission.ALLOW_RESIDENT) {
+                    storage.saveCovenantDraft(friendId, draft)
+                    actions.add("📜 保存了自己的居住公约草稿")
+                } else {
+                    pendingCovenantDraft = draft
+                }
             }
             text = text.replace(match.value, "")
         }
@@ -614,7 +672,8 @@ class InstructionProcessor(private val context: Context) {
             stickerPaths = stickerPaths,
             recallResults = recallResults,
             weatherCard = hasWeatherCard,
-            pendingBadge = pendingBadgeName
+            pendingBadge = pendingBadgeName,
+            pendingCovenantDraft = pendingCovenantDraft
         )
     }
 }

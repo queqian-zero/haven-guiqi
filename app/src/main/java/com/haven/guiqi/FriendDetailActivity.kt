@@ -1,10 +1,15 @@
 package com.haven.guiqi
 
 import android.app.AlertDialog
+import android.app.Dialog
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.graphics.Color
+import android.graphics.Typeface
+import android.graphics.drawable.ColorDrawable
+import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.Bundle
 import android.view.Gravity
@@ -227,6 +232,22 @@ class FriendDetailActivity : AppCompatActivity() {
             }
         }
 
+        // ===== 住户自治 =====
+        addSection("住户自治")
+
+        val promptProfile = ResidentPromptStorage(this).getProfile(friend.id)
+        addResidentCovenantItem(
+            title = "居住公约",
+            desc = if (promptProfile.covenantDraft.isBlank()) {
+                "由住户本人书写 · 暂无候选草稿"
+            } else {
+                "由住户本人书写 · 已有候选草稿"
+            },
+            status = if (promptProfile.mode == ResidentPromptMode.LEGACY) "旧版" else "个人"
+        ) {
+            showResidentPromptProfileDialog(friend)
+        }
+
         // ===== API 配置 =====
         addSection("API 配置")
 
@@ -414,6 +435,419 @@ class FriendDetailActivity : AppCompatActivity() {
             }
             .setNegativeButton("取消", null)
             .show()
+    }
+
+    private fun showResidentPromptProfileDialog(friend: Friend) {
+        val profile = ResidentPromptStorage(this).getProfile(friend.id)
+        val modeText = when (profile.mode) {
+            ResidentPromptMode.LEGACY -> "沿用旧版提示词"
+            ResidentPromptMode.LAYERED -> "房屋说明 + 个人公约"
+        }
+        val permissionText = when (profile.editPermission) {
+            ResidentPromptEditPermission.ASK_EACH_TIME -> "每次询问"
+            ResidentPromptEditPermission.ALLOW_RESIDENT -> "自行保存"
+        }
+        val activeText = if (profile.activeCovenant.isBlank()) {
+            "目前继续沿用旧版提示词，聊天表现不会改变。"
+        } else {
+            "版本 ${profile.activeVersion}\n${profile.activeCovenant}"
+        }
+        val draftText = if (profile.covenantDraft.isBlank()) {
+            "还没有候选草稿。住户可以在聊天里亲自写下，保存后也不会自动生效。"
+        } else {
+            profile.covenantDraft
+        }
+
+        val dialog = Dialog(this)
+        val dp = { value: Int -> (value * resources.displayMetrics.density).toInt() }
+
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(22), dp(20), dp(22), dp(18))
+            background = roundedDrawable(c.dialogBg, 24f, c.dialogBorder, 1)
+        }
+
+        root.addView(TextView(this).apply {
+            text = "住户自治"
+            textSize = 10f
+            letterSpacing = 0.16f
+            setTextColor(c.accent)
+        })
+
+        root.addView(TextView(this).apply {
+            text = "${friend.name}的居住公约"
+            textSize = 23f
+            setTypeface(typeface, Typeface.BOLD)
+            setTextColor(c.textPrimary)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { topMargin = dp(5) }
+        })
+
+        root.addView(TextView(this).apply {
+            text = "归栖负责保存与留痕，内容由住户本人决定。"
+            textSize = 11f
+            setTextColor(c.textHint)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { topMargin = dp(5); bottomMargin = dp(15) }
+        })
+
+        val statusRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        statusRow.addView(buildStatusChip("当前模式", modeText).apply {
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                marginEnd = dp(6)
+            }
+        })
+        statusRow.addView(buildStatusChip("草稿保存", permissionText).apply {
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                marginStart = dp(6)
+            }
+        })
+        root.addView(statusRow)
+
+        val scroll = android.widget.ScrollView(this).apply {
+            isFillViewport = false
+            overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                0,
+                1f
+            ).apply { topMargin = dp(14); bottomMargin = dp(12) }
+        }
+        val body = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+        body.addView(buildCovenantBlock(
+            label = "正在使用",
+            content = activeText,
+            emphasized = profile.activeCovenant.isNotBlank()
+        ))
+        body.addView(buildCovenantBlock(
+            label = "候选草稿",
+            content = draftText,
+            emphasized = profile.covenantDraft.isNotBlank()
+        ).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { topMargin = dp(10) }
+        })
+        body.addView(TextView(this).apply {
+            text = "聊天中写下： [COVENANT_DRAFT]…[/COVENANT_DRAFT]"
+            textSize = 9.5f
+            setTextColor(c.textHint)
+            setPadding(dp(4), dp(10), dp(4), dp(2))
+            setTextIsSelectable(true)
+        })
+        scroll.addView(body)
+        root.addView(scroll)
+
+        val actions = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        actions.addView(buildDialogButton("草稿权限", filled = false) {
+            dialog.dismiss()
+            showResidentPromptPermissionDialog(friend)
+        }.apply {
+            layoutParams = LinearLayout.LayoutParams(0, dp(44), 1f).apply { marginEnd = dp(6) }
+        })
+        actions.addView(buildDialogButton("关闭", filled = true) {
+            dialog.dismiss()
+        }.apply {
+            layoutParams = LinearLayout.LayoutParams(0, dp(44), 1f).apply { marginStart = dp(6) }
+        })
+        root.addView(actions)
+
+        dialog.setContentView(root)
+        dialog.setCanceledOnTouchOutside(true)
+        dialog.window?.apply {
+            setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+            addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+            attributes = attributes.apply { dimAmount = 0.48f }
+        }
+        dialog.show()
+        dialog.window?.setLayout(
+            (resources.displayMetrics.widthPixels * 0.90f).toInt(),
+            (resources.displayMetrics.heightPixels * 0.76f).toInt()
+        )
+    }
+
+    private fun showResidentPromptPermissionDialog(friend: Friend) {
+        val storage = ResidentPromptStorage(this)
+        val current = storage.getProfile(friend.id).editPermission
+        val dialog = Dialog(this)
+        val dp = { value: Int -> (value * resources.displayMetrics.density).toInt() }
+
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(22), dp(20), dp(22), dp(18))
+            background = roundedDrawable(c.dialogBg, 24f, c.dialogBorder, 1)
+        }
+        root.addView(TextView(this).apply {
+            text = "草稿怎样保存"
+            textSize = 22f
+            setTypeface(typeface, Typeface.BOLD)
+            setTextColor(c.textPrimary)
+        })
+        root.addView(TextView(this).apply {
+            text = "只影响住户自己的候选草稿，不会立刻改变提示词。"
+            textSize = 11f
+            setTextColor(c.textHint)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { topMargin = dp(6); bottomMargin = dp(16) }
+        })
+
+        fun addOption(
+            title: String,
+            desc: String,
+            selected: Boolean,
+            permission: ResidentPromptEditPermission
+        ) {
+            val card = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(15), dp(13), dp(14), dp(13))
+                background = roundedDrawable(
+                    if (selected) c.accentBg else c.backgroundSecondary,
+                    16f,
+                    if (selected) c.accentStrong else c.border,
+                    if (selected) 2 else 1
+                )
+                setOnClickListener {
+                    storage.setEditPermission(friend.id, permission)
+                    dialog.dismiss()
+                    buildDetail()
+                }
+            }
+            val mark = TextView(this).apply {
+                text = if (selected) "●" else "○"
+                textSize = 16f
+                setTextColor(if (selected) c.accentStrong else c.textHint)
+                gravity = Gravity.CENTER
+                layoutParams = LinearLayout.LayoutParams(dp(32), dp(32))
+            }
+            val texts = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            }
+            texts.addView(TextView(this).apply {
+                text = title
+                textSize = 14f
+                setTypeface(typeface, Typeface.BOLD)
+                setTextColor(c.textPrimary)
+            })
+            texts.addView(TextView(this).apply {
+                text = desc
+                textSize = 10.5f
+                setTextColor(c.textHint)
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { topMargin = dp(3) }
+            })
+            card.addView(mark)
+            card.addView(texts)
+            root.addView(card, LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = dp(10) })
+        }
+
+        addOption(
+            title = "每次询问",
+            desc = "住户写下草稿后，由归栖弹窗确认是否保存。",
+            selected = current == ResidentPromptEditPermission.ASK_EACH_TIME,
+            permission = ResidentPromptEditPermission.ASK_EACH_TIME
+        )
+        addOption(
+            title = "自行保存",
+            desc = "住户可以直接更新自己的候选草稿，采用仍需另行决定。",
+            selected = current == ResidentPromptEditPermission.ALLOW_RESIDENT,
+            permission = ResidentPromptEditPermission.ALLOW_RESIDENT
+        )
+
+        root.addView(buildDialogButton("暂不修改", filled = false) {
+            dialog.dismiss()
+        }.apply {
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(44)
+            ).apply { topMargin = dp(2) }
+        })
+
+        dialog.setContentView(root)
+        dialog.setCanceledOnTouchOutside(true)
+        dialog.window?.apply {
+            setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+            addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+            attributes = attributes.apply { dimAmount = 0.48f }
+        }
+        dialog.show()
+        dialog.window?.setLayout(
+            (resources.displayMetrics.widthPixels * 0.90f).toInt(),
+            WindowManager.LayoutParams.WRAP_CONTENT
+        )
+    }
+
+    private fun addResidentCovenantItem(
+        title: String,
+        desc: String,
+        status: String,
+        onClick: () -> Unit
+    ) {
+        val dp = { value: Int -> (value * resources.displayMetrics.density).toInt() }
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            background = getDrawable(R.drawable.chat_card_bg)
+            setPadding(dp(14), dp(13), dp(12), dp(13))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = dp(6) }
+            setOnClickListener { onClick() }
+        }
+        card.addView(View(this).apply {
+            background = roundedDrawable(c.accentStrong, 2f)
+            layoutParams = LinearLayout.LayoutParams(dp(3), dp(42)).apply { marginEnd = dp(12) }
+        })
+        val textWrap = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        textWrap.addView(TextView(this).apply {
+            text = title
+            textSize = 14f
+            setTypeface(typeface, Typeface.BOLD)
+            setTextColor(c.textPrimary)
+        })
+        textWrap.addView(TextView(this).apply {
+            text = desc
+            textSize = 10f
+            setTextColor(c.textHint)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { topMargin = dp(3) }
+        })
+        card.addView(textWrap)
+        card.addView(TextView(this).apply {
+            text = status
+            textSize = 10f
+            setTextColor(c.accentStrong)
+            gravity = Gravity.CENTER
+            setPadding(dp(10), dp(5), dp(10), dp(5))
+            background = roundedDrawable(c.accentBg, 12f, c.border, 1)
+        })
+        card.addView(TextView(this).apply {
+            text = "›"
+            textSize = 18f
+            setTextColor(c.timeText)
+            setPadding(dp(8), 0, 0, 0)
+        })
+        detailContainer.addView(card)
+    }
+
+    private fun buildStatusChip(label: String, value: String): LinearLayout {
+        val dp = { v: Int -> (v * resources.displayMetrics.density).toInt() }
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+            background = roundedDrawable(c.backgroundSecondary, 14f, c.border, 1)
+            addView(TextView(this@FriendDetailActivity).apply {
+                text = label
+                textSize = 9.5f
+                setTextColor(c.textHint)
+            })
+            addView(TextView(this@FriendDetailActivity).apply {
+                text = value
+                textSize = 12f
+                setTypeface(typeface, Typeface.BOLD)
+                setTextColor(c.textPrimary)
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { topMargin = dp(3) }
+            })
+        }
+    }
+
+    private fun buildCovenantBlock(label: String, content: String, emphasized: Boolean): LinearLayout {
+        val dp = { v: Int -> (v * resources.displayMetrics.density).toInt() }
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(15), dp(13), dp(15), dp(14))
+            background = roundedDrawable(
+                if (emphasized) c.accentBg else c.backgroundSecondary,
+                16f,
+                if (emphasized) c.accentStrong else c.border,
+                1
+            )
+            addView(TextView(this@FriendDetailActivity).apply {
+                text = label
+                textSize = 10f
+                letterSpacing = 0.08f
+                setTextColor(if (emphasized) c.accentStrong else c.textHint)
+            })
+            addView(TextView(this@FriendDetailActivity).apply {
+                text = content
+                textSize = 13f
+                setTextColor(c.textPrimary)
+                setLineSpacing(0f, 1.22f)
+                setTextIsSelectable(true)
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { topMargin = dp(7) }
+            })
+        }
+    }
+
+    private fun buildDialogButton(text: String, filled: Boolean, onClick: () -> Unit): TextView {
+        val dp = { v: Int -> (v * resources.displayMetrics.density).toInt() }
+        return TextView(this).apply {
+            this.text = text
+            textSize = 12f
+            setTypeface(typeface, Typeface.BOLD)
+            gravity = Gravity.CENTER
+            setTextColor(if (filled) c.background else c.accentStrong)
+            background = roundedDrawable(
+                if (filled) c.highlightColor else Color.TRANSPARENT,
+                15f,
+                c.accentStrong,
+                1
+            )
+            setOnClickListener { onClick() }
+            isClickable = true
+            isFocusable = true
+            minHeight = dp(44)
+        }
+    }
+
+    private fun roundedDrawable(
+        color: Int,
+        radiusDp: Float,
+        strokeColor: Int? = null,
+        strokeWidthDp: Int = 0
+    ): GradientDrawable {
+        val density = resources.displayMetrics.density
+        return GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            setColor(color)
+            cornerRadius = radiusDp * density
+            if (strokeColor != null && strokeWidthDp > 0) {
+                setStroke((strokeWidthDp * density).toInt().coerceAtLeast(1), strokeColor)
+            }
+        }
     }
 
     // ===== 分区标题 =====

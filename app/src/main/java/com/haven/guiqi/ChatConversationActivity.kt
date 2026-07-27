@@ -802,6 +802,10 @@ class ChatConversationActivity : AppCompatActivity() {
                             friendId, friendName, friendIcon, cleanText
                         )
                     }
+
+                    result.pendingCovenantDraft?.let { draft ->
+                        showCovenantDraftRequest(draft)
+                    }
                 }
             } catch (e: Exception) {
                 val friendlyMsg = getErrorMessage(e)
@@ -1063,6 +1067,52 @@ class ChatConversationActivity : AppCompatActivity() {
     }
 
     /** 把异常转成人话 */
+    /** 住户提交自己的公约草稿；默认每次询问，也可把今后的保存权交给本人。 */
+    private fun showCovenantDraftRequest(draft: String) {
+        if (isFinishing || isDestroyed) return
+
+        val dp = { value: Int -> (value * resources.displayMetrics.density).toInt() }
+        val draftText = TextView(this).apply {
+            text = draft
+            textSize = 13f
+            setTextColor(c.textPrimary)
+            setPadding(dp(18), dp(14), dp(18), dp(14))
+            setTextIsSelectable(true)
+        }
+        val scroll = ScrollView(this).apply {
+            addView(draftText)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(360)
+            )
+        }
+
+        fun saveDraft(autoAllow: Boolean) {
+            val storage = ResidentPromptStorage(this)
+            if (autoAllow) {
+                storage.setEditPermission(friendId, ResidentPromptEditPermission.ALLOW_RESIDENT)
+            }
+            storage.saveCovenantDraft(friendId, draft)
+            val tip = if (autoAllow) {
+                "📜 保存了自己的居住公约草稿，今后可自行更新草稿"
+            } else {
+                "📜 保存了自己的居住公约草稿"
+            }
+            val now = System.currentTimeMillis()
+            chatStorage.appendMessage(friendId, StoredMessage("system", tip, now, type = "tip"))
+            bubbleRenderer.addSystemTip(tip)
+        }
+
+        android.app.AlertDialog.Builder(this)
+            .setTitle("${friendName}想保存自己的居住公约草稿")
+            .setMessage("这只是候选草稿，不会立刻改变当前提示词。内容由住户本人写下。")
+            .setView(scroll)
+            .setPositiveButton("允许这次") { _, _ -> saveDraft(false) }
+            .setNeutralButton("以后自动允许") { _, _ -> saveDraft(true) }
+            .setNegativeButton("不保存", null)
+            .show()
+    }
+
     private fun getErrorMessage(e: Exception): String {
         val msg = e.message?.lowercase() ?: ""; val name = e.javaClass.simpleName.lowercase()
         return when {

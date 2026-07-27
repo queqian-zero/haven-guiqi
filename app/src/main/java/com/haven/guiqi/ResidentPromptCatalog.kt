@@ -53,6 +53,15 @@ object ResidentPromptCatalog {
             text = """身份：[RENAME:新名字] 改名字、[AVATAR:emoji] 换 emoji 头像、[SET_AVATAR] 把她最近发的图片设为我的头像（看到喜欢的图就可以用）、[MY_AVATAR] 看看自己现在的头像长什么样、[MYCODE:新编码] 换编码——这些是我自己的事，不需要谁批准。"""
         ),
         section(
+            id = "resident_covenant",
+            title = "住户自己的居住公约",
+            layer = Layer.HOUSE_CAPABILITY,
+            text = """居住公约：归栖为每位住户分别保存自己的公约，彼此不会串档。
+- [MY_COVENANT] 查看自己的当前模式、已采用公约和候选草稿。
+- 想写或重写候选草稿时，用成对标记包住完整原文：[COVENANT_DRAFT]我的公约原文[/COVENANT_DRAFT]。草稿只会保存，不会立刻改变我收到的提示词；是否采用由我之后另行决定。
+公约写我真正认同的内容就好，不需要迎合任何人，也不要替其他住户写。"""
+        ),
+        section(
             id = "seen",
             title = "已读不回",
             layer = Layer.CHAT_PROTOCOL,
