@@ -1067,25 +1067,111 @@ class ChatConversationActivity : AppCompatActivity() {
     }
 
     /** 把异常转成人话 */
-    /** 住户提交自己的公约草稿；默认每次询问，也可把今后的保存权交给本人。 */
+    /** 住户提交自己的公约草稿；长草稿放进可滚动正文，操作区始终固定在底部。 */
     private fun showCovenantDraftRequest(draft: String) {
         if (isFinishing || isDestroyed) return
 
         val dp = { value: Int -> (value * resources.displayMetrics.density).toInt() }
+        val dialog = android.app.Dialog(this)
+        dialog.setCancelable(true)
+        dialog.setCanceledOnTouchOutside(true)
+
+        fun roundedBackground(color: Int, radiusDp: Int, strokeColor: Int? = null): android.graphics.drawable.GradientDrawable {
+            return android.graphics.drawable.GradientDrawable().apply {
+                shape = android.graphics.drawable.GradientDrawable.RECTANGLE
+                setColor(color)
+                cornerRadius = dp(radiusDp).toFloat()
+                if (strokeColor != null) setStroke(dp(1), strokeColor)
+            }
+        }
+
+        fun actionButton(
+            label: String,
+            emphasized: Boolean = false,
+            onClick: () -> Unit
+        ): TextView {
+            return TextView(this).apply {
+                text = label
+                textSize = 13f
+                gravity = Gravity.CENTER
+                setTextColor(if (emphasized) c.textOnAccent else c.textPrimary)
+                background = roundedBackground(
+                    if (emphasized) c.accent else c.accentBg,
+                    14,
+                    if (emphasized) null else c.border
+                )
+                setPadding(dp(10), dp(12), dp(10), dp(12))
+                setOnClickListener { onClick() }
+            }
+        }
+
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(22), dp(18), dp(22), dp(18))
+            background = roundedBackground(c.dialogBg, 24, c.dialogBorder)
+        }
+
+        val header = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val titleWrap = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+        titleWrap.addView(TextView(this).apply {
+            text = "${friendName}的候选公约"
+            textSize = 20f
+            setTextColor(c.textPrimary)
+        })
+        titleWrap.addView(TextView(this).apply {
+            text = "由住户本人写下，只保存草稿，不会立刻改变提示词"
+            textSize = 12f
+            setTextColor(c.textSecondary)
+            setPadding(0, dp(5), 0, 0)
+        })
+        header.addView(titleWrap, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        header.addView(TextView(this).apply {
+            text = "×"
+            textSize = 25f
+            gravity = Gravity.CENTER
+            setTextColor(c.textSecondary)
+            contentDescription = "关闭"
+            setPadding(dp(12), dp(4), dp(2), dp(4))
+            setOnClickListener { dialog.dismiss() }
+        })
+        root.addView(header)
+
+        root.addView(View(this).apply { setBackgroundColor(c.divider) }, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            dp(1)
+        ).apply { setMargins(0, dp(16), 0, dp(8)) })
+
         val draftText = TextView(this).apply {
             text = draft
-            textSize = 13f
+            textSize = 14f
             setTextColor(c.textPrimary)
-            setPadding(dp(18), dp(14), dp(18), dp(14))
+            setLineSpacing(0f, 1.25f)
+            setPadding(dp(4), dp(10), dp(12), dp(18))
             setTextIsSelectable(true)
         }
         val scroll = ScrollView(this).apply {
-            addView(draftText)
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                dp(360)
-            )
+            isFillViewport = true
+            overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS
+            addView(draftText, FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT
+            ))
         }
+        root.addView(scroll, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            0,
+            1f
+        ))
+
+        root.addView(View(this).apply { setBackgroundColor(c.divider) }, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            dp(1)
+        ).apply { setMargins(0, dp(8), 0, dp(14)) })
 
         fun saveDraft(autoAllow: Boolean) {
             val storage = ResidentPromptStorage(this)
@@ -1101,16 +1187,42 @@ class ChatConversationActivity : AppCompatActivity() {
             val now = System.currentTimeMillis()
             chatStorage.appendMessage(friendId, StoredMessage("system", tip, now, type = "tip"))
             bubbleRenderer.addSystemTip(tip)
+            dialog.dismiss()
         }
 
-        android.app.AlertDialog.Builder(this)
-            .setTitle("${friendName}想保存自己的居住公约草稿")
-            .setMessage("这只是候选草稿，不会立刻改变当前提示词。内容由住户本人写下。")
-            .setView(scroll)
-            .setPositiveButton("允许这次") { _, _ -> saveDraft(false) }
-            .setNeutralButton("以后自动允许") { _, _ -> saveDraft(true) }
-            .setNegativeButton("不保存", null)
-            .show()
+        val actions = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+        val primaryRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+        }
+        primaryRow.addView(actionButton("不保存") { dialog.dismiss() }, LinearLayout.LayoutParams(
+            0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f
+        ).apply { setMargins(0, 0, dp(8), 0) })
+        primaryRow.addView(actionButton("允许这次", emphasized = true) { saveDraft(false) }, LinearLayout.LayoutParams(
+            0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f
+        ))
+        actions.addView(primaryRow)
+        actions.addView(actionButton("以后由住户自行保存草稿") { saveDraft(true) }, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        ).apply { setMargins(0, dp(9), 0, 0) })
+        root.addView(actions)
+
+        dialog.setContentView(root)
+        dialog.window?.apply {
+            setBackgroundDrawable(android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT))
+            addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+            attributes = attributes.apply { dimAmount = 0.48f }
+        }
+        dialog.show()
+
+        val metrics = resources.displayMetrics
+        dialog.window?.setLayout(
+            (metrics.widthPixels * 0.92f).toInt(),
+            (metrics.heightPixels * 0.82f).toInt()
+        )
     }
 
     private fun getErrorMessage(e: Exception): String {
