@@ -2,7 +2,10 @@ package com.haven.guiqi
 
 import android.content.Context
 import android.content.Intent
+import android.graphics.Color
 import android.graphics.Rect
+import android.graphics.drawable.ColorDrawable
+import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -17,6 +20,7 @@ import android.view.inputmethod.InputMethodManager
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.LinearLayout
+import android.widget.PopupWindow
 import android.widget.ScrollView
 import org.json.JSONArray
 import org.json.JSONObject
@@ -51,7 +55,16 @@ class ChatConversationActivity : AppCompatActivity() {
     private lateinit var composerCollapsedButton: TextView
     private lateinit var expandedInputPanel: LinearLayout
     private lateinit var expandedInput: EditText
+    private lateinit var composerPinIndicator: TextView
     private var isComposerExpanded = false
+    private var isComposerPinned = false
+    private var composerQuickMenu: PopupWindow? = null
+
+    // 分条输入期间，输入区进入临时保持展开状态。
+    // 这不是持久“锁定”，退出分条后会恢复进入前的展开/收起状态。
+    private var batchComposerHoldActive = false
+    private var composerExpandedBeforeBatch = false
+    private var largeInputWasOpenBeforeBatch = false
     private val composerEasing = PathInterpolator(0.22f, 1f, 0.36f, 1f)
         // 表情包相关
     private lateinit var stickerPanel: LinearLayout
@@ -192,6 +205,7 @@ class ChatConversationActivity : AppCompatActivity() {
         composerCollapsedButton = findViewById(R.id.composerCollapsedButton)
         expandedInputPanel = findViewById(R.id.expandedInputPanel)
         expandedInput = findViewById(R.id.expandedInput)
+        composerPinIndicator = findViewById(R.id.composerPinIndicator)
         stickerPanel = findViewById(R.id.stickerPanel)
         stickerGrid = findViewById(R.id.stickerGrid)
         stickerGroupTabs = findViewById(R.id.stickerGroupTabs)
@@ -203,6 +217,8 @@ class ChatConversationActivity : AppCompatActivity() {
         }
 
         friendId = intent.getStringExtra("friend_id") ?: ""
+        isComposerPinned = getSharedPreferences("haven_composer", MODE_PRIVATE)
+            .getBoolean("pinned_$friendId", false)
         friendName = intent.getStringExtra("friend_name") ?: "好友"
         friendIcon = intent.getStringExtra("friend_icon") ?: "★"
         val friend = FriendStorage(this).getFriend(friendId)
@@ -229,13 +245,33 @@ class ChatConversationActivity : AppCompatActivity() {
             findViewById(R.id.pendingArea),
             findViewById(R.id.pendingMessages),
             findViewById(R.id.pendingCount),
-            findViewById(R.id.btnBatch)
+            null
         )
         batchModeManager.onToggle = { entering ->
             if (entering) {
+                composerExpandedBeforeBatch = isComposerExpanded
+                largeInputWasOpenBeforeBatch = expandedInputPanel.visibility == View.VISIBLE
+                batchComposerHoldActive = true
+
                 plusMenuManager.hide(false)
                 stickerPanelManager.hide()
-                if (expandedInputPanel.visibility == View.VISIBLE) toggleExpandedInput(false)
+                if (largeInputWasOpenBeforeBatch) {
+                    toggleExpandedInput(false)
+                }
+                // 分条模式需要持续查看和滚动待发列表，因此临时保持普通输入栏展开。
+                expandComposer(showKeyboard = true)
+            } else {
+                batchComposerHoldActive = false
+
+                when {
+                    isComposerPinned -> expandComposer(showKeyboard = false)
+                    largeInputWasOpenBeforeBatch -> toggleExpandedInput(true)
+                    composerExpandedBeforeBatch -> expandComposer(showKeyboard = false)
+                    else -> collapseComposer(force = true)
+                }
+
+                composerExpandedBeforeBatch = false
+                largeInputWasOpenBeforeBatch = false
             }
         }
         memoryStorage = MemoryStorage(this)
@@ -282,13 +318,38 @@ class ChatConversationActivity : AppCompatActivity() {
             }
         }
 
-        btnPlus.setOnClickListener { plusMenuManager.toggle() }
+        btnPlus.setOnClickListener {
+            dismissComposerQuickMenu()
+            plusMenuManager.toggle()
+        }
         composerCollapsedButton.setOnClickListener { expandComposer(showKeyboard = true) }
 
-        // 分条模式按钮
-        findViewById<LinearLayout>(R.id.plusBtnBatch).setOnClickListener {
-            plusMenuManager.hide()
-            batchModeManager.toggle()
+        // 长按小星星或展开状态的加号：打开输入快捷菜单。
+        // 输入框自己的长按仍交给系统，用于选词、复制和粘贴。
+        val showQuickMenu = View.OnLongClickListener {
+            showComposerQuickMenu()
+            true
+        }
+        composerCollapsedButton.setOnLongClickListener(showQuickMenu)
+        btnPlus.setOnLongClickListener(showQuickMenu)
+        inputBar.setOnLongClickListener(showQuickMenu)
+        expandedInputPanel.setOnLongClickListener(showQuickMenu)
+        // 空输入框时长按打开快捷菜单；已有文字时保留系统选词/复制粘贴。
+        inputMessage.setOnLongClickListener {
+            if (inputMessage.text.isNullOrEmpty()) {
+                showComposerQuickMenu()
+                true
+            } else {
+                false
+            }
+        }
+        expandedInput.setOnLongClickListener {
+            if (expandedInput.text.isNullOrEmpty()) {
+                showComposerQuickMenu()
+                true
+            } else {
+                false
+            }
         }
 
         // 发送全部
@@ -303,11 +364,6 @@ class ChatConversationActivity : AppCompatActivity() {
             startActivityForResult(intent, PICK_STICKER)
         }
 
-        // 展开模式
-        findViewById<LinearLayout>(R.id.plusBtnExpand).setOnClickListener {
-            plusMenuManager.hide()
-            toggleExpandedInput(true)
-        }
         findViewById<TextView>(R.id.btnCollapse).setOnClickListener { toggleExpandedInput(false) }
                 findViewById<TextView>(R.id.btnExpandSend).setOnClickListener {
             val text = expandedInput.text.toString().trim()
@@ -484,24 +540,40 @@ class ChatConversationActivity : AppCompatActivity() {
             inputBar.alpha = 1f
             inputBar.scaleX = 1f
             inputBar.scaleY = 1f
+            batchModeManager.setComposerVisible(true)
         }
     }
 
     // ===== 可收放输入栏 =====
     private fun setupCollapsibleComposer() {
-        inputBar.visibility = View.GONE
-        inputBar.alpha = 0f
-        inputBar.scaleX = 0.18f
-        inputBar.scaleY = 0.86f
-        composerCollapsedButton.visibility = View.VISIBLE
-        composerCollapsedButton.alpha = 1f
-        composerCollapsedButton.scaleX = 1f
-        composerCollapsedButton.scaleY = 1f
+        updateComposerPinIndicator()
+        if (isComposerPinned) {
+            isComposerExpanded = true
+            inputBar.visibility = View.VISIBLE
+            inputBar.alpha = 1f
+            inputBar.scaleX = 1f
+            inputBar.scaleY = 1f
+            composerCollapsedButton.visibility = View.INVISIBLE
+            composerCollapsedButton.alpha = 0f
+            batchModeManager.setComposerVisible(true)
+        } else {
+            isComposerExpanded = false
+            inputBar.visibility = View.GONE
+            inputBar.alpha = 0f
+            inputBar.scaleX = 0.18f
+            inputBar.scaleY = 0.86f
+            composerCollapsedButton.visibility = View.VISIBLE
+            composerCollapsedButton.alpha = 1f
+            composerCollapsedButton.scaleX = 1f
+            composerCollapsedButton.scaleY = 1f
+            batchModeManager.setComposerVisible(false)
+        }
     }
 
     private fun expandComposer(showKeyboard: Boolean) {
         if (expandedInputPanel.visibility == View.VISIBLE) return
         if (isComposerExpanded) {
+            batchModeManager.setComposerVisible(true)
             if (showKeyboard) {
                 inputMessage.requestFocus()
                 showKeyboard(inputMessage)
@@ -510,6 +582,7 @@ class ChatConversationActivity : AppCompatActivity() {
         }
 
         isComposerExpanded = true
+        batchModeManager.setComposerVisible(true)
         composerCollapsedButton.animate().cancel()
         inputBar.animate().cancel()
 
@@ -544,9 +617,17 @@ class ChatConversationActivity : AppCompatActivity() {
         }
     }
 
-    private fun collapseComposer() {
+    private fun collapseComposer(force: Boolean = false) {
+        if (batchComposerHoldActive && !force) {
+            // 分条模式中，点击聊天区只收键盘，不把输入栏和待发列表一起卷走。
+            inputMessage.clearFocus()
+            hideKeyboard()
+            return
+        }
+        if (isComposerPinned && !force) return
         if (!isComposerExpanded || expandedInputPanel.visibility == View.VISIBLE) return
         isComposerExpanded = false
+        batchModeManager.setComposerVisible(false)
         plusMenuManager.hide()
         stickerPanelManager.hide()
         inputMessage.clearFocus()
@@ -583,13 +664,167 @@ class ChatConversationActivity : AppCompatActivity() {
                 val insideComposer = isTouchInside(composerDock, event)
                 val insidePlusPanel = isTouchInside(findViewById(R.id.plusPanel), event)
                 val insideStickerPanel = isTouchInside(stickerPanel, event)
-                if (!insideComposer && !insidePlusPanel && !insideStickerPanel) {
-                    collapseComposer()
+                val insidePendingArea = isTouchInside(findViewById(R.id.pendingArea), event)
+
+                if (!insideComposer && !insidePlusPanel && !insideStickerPanel && !insidePendingArea) {
+                    if (batchModeManager.isBatchMode) {
+                        // 分条模式下，滚消息或点聊天空白只关闭键盘，输入栏和待发区保持原位。
+                        inputMessage.clearFocus()
+                        hideKeyboard()
+                        dismissComposerQuickMenu()
+                        plusMenuManager.hide(false)
+                        stickerPanelManager.hide()
+                    } else {
+                        collapseComposer()
+                    }
                 }
             }
         }
         return super.dispatchTouchEvent(event)
     }
+
+    private fun showComposerQuickMenu() {
+        dismissComposerQuickMenu()
+        plusMenuManager.hide(false)
+        stickerPanelManager.hide()
+
+        val menuWidth = dp(238)
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(8), dp(8), dp(8), dp(8))
+            background = GradientDrawable().apply {
+                setColor(c.card)
+                cornerRadius = dp(18).toFloat()
+                setStroke(dp(1), c.border)
+            }
+        }
+
+        fun addAction(title: String, subtitle: String, symbol: String, action: () -> Unit) {
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(10), dp(9), dp(10), dp(9))
+                isClickable = true
+                isFocusable = true
+                background = GradientDrawable().apply {
+                    setColor(Color.TRANSPARENT)
+                    cornerRadius = dp(12).toFloat()
+                }
+                setOnClickListener {
+                    dismissComposerQuickMenu()
+                    action()
+                }
+            }
+            row.addView(TextView(this@ChatConversationActivity).apply {
+                text = symbol
+                gravity = Gravity.CENTER
+                textSize = 18f
+                setTextColor(c.accent)
+                layoutParams = LinearLayout.LayoutParams(dp(34), dp(38)).apply {
+                    marginEnd = dp(8)
+                }
+            })
+            row.addView(LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                addView(TextView(this@ChatConversationActivity).apply {
+                    text = title
+                    textSize = 14f
+                    setTextColor(c.textPrimary)
+                })
+                addView(TextView(this@ChatConversationActivity).apply {
+                    text = subtitle
+                    textSize = 10f
+                    setTextColor(c.textHint)
+                    setPadding(0, dp(2), 0, 0)
+                })
+            })
+            container.addView(row, LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ))
+        }
+
+        addAction(
+            if (batchModeManager.isBatchMode) "退出分条输入" else "分条输入",
+            if (batchModeManager.isBatchMode) "结束待发模式，清空尚未发送的内容" else "把多段内容暂存后一次发送",
+            "≡"
+        ) {
+            // 由分条状态回调负责展开和恢复，避免先展开后丢失“进入前是收起状态”的信息。
+            batchModeManager.toggle()
+        }
+
+        val largeInputOpen = expandedInputPanel.visibility == View.VISIBLE
+        addAction(
+            if (largeInputOpen) "收起输入栏" else "展开输入栏",
+            if (largeInputOpen) "回到普通输入栏" else "打开适合长文的大输入框",
+            "↕"
+        ) {
+            toggleExpandedInput(!largeInputOpen)
+        }
+
+        addAction(
+            if (isComposerPinned) "解除锁定" else "锁定输入栏",
+            if (isComposerPinned) "恢复点击聊天区后自动收起" else "保持普通输入栏展开，方便连续聊天",
+            if (isComposerPinned) "○" else "●"
+        ) {
+            setComposerPinned(!isComposerPinned)
+        }
+
+        container.measure(
+            View.MeasureSpec.makeMeasureSpec(menuWidth, View.MeasureSpec.EXACTLY),
+            View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+        )
+        val popup = PopupWindow(
+            container,
+            menuWidth,
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            true
+        ).apply {
+            isOutsideTouchable = true
+            isFocusable = true
+            setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+            elevation = dp(10).toFloat()
+            setOnDismissListener { composerQuickMenu = null }
+        }
+        composerQuickMenu = popup
+
+        composerDock.post {
+            val xOffset = ((composerDock.width - menuWidth) / 2).coerceAtLeast(0)
+            val yOffset = -(composerDock.height + container.measuredHeight + dp(4))
+            popup.showAsDropDown(composerDock, xOffset, yOffset)
+        }
+    }
+
+    private fun dismissComposerQuickMenu() {
+        composerQuickMenu?.dismiss()
+        composerQuickMenu = null
+    }
+
+    private fun setComposerPinned(pinned: Boolean) {
+        isComposerPinned = pinned
+        getSharedPreferences("haven_composer", MODE_PRIVATE)
+            .edit()
+            .putBoolean("pinned_$friendId", pinned)
+            .apply()
+        updateComposerPinIndicator()
+        if (pinned) {
+            if (expandedInputPanel.visibility == View.VISIBLE) {
+                toggleExpandedInput(false)
+            }
+            expandComposer(showKeyboard = false)
+            Toast.makeText(this, "输入栏已锁定展开", Toast.LENGTH_SHORT).show()
+        } else {
+            Toast.makeText(this, "已恢复自动收起", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun updateComposerPinIndicator() {
+        composerPinIndicator.visibility = if (isComposerPinned) View.VISIBLE else View.GONE
+    }
+
+    private fun dp(value: Int): Int =
+        (value * resources.displayMetrics.density).toInt()
 
     private fun isTouchInside(view: View, event: MotionEvent): Boolean {
         if (view.visibility != View.VISIBLE) return false
@@ -611,10 +846,19 @@ class ChatConversationActivity : AppCompatActivity() {
     @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
         when {
+            composerQuickMenu?.isShowing == true -> dismissComposerQuickMenu()
             expandedInputPanel.visibility == View.VISIBLE -> toggleExpandedInput(false)
             plusMenuManager.isVisible() -> plusMenuManager.hide()
             stickerPanel.visibility == View.VISIBLE -> stickerPanelManager.hide()
             bubbleRenderer.hasExpandedThinkingBlock() -> bubbleRenderer.collapseAllThinkingBlocks()
+            isComposerExpanded && (isComposerPinned || batchModeManager.isBatchMode) && inputMessage.hasFocus() -> {
+                inputMessage.clearFocus()
+                hideKeyboard()
+            }
+            isComposerExpanded && batchModeManager.isBatchMode -> {
+                inputMessage.clearFocus()
+                hideKeyboard()
+            }
             isComposerExpanded -> collapseComposer()
             else -> super.onBackPressed()
         }
@@ -960,59 +1204,107 @@ class ChatConversationActivity : AppCompatActivity() {
     }
 
     /** 加号菜单 */
-    /** 发送全部待发消息 */
+    /**
+     * 发送全部待发消息。
+     *
+     * v8.2：点击“发送全部”后，先把整批消息完整上屏、落盘并写入上下文，
+     * 再请求回复。这样即使马上离开当前聊天页，也不会因为 300ms 的逐条动画
+     * 尚未执行完而漏发后半段。
+     */
     private fun sendAllPending() {
         if (batchModeManager.isEmpty()) return
-        setInputLocked(true)  // 逐条上屏+等回复期间锁住输入
+        setInputLocked(true)
         val items = batchModeManager.getItemsAndClear()
-        val handler = android.os.Handler(android.os.Looper.getMainLooper())
-        var delay = 0L
         removeQuotePreview()
+
         val allTextForApi = StringBuilder()
+        val baseTime = System.currentTimeMillis()
+        var hasPayload = false
 
         for ((index, item) in items.withIndex()) {
-            if (item.quoteAuthor != null && item.quoteContent != null)
+            val now = baseTime + index
+            val timeStr = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date(now))
+            checkDateSeparator(now)
+
+            if (item.quoteAuthor != null && item.quoteContent != null) {
                 allTextForApi.append("[引用 ${item.quoteAuthor}: ${item.quoteContent}]\n")
-            if (item.type == "weather") {
-                val ws = WeatherStorage(this)
-                val summary = ws.buildWeatherSummary()
-                if (summary.isNotEmpty()) allTextForApi.append(summary).append("\n")
-            } else if (item.text.isNotEmpty()) {
-                allTextForApi.append(item.text).append("\n")
             }
 
-            handler.postDelayed({
-                if (isFinishing || isDestroyed) return@postDelayed
-                val now = System.currentTimeMillis()
-                val timeStr = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date(now))
-                checkDateSeparator(now)
-                when (item.type) {
-                    "image" -> {
-                        if (item.imagePaths.size == 1) bubbleRenderer.addImageBubble(item.imagePaths[0], timeStr, item.text)
-                        else bubbleRenderer.addMultiImageBubble(item.imagePaths, timeStr, item.text)
-                        val display = if (item.text.isNotEmpty()) item.text else "[${item.imagePaths.size}张图片]"
-                        chatStorage.appendMessage(friendId, StoredMessage("user", display, now, imagePath = item.imagePaths[0], type = "image"))
-                        chatHistory.add(ChatMessage("user", if (item.text.isNotEmpty()) item.text else "[用户发送了图片]", item.imagePaths.map { ImageHelper.toBase64(File(it)) }))
+            when (item.type) {
+                "image" -> {
+                    if (item.imagePaths.isEmpty()) continue
+                    if (item.imagePaths.size == 1) {
+                        bubbleRenderer.addImageBubble(item.imagePaths[0], timeStr, item.text)
+                    } else {
+                        bubbleRenderer.addMultiImageBubble(item.imagePaths, timeStr, item.text)
                     }
-                    "weather" -> weatherCardManager.renderAndStore(now)
-                    else -> {
-                        if (item.quoteAuthor != null && item.quoteContent != null) {
-                            bubbleRenderer.addQuoteBubble(item.quoteAuthor, item.quoteContent, item.text, timeStr)
-                            chatStorage.appendMessage(friendId, StoredMessage("user", "「回复 ${item.quoteAuthor}」\n${item.text}", now, type = "quote"))
-                        } else {
-                            bubbleRenderer.addUserBubble(item.text, timeStr)
-                            chatStorage.appendMessage(friendId, StoredMessage("user", item.text, now))
-                        }
+                    val display = if (item.text.isNotEmpty()) item.text else "[${item.imagePaths.size}张图片]"
+                    chatStorage.appendMessage(
+                        friendId,
+                        StoredMessage("user", display, now, imagePath = item.imagePaths[0], type = "image")
+                    )
+                    chatHistory.add(
+                        ChatMessage(
+                            "user",
+                            if (item.text.isNotEmpty()) item.text else "[用户发送了图片]",
+                            item.imagePaths.map { ImageHelper.toBase64(File(it)) }
+                        )
+                    )
+                    if (item.text.isNotEmpty()) allTextForApi.append(item.text).append("\n")
+                    hasPayload = true
+                }
+
+                "weather" -> {
+                    val ws = WeatherStorage(this)
+                    val summary = ws.buildWeatherSummary()
+                    if (summary.isNotEmpty() && weatherCardManager.renderAndStore(now)) {
+                        allTextForApi.append(summary).append("\n")
+                        hasPayload = true
                     }
                 }
-                if (index == items.size - 1) {
-                    val text = allTextForApi.toString()
-                    if (text.isNotEmpty()) chatHistory.add(ChatMessage("user", text))
-                    callApiForReply()
+
+                else -> {
+                    if (item.text.isEmpty()) continue
+                    if (item.quoteAuthor != null && item.quoteContent != null) {
+                        bubbleRenderer.addQuoteBubble(item.quoteAuthor, item.quoteContent, item.text, timeStr)
+                        chatStorage.appendMessage(
+                            friendId,
+                            StoredMessage(
+                                "user",
+                                "「回复 ${item.quoteAuthor}」\n${item.text}",
+                                now,
+                                type = "quote"
+                            )
+                        )
+                    } else {
+                        bubbleRenderer.addUserBubble(item.text, timeStr)
+                        chatStorage.appendMessage(friendId, StoredMessage("user", item.text, now))
+                    }
+                    allTextForApi.append(item.text).append("\n")
+                    hasPayload = true
                 }
-            }, delay)
-            delay += 300L
+            }
         }
+
+        if (!hasPayload) {
+            setInputLocked(false)
+            return
+        }
+
+        val textForApi = allTextForApi.toString().trim()
+        if (textForApi.isNotEmpty()) {
+            chatHistory.add(ChatMessage("user", textForApi))
+        }
+
+        // 与普通发送保持一致：睡得太深时只保存消息，不强行唤醒。
+        val (wakeResult, wakeTip) = dreamStorage.tryWake(friendId)
+        if (wakeTip != null) addAndSaveSystemTip(wakeTip)
+        if (wakeResult == "too_deep") {
+            setInputLocked(false)
+            return
+        }
+
+        callApiForReply()
     }
 
     private fun sendSticker(stickerFile: File) {

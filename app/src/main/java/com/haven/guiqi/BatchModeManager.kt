@@ -21,7 +21,7 @@ class BatchModeManager(
     private val pendingArea: LinearLayout,
     private val pendingMessages: LinearLayout,
     private val pendingCount: TextView,
-    private val btnBatch: TextView
+    private val btnBatch: TextView?
 ) {
     /** 待发条目 */
     data class PendingItem(
@@ -34,6 +34,7 @@ class BatchModeManager(
 
     var isBatchMode = false
         private set
+    private var composerVisible = true
     private val items = mutableListOf<PendingItem>()
     private val c get() = ThemeHelper.getColors(activity)
 
@@ -45,23 +46,36 @@ class BatchModeManager(
     fun toggle() {
         isBatchMode = !isBatchMode
         if (isBatchMode) {
-            btnBatch.setTextColor(c.accent)
-            pendingArea.visibility = View.VISIBLE
+            btnBatch?.setTextColor(c.accent)
             items.clear()
             refreshUI()
+            updatePendingAreaVisibility()
             onToggle?.invoke(true)
         } else {
-            btnBatch.setTextColor(c.dateLabel)
-            pendingArea.visibility = View.GONE
+            btnBatch?.setTextColor(c.dateLabel)
             items.clear()
+            updatePendingAreaVisibility()
+            onToggle?.invoke(false)
         }
     }
 
     fun exit() {
+        val wasBatchMode = isBatchMode
         isBatchMode = false
-        btnBatch.setTextColor(c.dateLabel)
-        pendingArea.visibility = View.GONE
+        btnBatch?.setTextColor(c.dateLabel)
         items.clear()
+        updatePendingAreaVisibility()
+        if (wasBatchMode) onToggle?.invoke(false)
+    }
+
+    /** 输入栏收起时只隐藏待发区，不退出分条模式，也不清空已经暂存的内容。 */
+    fun setComposerVisible(visible: Boolean) {
+        composerVisible = visible
+        updatePendingAreaVisibility()
+    }
+
+    private fun updatePendingAreaVisibility() {
+        pendingArea.visibility = if (isBatchMode && composerVisible) View.VISIBLE else View.GONE
     }
 
     fun addText(text: String) {
@@ -131,7 +145,6 @@ class BatchModeManager(
                     text = if (item.text.isNotEmpty()) "📷 ${item.text}" else "📷 ${item.imagePaths.size}张图片"
                     textSize = 12f; setTextColor(c.textPrimary)
                     layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-                    maxLines = 1
                 })
             } else {
                 val textContainer = LinearLayout(activity).apply {
@@ -146,7 +159,9 @@ class BatchModeManager(
                     })
                 }
                 textContainer.addView(TextView(activity).apply {
-                    text = item.text; textSize = 12f; setTextColor(c.textPrimary); maxLines = 2
+                    text = item.text
+                    textSize = 12f
+                    setTextColor(c.textPrimary)
                 })
                 row.addView(textContainer)
             }
@@ -158,13 +173,18 @@ class BatchModeManager(
             innerLayout.addView(row)
         }
 
-        // 超过3条包ScrollView，能滑动看全部
-        if (items.size > 3) {
+        // 队列较多或单条内容较长时，把整个待发区放进固定高度的滚动层。
+        // 每条内容不再用 maxLines 截断，因此后半段始终可以滑动看到。
+        val needsScroll = items.size > 2 || items.any {
+            it.text.length > 60 || (it.quoteContent?.length ?: 0) > 40
+        }
+        if (needsScroll) {
             val scroll = android.widget.ScrollView(activity).apply {
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT, dp(180)
                 )
                 isFillViewport = false
+                isVerticalScrollBarEnabled = true
             }
             scroll.addView(innerLayout)
             pendingMessages.addView(scroll)
@@ -172,5 +192,7 @@ class BatchModeManager(
         } else {
             pendingMessages.addView(innerLayout)
         }
+
+        updatePendingAreaVisibility()
     }
 }

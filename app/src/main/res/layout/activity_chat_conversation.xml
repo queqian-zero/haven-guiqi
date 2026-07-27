@@ -340,7 +340,7 @@
             android:orientation="vertical" />
     </LinearLayout>
 
-    <!-- ===== 加号功能面板（从输入栏上方展开） ===== -->
+    <!-- ===== 加号功能面板：只保留附件与扩展能力 ===== -->
     <LinearLayout
         android:id="@+id/plusPanel"
         android:layout_width="match_parent"
@@ -348,186 +348,118 @@
         android:layout_marginHorizontal="12dp"
         android:layout_marginBottom="4dp"
         android:background="@drawable/composer_panel_bg"
-        android:orientation="vertical"
+        android:orientation="horizontal"
         android:paddingHorizontal="10dp"
         android:paddingTop="10dp"
         android:paddingBottom="8dp"
         android:visibility="gone">
 
         <LinearLayout
-            android:layout_width="match_parent"
+            android:id="@+id/plusBtnCamera"
+            android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:orientation="horizontal">
+            android:layout_weight="1"
+            android:gravity="center"
+            android:orientation="vertical"
+            android:padding="6dp">
 
-            <LinearLayout
-                android:id="@+id/plusBtnCamera"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
+            <TextView
+                android:layout_width="42dp"
+                android:layout_height="42dp"
+                android:background="@drawable/settings_item_bg"
                 android:gravity="center"
-                android:orientation="vertical"
-                android:padding="6dp">
+                android:text="◉"
+                android:textColor="@color/haven_text_secondary"
+                android:textSize="18sp" />
 
-                <TextView
-                    android:layout_width="42dp"
-                    android:layout_height="42dp"
-                    android:background="@drawable/settings_item_bg"
-                    android:gravity="center"
-                    android:text="◉"
-                    android:textColor="@color/haven_text_secondary"
-                    android:textSize="18sp" />
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="5dp"
-                    android:text="拍照"
-                    android:textColor="@color/haven_text_secondary"
-                    android:textSize="11sp" />
-            </LinearLayout>
-
-            <LinearLayout
-                android:id="@+id/plusBtnImage"
-                android:layout_width="0dp"
+            <TextView
+                android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:gravity="center"
-                android:orientation="vertical"
-                android:padding="6dp">
-
-                <TextView
-                    android:layout_width="42dp"
-                    android:layout_height="42dp"
-                    android:background="@drawable/settings_item_bg"
-                    android:gravity="center"
-                    android:text="▧"
-                    android:textColor="@color/haven_text_secondary"
-                    android:textSize="19sp" />
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="5dp"
-                    android:text="图片"
-                    android:textColor="@color/haven_text_secondary"
-                    android:textSize="11sp" />
-            </LinearLayout>
-
-            <LinearLayout
-                android:id="@+id/plusBtnSticker"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:gravity="center"
-                android:orientation="vertical"
-                android:padding="6dp">
-
-                <TextView
-                    android:layout_width="42dp"
-                    android:layout_height="42dp"
-                    android:background="@drawable/settings_item_bg"
-                    android:gravity="center"
-                    android:text="◇"
-                    android:textColor="@color/haven_text_secondary"
-                    android:textSize="20sp" />
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="5dp"
-                    android:text="表情包"
-                    android:textColor="@color/haven_text_secondary"
-                    android:textSize="11sp" />
-            </LinearLayout>
+                android:layout_marginTop="5dp"
+                android:text="拍照"
+                android:textColor="@color/haven_text_secondary"
+                android:textSize="11sp" />
         </LinearLayout>
 
         <LinearLayout
-            android:layout_width="match_parent"
+            android:id="@+id/plusBtnImage"
+            android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:orientation="horizontal">
+            android:layout_weight="1"
+            android:gravity="center"
+            android:orientation="vertical"
+            android:padding="6dp">
 
-            <LinearLayout
-                android:id="@+id/plusBtnWeather"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
+            <TextView
+                android:layout_width="42dp"
+                android:layout_height="42dp"
+                android:background="@drawable/settings_item_bg"
                 android:gravity="center"
-                android:orientation="vertical"
-                android:padding="6dp">
+                android:text="▧"
+                android:textColor="@color/haven_text_secondary"
+                android:textSize="19sp" />
 
-                <TextView
-                    android:layout_width="42dp"
-                    android:layout_height="42dp"
-                    android:background="@drawable/settings_item_bg"
-                    android:gravity="center"
-                    android:text="☼"
-                    android:textColor="@color/haven_text_secondary"
-                    android:textSize="18sp" />
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="5dp"
-                    android:text="天气"
-                    android:textColor="@color/haven_text_secondary"
-                    android:textSize="11sp" />
-            </LinearLayout>
-
-            <LinearLayout
-                android:id="@+id/plusBtnBatch"
-                android:layout_width="0dp"
+            <TextView
+                android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_weight="1"
+                android:layout_marginTop="5dp"
+                android:text="图片"
+                android:textColor="@color/haven_text_secondary"
+                android:textSize="11sp" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/plusBtnSticker"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:orientation="vertical"
+            android:padding="6dp">
+
+            <TextView
+                android:layout_width="42dp"
+                android:layout_height="42dp"
+                android:background="@drawable/settings_item_bg"
                 android:gravity="center"
-                android:orientation="vertical"
-                android:padding="6dp">
+                android:text="◇"
+                android:textColor="@color/haven_text_secondary"
+                android:textSize="20sp" />
 
-                <TextView
-                    android:id="@+id/btnBatch"
-                    android:layout_width="42dp"
-                    android:layout_height="42dp"
-                    android:background="@drawable/settings_item_bg"
-                    android:gravity="center"
-                    android:text="≡"
-                    android:textColor="@color/haven_date_label"
-                    android:textSize="20sp" />
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="5dp"
-                    android:text="分条"
-                    android:textColor="@color/haven_text_secondary"
-                    android:textSize="11sp" />
-            </LinearLayout>
-
-            <LinearLayout
-                android:id="@+id/plusBtnExpand"
-                android:layout_width="0dp"
+            <TextView
+                android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_weight="1"
+                android:layout_marginTop="5dp"
+                android:text="表情包"
+                android:textColor="@color/haven_text_secondary"
+                android:textSize="11sp" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/plusBtnWeather"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:orientation="vertical"
+            android:padding="6dp">
+
+            <TextView
+                android:layout_width="42dp"
+                android:layout_height="42dp"
+                android:background="@drawable/settings_item_bg"
                 android:gravity="center"
-                android:orientation="vertical"
-                android:padding="6dp">
+                android:text="☼"
+                android:textColor="@color/haven_text_secondary"
+                android:textSize="18sp" />
 
-                <TextView
-                    android:id="@+id/btnExpand"
-                    android:layout_width="42dp"
-                    android:layout_height="42dp"
-                    android:background="@drawable/settings_item_bg"
-                    android:gravity="center"
-                    android:text="↕"
-                    android:textColor="@color/haven_date_label"
-                    android:textSize="18sp" />
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="5dp"
-                    android:text="大输入框"
-                    android:textColor="@color/haven_text_secondary"
-                    android:textSize="11sp" />
-            </LinearLayout>
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="5dp"
+                android:text="天气"
+                android:textColor="@color/haven_text_secondary"
+                android:textSize="11sp" />
         </LinearLayout>
     </LinearLayout>
 
@@ -577,6 +509,16 @@
                 android:text="＋"
                 android:textColor="@color/haven_text_secondary"
                 android:textSize="22sp" />
+
+            <TextView
+                android:id="@+id/composerPinIndicator"
+                android:layout_width="14dp"
+                android:layout_height="42dp"
+                android:gravity="center"
+                android:text="•"
+                android:textColor="@color/haven_accent"
+                android:textSize="10sp"
+                android:visibility="gone" />
 
             <EditText
                 android:id="@+id/inputMessage"
