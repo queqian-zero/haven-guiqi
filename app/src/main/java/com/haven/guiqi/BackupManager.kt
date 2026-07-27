@@ -24,6 +24,7 @@ class BackupManager(
     fun doExport(uri: Uri) {
         try {
             val friends = friendStorage.loadFriends()
+            val residentPromptStorage = ResidentPromptStorage(context)
 
             val friendsArray = JSONArray()
             for (f in friends) {
@@ -57,6 +58,9 @@ class BackupManager(
                     put("dream_api_model", f.dreamApiModel)
                     put("dream_api_type", f.dreamApiType)
                     put("created_at", f.createdAt)
+                    residentPromptStorage.exportProfileJson(f.id)?.let {
+                        put("resident_prompt_profile", it)
+                    }
                     put("messages", msgsArray)
                 })
             }
@@ -107,9 +111,10 @@ class BackupManager(
                     .edit().putString("user_name", userName).apply()
             }
 
-            // 恢复好友和聊天记录
+            // 恢复好友、聊天记录和住户自己的提示词档案
             val friendsArray = data.getJSONArray("friends")
             val friends = mutableListOf<Friend>()
+            val residentPromptStorage = ResidentPromptStorage(context)
 
             for (i in 0 until friendsArray.length()) {
                 val obj = friendsArray.getJSONObject(i)
@@ -148,6 +153,10 @@ class BackupManager(
                         ))
                     }
                     chatStorage.saveMessages(friend.id, messages)
+                }
+
+                obj.optJSONObject("resident_prompt_profile")?.let { profileJson ->
+                    residentPromptStorage.importProfileJson(friend.id, profileJson)
                 }
             }
 
