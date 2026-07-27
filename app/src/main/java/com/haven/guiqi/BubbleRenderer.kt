@@ -21,6 +21,7 @@ import android.view.ViewOutlineProvider
 import android.graphics.Outline
 import android.graphics.Rect
 import android.widget.ImageView
+import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.view.WindowManager
@@ -977,16 +978,49 @@ class BubbleRenderer(
         card.addView(dialogHeader)
         card.addView(divider)
         card.addView(readingScroll)
-        dialog.setContentView(card)
+
+        // 某些手机会在“小尺寸 Dialog 窗口”底部额外画出一条导航栏背景，
+        // 看起来就像卡片下面粘着一块白色板砖。
+        // 这里把 Dialog 窗口改成全屏透明层，圆角卡片只作为居中的子 View：
+        // 系统栏不再挤在卡片下面，点卡片外仍可关闭。
+        val dialogRoot = FrameLayout(activity).apply {
+            setBackgroundColor(Color.TRANSPARENT)
+            clipToPadding = false
+            isClickable = true
+            setOnClickListener { dialog.dismiss() }
+        }
+
+        card.apply {
+            isClickable = true
+            isFocusable = true
+            // 吃掉卡片内部点击，避免冒泡到透明层后误关闭。
+            setOnClickListener { }
+        }
+
+        dialogRoot.addView(
+            card,
+            FrameLayout.LayoutParams(
+                (screenWidth * 0.90f).toInt(),
+                (activity.resources.displayMetrics.heightPixels * 0.76f).toInt(),
+                Gravity.CENTER
+            )
+        )
+
+        dialog.setContentView(dialogRoot)
 
         dialog.setOnShowListener {
             dialog.window?.apply {
                 setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+                decorView.setBackgroundColor(Color.TRANSPARENT)
+                decorView.setPadding(0, 0, 0, 0)
                 addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+                addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS)
+                navigationBarColor = Color.TRANSPARENT
+                statusBarColor = Color.TRANSPARENT
                 attributes = attributes.apply { dimAmount = 0.32f }
                 setLayout(
-                    (screenWidth * 0.90f).toInt(),
-                    (activity.resources.displayMetrics.heightPixels * 0.76f).toInt()
+                    WindowManager.LayoutParams.MATCH_PARENT,
+                    WindowManager.LayoutParams.MATCH_PARENT
                 )
                 setGravity(Gravity.CENTER)
             }
