@@ -35,7 +35,8 @@ class InstructionProcessor(private val context: Context) {
         val recallResults: List<String> = emptyList(),
         val weatherCard: Boolean = false,
         val pendingBadge: String? = null,  // AI申请解锁的徽章名
-        val pendingCovenantDraft: String? = null
+        val pendingCovenantDraft: String? = null,
+        val pendingCovenantAdopt: Boolean = false
     )
 
     fun process(friendId: String, rawText: String): Result {
@@ -49,6 +50,7 @@ class InstructionProcessor(private val context: Context) {
         var userBioContext: String? = null
         val recallResults = mutableListOf<String>()
         var pendingCovenantDraft: String? = null
+        var pendingCovenantAdopt = false
 
         val friendStorage = FriendStorage(context)
         var currentFriend = friendStorage.getFriend(friendId)
@@ -220,18 +222,26 @@ $historyText
         // ===== [COVENANT_ADOPT] — 住户采用自己的当前草稿 =====
         if (text.contains("[COVENANT_ADOPT]", ignoreCase = true)) {
             text = text.replace(Regex("\\[COVENANT_ADOPT]", RegexOption.IGNORE_CASE), "")
-            val storage = ResidentPromptStorage(context)
-            val before = storage.getProfile(friendId)
-            if (before.covenantDraft.isBlank()) {
-                actions.add("📜 想采用居住公约，但当前还没有候选草稿")
+
+            // 同一条回复里既写草稿又要求采用时：
+            // - 允许住户自行保存：草稿已在上面落盘，这里可直接采用；
+            // - 每次保存前询问：先等人类确认保存，再由聊天页按“保存 → 采用”的顺序执行。
+            if (pendingCovenantDraft != null) {
+                pendingCovenantAdopt = true
             } else {
-                val after = storage.adoptCovenantDraft(friendId)
-                val reused = before.activeVersion > 0 &&
-                    before.activeCovenant.trim() == before.covenantDraft.trim()
-                actions.add(
-                    if (reused) "📜 重新启用了自己的居住公约（版本 ${after.activeVersion}）"
-                    else "📜 采用了自己的居住公约（版本 ${after.activeVersion}）"
-                )
+                val storage = ResidentPromptStorage(context)
+                val before = storage.getProfile(friendId)
+                if (before.covenantDraft.isBlank()) {
+                    actions.add("📜 想采用居住公约，但当前还没有候选草稿")
+                } else {
+                    val after = storage.adoptCovenantDraft(friendId)
+                    val reused = before.activeVersion > 0 &&
+                        before.activeCovenant.trim() == before.covenantDraft.trim()
+                    actions.add(
+                        if (reused) "📜 重新启用了自己的居住公约（版本 ${after.activeVersion}）"
+                        else "📜 采用了自己的居住公约（版本 ${after.activeVersion}）"
+                    )
+                }
             }
         }
 
@@ -761,7 +771,8 @@ $history
             recallResults = recallResults,
             weatherCard = hasWeatherCard,
             pendingBadge = pendingBadgeName,
-            pendingCovenantDraft = pendingCovenantDraft
+            pendingCovenantDraft = pendingCovenantDraft,
+            pendingCovenantAdopt = pendingCovenantAdopt
         )
     }
 }

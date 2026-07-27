@@ -804,7 +804,10 @@ class ChatConversationActivity : AppCompatActivity() {
                     }
 
                     result.pendingCovenantDraft?.let { draft ->
-                        showCovenantDraftRequest(draft)
+                        showCovenantDraftRequest(
+                            draft = draft,
+                            adoptAfterSave = result.pendingCovenantAdopt
+                        )
                     }
                 }
             } catch (e: Exception) {
@@ -1068,7 +1071,10 @@ class ChatConversationActivity : AppCompatActivity() {
 
     /** 把异常转成人话 */
     /** 住户提交自己的公约草稿；长草稿放进可滚动正文，操作区始终固定在底部。 */
-    private fun showCovenantDraftRequest(draft: String) {
+    private fun showCovenantDraftRequest(
+        draft: String,
+        adoptAfterSave: Boolean = false
+    ) {
         if (isFinishing || isDestroyed) return
 
         val dp = { value: Int -> (value * resources.displayMetrics.density).toInt() }
@@ -1124,7 +1130,11 @@ class ChatConversationActivity : AppCompatActivity() {
             setTextColor(c.textPrimary)
         })
         titleWrap.addView(TextView(this).apply {
-            text = "由住户本人写下，只保存草稿，不会立刻改变提示词"
+            text = if (adoptAfterSave) {
+                "由住户本人写下；允许保存后将立即采用并留下版本"
+            } else {
+                "由住户本人写下，只保存草稿，不会立刻改变提示词"
+            }
             textSize = 12f
             setTextColor(c.textSecondary)
             setPadding(0, dp(5), 0, 0)
@@ -1175,18 +1185,41 @@ class ChatConversationActivity : AppCompatActivity() {
 
         fun saveDraft(autoAllow: Boolean) {
             val storage = ResidentPromptStorage(this)
+            val before = storage.getProfile(friendId)
+
             if (autoAllow) {
                 storage.setEditPermission(friendId, ResidentPromptEditPermission.ALLOW_RESIDENT)
             }
+
             storage.saveCovenantDraft(friendId, draft)
-            val tip = if (autoAllow) {
-                "📜 保存了自己的居住公约草稿，今后可自行更新草稿"
-            } else {
-                "📜 保存了自己的居住公约草稿"
+
+            val tips = mutableListOf(
+                if (autoAllow) {
+                    "📜 保存了自己的居住公约草稿，今后可自行更新草稿"
+                } else {
+                    "📜 保存了自己的居住公约草稿"
+                }
+            )
+
+            if (adoptAfterSave) {
+                val after = storage.adoptCovenantDraft(friendId)
+                val reused = before.activeVersion > 0 &&
+                    before.activeCovenant.trim() == draft.trim()
+                tips.add(
+                    if (reused) {
+                        "📜 重新启用了自己的居住公约（版本 ${after.activeVersion}）"
+                    } else {
+                        "📜 采用了自己的居住公约（版本 ${after.activeVersion}）"
+                    }
+                )
             }
-            val now = System.currentTimeMillis()
-            chatStorage.appendMessage(friendId, StoredMessage("system", tip, now, type = "tip"))
-            bubbleRenderer.addSystemTip(tip)
+
+            var now = System.currentTimeMillis()
+            for (tip in tips) {
+                chatStorage.appendMessage(friendId, StoredMessage("system", tip, now, type = "tip"))
+                bubbleRenderer.addSystemTip(tip)
+                now += 1
+            }
             dialog.dismiss()
         }
 
@@ -1200,11 +1233,16 @@ class ChatConversationActivity : AppCompatActivity() {
         primaryRow.addView(actionButton("不保存") { dialog.dismiss() }, LinearLayout.LayoutParams(
             0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f
         ).apply { setMargins(0, 0, dp(8), 0) })
-        primaryRow.addView(actionButton("允许这次", emphasized = true) { saveDraft(false) }, LinearLayout.LayoutParams(
+        primaryRow.addView(actionButton(
+            if (adoptAfterSave) "允许并采用" else "允许这次",
+            emphasized = true
+        ) { saveDraft(false) }, LinearLayout.LayoutParams(
             0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f
         ))
         actions.addView(primaryRow)
-        actions.addView(actionButton("以后由住户自行保存草稿") { saveDraft(true) }, LinearLayout.LayoutParams(
+        actions.addView(actionButton(
+            if (adoptAfterSave) "以后自行保存；本次保存并采用" else "以后由住户自行保存草稿"
+        ) { saveDraft(true) }, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT,
             LinearLayout.LayoutParams.WRAP_CONTENT
         ).apply { setMargins(0, dp(9), 0, 0) })
