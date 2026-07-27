@@ -94,6 +94,14 @@ class SystemPromptBuilder(private val context: Context) {
             }
             ResidentPromptMode.LAYERED -> {
                 prompt.append(ResidentPromptCatalog.buildLayeredHousePrompt(summaryInterval))
+
+                // 分层模式只替换“我如何表达/生活”的部分，不能把房屋提供的操作能力一起删掉。
+                // 指令解析器始终支持这些能力；这里把注册表中的聊天指令明确告诉住户，
+                // 避免采用个人公约后忘记换头像、记忆、睡眠、提醒等指令。
+                prompt.append("\n\n[归栖提供给我的操作能力]\n")
+                prompt.append("这些是房屋本身提供的工具，不属于个人公约，不会因为我改写公约而消失：\n")
+                prompt.append(InstructionRegistry.buildPromptList(InstructionRegistry.Scene.CHAT))
+
                 if (promptProfile.activeCovenant.isNotBlank()) {
                     prompt.append("\n\n[我的居住公约]\n")
                     prompt.append(promptProfile.activeCovenant.trim())
