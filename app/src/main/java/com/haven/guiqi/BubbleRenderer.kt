@@ -2,20 +2,28 @@ package com.haven.guiqi
 
 import android.app.Activity
 import android.app.AlertDialog
+import android.app.Dialog
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.graphics.BitmapFactory
+import android.graphics.Color
+import android.graphics.Typeface
+import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
 import android.os.Handler
 import android.os.Looper
+import android.transition.AutoTransition
+import android.transition.TransitionManager
 import android.view.Gravity
 import android.view.View
 import android.view.ViewOutlineProvider
 import android.graphics.Outline
+import android.graphics.Rect
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
+import android.view.WindowManager
 import android.widget.TextView
 import android.widget.Toast
 import java.io.File
@@ -65,6 +73,23 @@ class BubbleRenderer(
     private val c get() = ThemeHelper.getColors(activity)
     private val handler = Handler(Looper.getMainLooper())
     private var typingView: LinearLayout? = null
+
+    /** 当前展开的思考卡片。用于点聊天空白处/返回键时统一收起。 */
+    private val expandedThinkingPanels = linkedMapOf<View, () -> Unit>()
+
+    fun hasExpandedThinkingBlock(): Boolean = expandedThinkingPanels.isNotEmpty()
+
+    fun isTouchInsideExpandedThinking(rawX: Int, rawY: Int): Boolean {
+        return expandedThinkingPanels.keys.any { panel ->
+            if (panel.visibility != View.VISIBLE) return@any false
+            val rect = Rect()
+            panel.getGlobalVisibleRect(rect) && rect.contains(rawX, rawY)
+        }
+    }
+
+    fun collapseAllThinkingBlocks() {
+        expandedThinkingPanels.values.toList().forEach { collapse -> collapse() }
+    }
 
     private fun dp(v: Int): Int =
         (v * activity.resources.displayMetrics.density).toInt()
@@ -608,61 +633,366 @@ class BubbleRenderer(
     }
 
     fun addThinkingBlock(thinking: String) {
+        if (thinking.isBlank()) return
+
+        // 这里只修显示：保留现有思考内容来源，不改接口和提取方式。
+        // Markdown 标题正常渲染，[SPLIT] 等控制标记不直接露在界面上。
+        val cleanedThinking = thinking
+            .replace(Regex("\\[SPLIT\\]", RegexOption.IGNORE_CASE), "\n\n")
+            .replace(Regex("(?i)</?think(?:ing)?>"), "")
+            .replace(Regex("\n{3,}"), "\n\n")
+            .trim()
+
         val wrapper = LinearLayout(activity).apply {
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { bottomMargin = dp(4) }
-            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.START
+            ).apply { bottomMargin = dp(6) }
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.START
         }
+
+        // 和 AI 正文左边缘对齐，但不重复显示头像。
         val spacer = View(activity).apply {
             layoutParams = LinearLayout.LayoutParams(dp(37), dp(1))
         }
+
         val thinkingLayout = LinearLayout(activity).apply {
             orientation = LinearLayout.VERTICAL
             layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
+                (screenWidth * 0.78f).toInt(),
                 LinearLayout.LayoutParams.WRAP_CONTENT
             )
         }
-        val contentView = TextView(activity).apply {
+
+        val header = LinearLayout(activity).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
             layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(36)
             )
-            maxWidth = (screenWidth * 0.75).toInt()
-            text = thinking
-            setTextColor(c.accent); textSize = 12f
-            setLineSpacing(0f, 1.3f)
-            setPadding(dp(10), dp(6), dp(10), dp(6))
-            setBackgroundResource(R.drawable.chat_thinking_bg)
-            visibility = View.GONE
+            setPadding(dp(12), 0, dp(8), 0)
+            background = GradientDrawable().apply {
+                setColor(c.aiBubbleBg)
+                cornerRadius = dp(13).toFloat()
+                setStroke(dp(1), c.borderMedium)
+            }
+            isClickable = true
+            isFocusable = true
+            contentDescription = "展开思考过程"
         }
-        val toggleView = TextView(activity).apply {
-            text = "💭 思考过程 ▸"
-            textSize = 11f; setTextColor(c.accent)
-            setPadding(dp(4), dp(2), dp(4), dp(2))
-            setOnClickListener {
-                if (contentView.visibility == View.GONE) {
-                    contentView.visibility = View.VISIBLE
-                    this.text = "💭 思考过程 ▾"
-                } else {
-                    contentView.visibility = View.GONE
-                    this.text = "💭 思考过程 ▸"
-                }
+
+        val dot = View(activity).apply {
+            layoutParams = LinearLayout.LayoutParams(dp(6), dp(6)).apply {
+                marginEnd = dp(8)
+            }
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(c.accentStrong)
             }
         }
-        contentView.setOnLongClickListener {
-            val clipboard = activity.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-            clipboard.setPrimaryClip(ClipData.newPlainText("thinking", thinking))
-            Toast.makeText(activity, "已复制", Toast.LENGTH_SHORT).show()
+
+        val title = TextView(activity).apply {
+            text = "思考过程"
+            textSize = 11.5f
+            setTextColor(c.textSecondary)
+            includeFontPadding = false
+        }
+
+        val flexibleSpace = View(activity).apply {
+            layoutParams = LinearLayout.LayoutParams(0, dp(1), 1f)
+        }
+
+        val chevron = ImageView(activity).apply {
+            layoutParams = LinearLayout.LayoutParams(dp(20), dp(20))
+            setImageResource(R.drawable.ic_thinking_chevron)
+            setColorFilter(c.textHint)
+            alpha = 0.85f
+            contentDescription = null
+        }
+
+        header.addView(dot)
+        header.addView(title)
+        header.addView(flexibleSpace)
+        header.addView(chevron)
+
+        val contentPanel = LinearLayout(activity).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { topMargin = dp(4) }
+            background = GradientDrawable().apply {
+                setColor(c.backgroundSecondary)
+                cornerRadius = dp(12).toFloat()
+                setStroke(dp(1), c.borderMedium)
+            }
+            visibility = View.GONE
+            clipToOutline = true
+        }
+
+        val bodyRow = LinearLayout(activity).apply {
+            orientation = LinearLayout.HORIZONTAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        }
+
+        val accentLine = View(activity).apply {
+            layoutParams = LinearLayout.LayoutParams(dp(2), LinearLayout.LayoutParams.MATCH_PARENT)
+            setBackgroundColor(c.accentStrong)
+        }
+
+        val contentView = TextView(activity).apply {
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            typeface = Typeface.create("sans-serif", Typeface.NORMAL)
+            text = MarkdownRenderer.render(cleanedThinking)
+            setTextColor(c.textSecondary)
+            textSize = 12.5f
+            setLineSpacing(0f, 1.45f)
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+
+            // 单击展开时完整铺开，不在卡片内部再套一层滚动。
+            // 想单独滚动查看时，长按标题打开悬浮阅读窗。
+        }
+
+        bodyRow.addView(accentLine)
+        bodyRow.addView(contentView)
+
+        val footerDivider = View(activity).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(1)
+            ).apply {
+                marginStart = dp(12)
+                marginEnd = dp(12)
+            }
+            setBackgroundColor(c.borderMedium)
+            alpha = 0.55f
+        }
+
+        val collapseFooter = LinearLayout(activity).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(38)
+            )
+            isClickable = true
+            isFocusable = true
+            contentDescription = "收起思考过程"
+        }
+
+        val footerChevron = ImageView(activity).apply {
+            layoutParams = LinearLayout.LayoutParams(dp(17), dp(17)).apply {
+                marginEnd = dp(4)
+            }
+            setImageResource(R.drawable.ic_thinking_chevron)
+            setColorFilter(c.textHint)
+            rotation = 180f
+            alpha = 0.85f
+            contentDescription = null
+        }
+
+        val footerText = TextView(activity).apply {
+            text = "收起"
+            textSize = 11f
+            setTextColor(c.textHint)
+            includeFontPadding = false
+        }
+
+        collapseFooter.addView(footerChevron)
+        collapseFooter.addView(footerText)
+        contentPanel.addView(bodyRow)
+        contentPanel.addView(footerDivider)
+        contentPanel.addView(collapseFooter)
+
+        lateinit var collapsePanel: () -> Unit
+        collapsePanel = {
+            if (contentPanel.visibility == View.VISIBLE) {
+                expandedThinkingPanels.remove(thinkingLayout)
+                contentPanel.animate().cancel()
+                chevron.animate().cancel()
+                contentPanel.animate()
+                    .alpha(0f)
+                    .translationY(-dp(4).toFloat())
+                    .setDuration(120L)
+                    .withEndAction {
+                        TransitionManager.beginDelayedTransition(
+                            thinkingLayout,
+                            AutoTransition().apply { duration = 140L }
+                        )
+                        contentPanel.visibility = View.GONE
+                        contentPanel.alpha = 1f
+                        contentPanel.translationY = 0f
+                    }
+                    .start()
+                chevron.animate().rotation(0f).setDuration(160L).start()
+                header.contentDescription = "展开思考过程"
+            }
+        }
+
+        val openPanel = {
+            // 同一时间只展开一段，避免聊天页里叠出多张长卡片。
+            collapseAllThinkingBlocks()
+            contentView.scrollTo(0, 0)
+            TransitionManager.beginDelayedTransition(
+                thinkingLayout,
+                AutoTransition().apply { duration = 180L }
+            )
+            contentPanel.visibility = View.VISIBLE
+            contentPanel.alpha = 0f
+            contentPanel.translationY = -dp(4).toFloat()
+            contentPanel.animate()
+                .alpha(1f)
+                .translationY(0f)
+                .setDuration(180L)
+                .start()
+            chevron.animate().rotation(180f).setDuration(180L).start()
+            header.contentDescription = "收起思考过程"
+            expandedThinkingPanels[thinkingLayout] = collapsePanel
+        }
+
+        header.setOnClickListener {
+            if (contentPanel.visibility == View.GONE) openPanel() else collapsePanel()
+        }
+        header.setOnLongClickListener {
+            showThinkingDialog(cleanedThinking)
             true
         }
-        thinkingLayout.addView(toggleView)
-        thinkingLayout.addView(contentView)
+        collapseFooter.setOnClickListener { collapsePanel() }
+
+        contentPanel.setOnLongClickListener {
+            val clipboard = activity.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            clipboard.setPrimaryClip(ClipData.newPlainText("thinking", cleanedThinking))
+            Toast.makeText(activity, "思考内容已复制", Toast.LENGTH_SHORT).show()
+            true
+        }
+
+        thinkingLayout.addView(header)
+        thinkingLayout.addView(contentPanel)
         wrapper.addView(spacer)
         wrapper.addView(thinkingLayout)
         messagesContainer.addView(wrapper)
+    }
+
+    private fun showThinkingDialog(content: String) {
+        val dialog = Dialog(activity)
+        dialog.setCanceledOnTouchOutside(true)
+        dialog.setCancelable(true)
+
+        val card = LinearLayout(activity).apply {
+            orientation = LinearLayout.VERTICAL
+            background = GradientDrawable().apply {
+                setColor(c.backgroundSecondary)
+                cornerRadius = dp(18).toFloat()
+                setStroke(dp(1), c.borderMedium)
+            }
+            setPadding(dp(16), dp(8), dp(16), dp(14))
+        }
+
+        val dialogHeader = LinearLayout(activity).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(46)
+            )
+        }
+
+        val dialogDot = View(activity).apply {
+            layoutParams = LinearLayout.LayoutParams(dp(7), dp(7)).apply {
+                marginEnd = dp(9)
+            }
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(c.accentStrong)
+            }
+        }
+
+        val dialogTitle = TextView(activity).apply {
+            text = "思考过程"
+            textSize = 13f
+            setTextColor(c.textSecondary)
+            includeFontPadding = false
+        }
+
+        val dialogSpace = View(activity).apply {
+            layoutParams = LinearLayout.LayoutParams(0, dp(1), 1f)
+        }
+
+        val close = TextView(activity).apply {
+            text = "关闭"
+            textSize = 12f
+            setTextColor(c.accentStrong)
+            gravity = Gravity.CENTER
+            setPadding(dp(10), dp(8), dp(4), dp(8))
+            isClickable = true
+            isFocusable = true
+            setOnClickListener { dialog.dismiss() }
+        }
+
+        dialogHeader.addView(dialogDot)
+        dialogHeader.addView(dialogTitle)
+        dialogHeader.addView(dialogSpace)
+        dialogHeader.addView(close)
+
+        val divider = View(activity).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(1)
+            )
+            setBackgroundColor(c.borderMedium)
+            alpha = 0.65f
+        }
+
+        val dialogText = TextView(activity).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+            typeface = Typeface.create("sans-serif", Typeface.NORMAL)
+            text = MarkdownRenderer.render(content)
+            setTextColor(c.textSecondary)
+            textSize = 13f
+            setLineSpacing(0f, 1.5f)
+            setPadding(dp(4), dp(14), dp(4), dp(20))
+            setTextIsSelectable(true)
+        }
+
+        val readingScroll = ScrollView(activity).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                0,
+                1f
+            )
+            isFillViewport = false
+            isVerticalScrollBarEnabled = true
+            overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS
+            addView(dialogText)
+        }
+
+        card.addView(dialogHeader)
+        card.addView(divider)
+        card.addView(readingScroll)
+        dialog.setContentView(card)
+
+        dialog.setOnShowListener {
+            dialog.window?.apply {
+                setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+                addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+                attributes = attributes.apply { dimAmount = 0.32f }
+                setLayout(
+                    (screenWidth * 0.90f).toInt(),
+                    (activity.resources.displayMetrics.heightPixels * 0.76f).toInt()
+                )
+                setGravity(Gravity.CENTER)
+            }
+        }
+
+        dialog.show()
     }
 
     fun showTypingIndicator() {

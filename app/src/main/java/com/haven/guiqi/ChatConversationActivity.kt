@@ -1,15 +1,21 @@
 package com.haven.guiqi
 
+import android.content.Context
 import android.content.Intent
+import android.graphics.Rect
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.view.Gravity
+import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
+import android.view.animation.PathInterpolator
+import android.view.inputmethod.InputMethodManager
 import android.widget.EditText
+import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import org.json.JSONArray
@@ -41,8 +47,12 @@ class ChatConversationActivity : AppCompatActivity() {
     private lateinit var imagePreviewContainer: LinearLayout
     private lateinit var quotePreviewContainer: LinearLayout
     private lateinit var inputBar: LinearLayout
+    private lateinit var composerDock: FrameLayout
+    private lateinit var composerCollapsedButton: TextView
     private lateinit var expandedInputPanel: LinearLayout
     private lateinit var expandedInput: EditText
+    private var isComposerExpanded = false
+    private val composerEasing = PathInterpolator(0.22f, 1f, 0.36f, 1f)
         // 表情包相关
     private lateinit var stickerPanel: LinearLayout
     private lateinit var stickerGrid: LinearLayout
@@ -118,8 +128,13 @@ class ChatConversationActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
 
         WindowCompat.setDecorFitsSystemWindows(window, false)
-        window.statusBarColor = android.graphics.Color.TRANSPARENT
-        window.navigationBarColor = android.graphics.Color.TRANSPARENT
+        // 顶部状态栏、底部手势导航区都跟聊天页同色，避免上下出现纯黑色横条
+        window.statusBarColor = c.background
+        window.navigationBarColor = c.background
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            window.isStatusBarContrastEnforced = false
+            window.isNavigationBarContrastEnforced = false
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             window.attributes.layoutInDisplayCutoutMode =
                 WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
@@ -128,10 +143,11 @@ class ChatConversationActivity : AppCompatActivity() {
         setContentView(R.layout.activity_chat_conversation)
 
         val insetsController = WindowInsetsControllerCompat(window, window.decorView)
-        insetsController.hide(WindowInsetsCompat.Type.navigationBars())
         insetsController.systemBarsBehavior =
             WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-        insetsController.isAppearanceLightStatusBars = !ThemeHelper.isDark(this)
+        val useDarkSystemIcons = !ThemeHelper.isDark(this)
+        insetsController.isAppearanceLightStatusBars = useDarkSystemIcons
+        insetsController.isAppearanceLightNavigationBars = useDarkSystemIcons
 
         val contentView = findViewById<View>(android.R.id.content)
         ViewCompat.setOnApplyWindowInsetsListener(contentView) { view, insets ->
@@ -172,6 +188,8 @@ class ChatConversationActivity : AppCompatActivity() {
         }
         quotePreviewContainer = findViewById(R.id.quotePreviewContainer)
         inputBar = findViewById(R.id.inputBar)
+        composerDock = findViewById(R.id.composerDock)
+        composerCollapsedButton = findViewById(R.id.composerCollapsedButton)
         expandedInputPanel = findViewById(R.id.expandedInputPanel)
         expandedInput = findViewById(R.id.expandedInput)
         stickerPanel = findViewById(R.id.stickerPanel)
@@ -215,7 +233,7 @@ class ChatConversationActivity : AppCompatActivity() {
         )
         batchModeManager.onToggle = { entering ->
             if (entering) {
-                findViewById<LinearLayout>(R.id.plusPanel).visibility = View.GONE
+                plusMenuManager.hide(false)
                 stickerPanelManager.hide()
                 if (expandedInputPanel.visibility == View.VISIBLE) toggleExpandedInput(false)
             }
@@ -265,9 +283,13 @@ class ChatConversationActivity : AppCompatActivity() {
         }
 
         btnPlus.setOnClickListener { plusMenuManager.toggle() }
+        composerCollapsedButton.setOnClickListener { expandComposer(showKeyboard = true) }
 
         // 分条模式按钮
-        findViewById<TextView>(R.id.btnBatch).setOnClickListener { batchModeManager.toggle() }
+        findViewById<LinearLayout>(R.id.plusBtnBatch).setOnClickListener {
+            plusMenuManager.hide()
+            batchModeManager.toggle()
+        }
 
         // 发送全部
         findViewById<TextView>(R.id.btnSendAll).setOnClickListener { sendAllPending() }
@@ -282,7 +304,10 @@ class ChatConversationActivity : AppCompatActivity() {
         }
 
         // 展开模式
-        findViewById<TextView>(R.id.btnExpand).setOnClickListener { toggleExpandedInput(true) }
+        findViewById<LinearLayout>(R.id.plusBtnExpand).setOnClickListener {
+            plusMenuManager.hide()
+            toggleExpandedInput(true)
+        }
         findViewById<TextView>(R.id.btnCollapse).setOnClickListener { toggleExpandedInput(false) }
                 findViewById<TextView>(R.id.btnExpandSend).setOnClickListener {
             val text = expandedInput.text.toString().trim()
@@ -300,6 +325,7 @@ class ChatConversationActivity : AppCompatActivity() {
             }
         }
 
+        setupCollapsibleComposer()
         initChat()
     }
 
@@ -441,7 +467,7 @@ class ChatConversationActivity : AppCompatActivity() {
             expandedInputPanel.visibility = View.VISIBLE
             expandedInput.requestFocus()
             stickerPanelManager.hide()
-            findViewById<LinearLayout>(R.id.plusPanel).visibility = View.GONE
+            plusMenuManager.hide(false)
             if (batchModeManager.isBatchMode) {
                 batchModeManager.exit()
             }
@@ -452,7 +478,145 @@ class ChatConversationActivity : AppCompatActivity() {
                 inputMessage.setSelection(inputMessage.text.length)
             }
             expandedInputPanel.visibility = View.GONE
+            isComposerExpanded = true
+            composerCollapsedButton.visibility = View.INVISIBLE
             inputBar.visibility = View.VISIBLE
+            inputBar.alpha = 1f
+            inputBar.scaleX = 1f
+            inputBar.scaleY = 1f
+        }
+    }
+
+    // ===== 可收放输入栏 =====
+    private fun setupCollapsibleComposer() {
+        inputBar.visibility = View.GONE
+        inputBar.alpha = 0f
+        inputBar.scaleX = 0.18f
+        inputBar.scaleY = 0.86f
+        composerCollapsedButton.visibility = View.VISIBLE
+        composerCollapsedButton.alpha = 1f
+        composerCollapsedButton.scaleX = 1f
+        composerCollapsedButton.scaleY = 1f
+    }
+
+    private fun expandComposer(showKeyboard: Boolean) {
+        if (expandedInputPanel.visibility == View.VISIBLE) return
+        if (isComposerExpanded) {
+            if (showKeyboard) {
+                inputMessage.requestFocus()
+                showKeyboard(inputMessage)
+            }
+            return
+        }
+
+        isComposerExpanded = true
+        composerCollapsedButton.animate().cancel()
+        inputBar.animate().cancel()
+
+        composerCollapsedButton.animate()
+            .alpha(0f)
+            .scaleX(0.72f)
+            .scaleY(0.72f)
+            .setDuration(120L)
+            .setInterpolator(composerEasing)
+            .withEndAction { composerCollapsedButton.visibility = View.INVISIBLE }
+            .start()
+
+        inputBar.visibility = View.VISIBLE
+        inputBar.alpha = 0f
+        inputBar.scaleX = 0.18f
+        inputBar.scaleY = 0.86f
+        inputBar.post {
+            inputBar.pivotX = inputBar.width / 2f
+            inputBar.pivotY = inputBar.height / 2f
+            inputBar.animate()
+                .alpha(1f)
+                .scaleX(1f)
+                .scaleY(1f)
+                .setDuration(270L)
+                .setInterpolator(composerEasing)
+                .start()
+        }
+
+        if (showKeyboard) {
+            inputMessage.requestFocus()
+            inputMessage.postDelayed({ showKeyboard(inputMessage) }, 90L)
+        }
+    }
+
+    private fun collapseComposer() {
+        if (!isComposerExpanded || expandedInputPanel.visibility == View.VISIBLE) return
+        isComposerExpanded = false
+        plusMenuManager.hide()
+        stickerPanelManager.hide()
+        inputMessage.clearFocus()
+        hideKeyboard()
+
+        inputBar.animate().cancel()
+        composerCollapsedButton.animate().cancel()
+        inputBar.animate()
+            .alpha(0f)
+            .scaleX(0.18f)
+            .scaleY(0.86f)
+            .setDuration(170L)
+            .setInterpolator(composerEasing)
+            .withEndAction { inputBar.visibility = View.GONE }
+            .start()
+
+        composerCollapsedButton.visibility = View.VISIBLE
+        composerCollapsedButton.alpha = 0f
+        composerCollapsedButton.scaleX = 0.72f
+        composerCollapsedButton.scaleY = 0.72f
+        composerCollapsedButton.animate()
+            .alpha(1f)
+            .scaleX(1f)
+            .scaleY(1f)
+            .setStartDelay(45L)
+            .setDuration(190L)
+            .setInterpolator(composerEasing)
+            .start()
+    }
+
+    override fun dispatchTouchEvent(event: MotionEvent): Boolean {
+        if (event.action == MotionEvent.ACTION_DOWN) {
+            if (isComposerExpanded && expandedInputPanel.visibility != View.VISIBLE) {
+                val insideComposer = isTouchInside(composerDock, event)
+                val insidePlusPanel = isTouchInside(findViewById(R.id.plusPanel), event)
+                val insideStickerPanel = isTouchInside(stickerPanel, event)
+                if (!insideComposer && !insidePlusPanel && !insideStickerPanel) {
+                    collapseComposer()
+                }
+            }
+        }
+        return super.dispatchTouchEvent(event)
+    }
+
+    private fun isTouchInside(view: View, event: MotionEvent): Boolean {
+        if (view.visibility != View.VISIBLE) return false
+        val rect = Rect()
+        view.getGlobalVisibleRect(rect)
+        return rect.contains(event.rawX.toInt(), event.rawY.toInt())
+    }
+
+    private fun showKeyboard(view: View) {
+        val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+        imm.showSoftInput(view, InputMethodManager.SHOW_IMPLICIT)
+    }
+
+    private fun hideKeyboard() {
+        val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+        imm.hideSoftInputFromWindow(window.decorView.windowToken, 0)
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun onBackPressed() {
+        when {
+            expandedInputPanel.visibility == View.VISIBLE -> toggleExpandedInput(false)
+            plusMenuManager.isVisible() -> plusMenuManager.hide()
+            stickerPanel.visibility == View.VISIBLE -> stickerPanelManager.hide()
+            bubbleRenderer.hasExpandedThinkingBlock() -> bubbleRenderer.collapseAllThinkingBlocks()
+            isComposerExpanded -> collapseComposer()
+            else -> super.onBackPressed()
         }
     }
 
@@ -778,7 +942,7 @@ class ChatConversationActivity : AppCompatActivity() {
         val preview = bubbleRenderer.buildQuotePreview(author, content) { removeQuotePreview() }
         quotePreviewContainer.addView(preview)
         quotePreviewContainer.visibility = View.VISIBLE
-        inputMessage.requestFocus()
+        expandComposer(showKeyboard = true)
     }
 
     private fun removeQuotePreview() {

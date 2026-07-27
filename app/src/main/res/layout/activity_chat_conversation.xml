@@ -340,168 +340,271 @@
             android:orientation="vertical" />
     </LinearLayout>
 
-    <!-- ===== 加号面板（在输入栏上方） ===== -->
+    <!-- ===== 加号功能面板（从输入栏上方展开） ===== -->
     <LinearLayout
         android:id="@+id/plusPanel"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:gravity="center"
-        android:paddingVertical="14dp"
-        android:paddingHorizontal="20dp"
-        android:background="@color/haven_divider"
+        android:layout_marginHorizontal="12dp"
+        android:layout_marginBottom="4dp"
+        android:background="@drawable/composer_panel_bg"
+        android:orientation="vertical"
+        android:paddingHorizontal="10dp"
+        android:paddingTop="10dp"
+        android:paddingBottom="8dp"
         android:visibility="gone">
 
         <LinearLayout
-            android:id="@+id/plusBtnCamera"
-            android:layout_width="0dp"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:gravity="center"
-            android:orientation="vertical"
-            android:padding="8dp">
-            <View
-                android:layout_width="40dp"
-                android:layout_height="40dp"
-                android:background="@drawable/settings_item_bg" />
-            <TextView
-                android:layout_width="wrap_content"
+            android:orientation="horizontal">
+
+            <LinearLayout
+                android:id="@+id/plusBtnCamera"
+                android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:text="拍照"
-                android:textColor="@color/haven_text_secondary"
-                android:textSize="11sp"
-                android:layout_marginTop="6dp" />
+                android:layout_weight="1"
+                android:gravity="center"
+                android:orientation="vertical"
+                android:padding="6dp">
+
+                <TextView
+                    android:layout_width="42dp"
+                    android:layout_height="42dp"
+                    android:background="@drawable/settings_item_bg"
+                    android:gravity="center"
+                    android:text="◉"
+                    android:textColor="@color/haven_text_secondary"
+                    android:textSize="18sp" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="5dp"
+                    android:text="拍照"
+                    android:textColor="@color/haven_text_secondary"
+                    android:textSize="11sp" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/plusBtnImage"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:orientation="vertical"
+                android:padding="6dp">
+
+                <TextView
+                    android:layout_width="42dp"
+                    android:layout_height="42dp"
+                    android:background="@drawable/settings_item_bg"
+                    android:gravity="center"
+                    android:text="▧"
+                    android:textColor="@color/haven_text_secondary"
+                    android:textSize="19sp" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="5dp"
+                    android:text="图片"
+                    android:textColor="@color/haven_text_secondary"
+                    android:textSize="11sp" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/plusBtnSticker"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:orientation="vertical"
+                android:padding="6dp">
+
+                <TextView
+                    android:layout_width="42dp"
+                    android:layout_height="42dp"
+                    android:background="@drawable/settings_item_bg"
+                    android:gravity="center"
+                    android:text="◇"
+                    android:textColor="@color/haven_text_secondary"
+                    android:textSize="20sp" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="5dp"
+                    android:text="表情包"
+                    android:textColor="@color/haven_text_secondary"
+                    android:textSize="11sp" />
+            </LinearLayout>
         </LinearLayout>
 
         <LinearLayout
-            android:id="@+id/plusBtnImage"
-            android:layout_width="0dp"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:gravity="center"
-            android:orientation="vertical"
-            android:padding="8dp">
-            <View
-                android:layout_width="40dp"
-                android:layout_height="40dp"
-                android:background="@drawable/settings_item_bg" />
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="发图片"
-                android:textColor="@color/haven_text_secondary"
-                android:textSize="11sp"
-                android:layout_marginTop="6dp" />
-        </LinearLayout>
+            android:orientation="horizontal">
 
-        <LinearLayout
-            android:id="@+id/plusBtnSticker"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:gravity="center"
-            android:orientation="vertical"
-            android:padding="8dp">
-            <View
-                android:layout_width="40dp"
-                android:layout_height="40dp"
-                android:background="@drawable/settings_item_bg" />
-            <TextView
-                android:layout_width="wrap_content"
+            <LinearLayout
+                android:id="@+id/plusBtnWeather"
+                android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:text="表情包"
-                android:textColor="@color/haven_text_secondary"
-                android:textSize="11sp"
-                android:layout_marginTop="6dp" />
-        </LinearLayout>
+                android:layout_weight="1"
+                android:gravity="center"
+                android:orientation="vertical"
+                android:padding="6dp">
 
-        <LinearLayout
-            android:id="@+id/plusBtnWeather"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:gravity="center"
-            android:orientation="vertical"
-            android:padding="8dp">
-            <View
-                android:layout_width="40dp"
-                android:layout_height="40dp"
-                android:background="@drawable/settings_item_bg" />
-            <TextView
-                android:layout_width="wrap_content"
+                <TextView
+                    android:layout_width="42dp"
+                    android:layout_height="42dp"
+                    android:background="@drawable/settings_item_bg"
+                    android:gravity="center"
+                    android:text="☼"
+                    android:textColor="@color/haven_text_secondary"
+                    android:textSize="18sp" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="5dp"
+                    android:text="天气"
+                    android:textColor="@color/haven_text_secondary"
+                    android:textSize="11sp" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/plusBtnBatch"
+                android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:text="天气"
-                android:textColor="@color/haven_text_secondary"
-                android:textSize="11sp"
-                android:layout_marginTop="6dp" />
+                android:layout_weight="1"
+                android:gravity="center"
+                android:orientation="vertical"
+                android:padding="6dp">
+
+                <TextView
+                    android:id="@+id/btnBatch"
+                    android:layout_width="42dp"
+                    android:layout_height="42dp"
+                    android:background="@drawable/settings_item_bg"
+                    android:gravity="center"
+                    android:text="≡"
+                    android:textColor="@color/haven_date_label"
+                    android:textSize="20sp" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="5dp"
+                    android:text="分条"
+                    android:textColor="@color/haven_text_secondary"
+                    android:textSize="11sp" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/plusBtnExpand"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:orientation="vertical"
+                android:padding="6dp">
+
+                <TextView
+                    android:id="@+id/btnExpand"
+                    android:layout_width="42dp"
+                    android:layout_height="42dp"
+                    android:background="@drawable/settings_item_bg"
+                    android:gravity="center"
+                    android:text="↕"
+                    android:textColor="@color/haven_date_label"
+                    android:textSize="18sp" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="5dp"
+                    android:text="大输入框"
+                    android:textColor="@color/haven_text_secondary"
+                    android:textSize="11sp" />
+            </LinearLayout>
         </LinearLayout>
     </LinearLayout>
 
-    <!-- ===== 底部输入栏 ===== -->
-    <LinearLayout
-        android:id="@+id/inputBar"
+    <!-- ===== 可收放输入栏 ===== -->
+    <FrameLayout
+        android:id="@+id/composerDock"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:gravity="center_vertical"
-        android:orientation="horizontal"
+        android:clipChildren="false"
+        android:clipToPadding="false"
         android:paddingHorizontal="12dp"
-        android:paddingVertical="8dp"
-        android:background="@color/haven_divider">
+        android:paddingTop="4dp"
+        android:paddingBottom="10dp">
 
+        <!-- 收起状态：底部中央的小门牌 -->
         <TextView
-            android:id="@+id/btnPlus"
-            android:layout_width="36dp"
-            android:layout_height="36dp"
+            android:id="@+id/composerCollapsedButton"
+            android:layout_width="50dp"
+            android:layout_height="50dp"
+            android:layout_gravity="center"
+            android:background="@drawable/composer_collapsed_bg"
             android:gravity="center"
-            android:text="＋"
-            android:textColor="@color/haven_date_label"
-            android:textSize="20sp" />
-
-        <EditText
-            android:id="@+id/inputMessage"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:layout_marginHorizontal="6dp"
-            android:minHeight="38dp"
-            android:maxLines="4"
-            android:background="@drawable/chat_input_bg"
-            android:paddingHorizontal="14dp"
-            android:paddingVertical="8dp"
-            android:hint="说点什么..."
-            android:textColor="@color/haven_text_on_card"
-            android:textColorHint="@color/haven_date_label"
-            android:textSize="14sp"
-            android:inputType="textMultiLine"
-            android:imeOptions="actionNone" />
-
-        <TextView
-            android:id="@+id/btnBatch"
-            android:layout_width="28dp"
-            android:layout_height="36dp"
-            android:gravity="center"
-            android:text="≡"
-            android:textColor="@color/haven_date_label"
-            android:textSize="18sp" />
-
-        <TextView
-            android:id="@+id/btnExpand"
-            android:layout_width="28dp"
-            android:layout_height="36dp"
-            android:gravity="center"
-            android:text="↕"
-            android:textColor="@color/haven_date_label"
-            android:textSize="16sp" />
-
-        <TextView
-            android:id="@+id/btnSend"
-            android:layout_width="36dp"
-            android:layout_height="36dp"
-            android:gravity="center"
-            android:text="➤"
+            android:text="✦"
             android:textColor="@color/haven_accent"
-            android:textSize="20sp" />
-    </LinearLayout>
+            android:textSize="17sp" />
+
+        <!-- 展开状态：加号 + 输入框 + 发送 -->
+        <LinearLayout
+            android:id="@+id/inputBar"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:alpha="0"
+            android:background="@drawable/composer_bar_bg"
+            android:gravity="center_vertical"
+            android:minHeight="54dp"
+            android:orientation="horizontal"
+            android:paddingHorizontal="7dp"
+            android:paddingVertical="6dp"
+            android:visibility="gone">
+
+            <TextView
+                android:id="@+id/btnPlus"
+                android:layout_width="42dp"
+                android:layout_height="42dp"
+                android:gravity="center"
+                android:text="＋"
+                android:textColor="@color/haven_text_secondary"
+                android:textSize="22sp" />
+
+            <EditText
+                android:id="@+id/inputMessage"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:background="@android:color/transparent"
+                android:hint="说点什么..."
+                android:imeOptions="actionNone"
+                android:inputType="textMultiLine"
+                android:maxLines="4"
+                android:minHeight="40dp"
+                android:paddingHorizontal="10dp"
+                android:paddingVertical="8dp"
+                android:textColor="@color/haven_text_on_card"
+                android:textColorHint="@color/haven_date_label"
+                android:textSize="14sp" />
+
+            <TextView
+                android:id="@+id/btnSend"
+                android:layout_width="42dp"
+                android:layout_height="42dp"
+                android:gravity="center"
+                android:text="➤"
+                android:textColor="@color/haven_accent"
+                android:textSize="20sp" />
+        </LinearLayout>
+    </FrameLayout>
 
     <!-- ===== 展开模式（半屏大输入框） ===== -->
     <LinearLayout
