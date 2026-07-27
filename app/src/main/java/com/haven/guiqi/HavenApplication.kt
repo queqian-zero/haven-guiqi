@@ -19,8 +19,8 @@ class HavenApplication : Application(), Application.ActivityLifecycleCallbacks {
     }
 
     private fun syncSystemBars(activity: Activity) {
-        // 小窝和桌面页面使用各自的沉浸式/壁纸系统栏，保持透明。
-        if (activity is NestActivity || activity is DesktopActivity) return
+        // 锁屏、小窝和桌面使用各自的沉浸式/壁纸系统栏，不能被全局颜色覆盖。
+        if (activity is MainActivity || activity is NestActivity || activity is DesktopActivity) return
 
         val colors = ThemeHelper.getColors(activity)
         val window = activity.window
