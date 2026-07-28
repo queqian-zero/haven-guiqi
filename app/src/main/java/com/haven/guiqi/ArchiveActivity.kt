@@ -323,7 +323,13 @@ class ArchiveActivity : AppCompatActivity() {
         val rooms = listOf(
             RoomCard(RoomIcon.BOOK, "书阁", "电子书 · 小说", "${bookCount} 本", c.folderDiary) { openBookRoom() },
             RoomCard(RoomIcon.COMIC, "漫廊", "漫画 · 绘本", "空着", c.folderDream) { openCollectionRoom("comic") },
-            RoomCard(RoomIcon.GALLERY, "画匣", "图片 · 头像 · 背景", "空着", c.folderMemory) { openCollectionRoom("gallery") },
+            RoomCard(
+                RoomIcon.GALLERY,
+                "画匣",
+                "图片 · 头像 · 背景",
+                GalleryStorage(this).count().let { if (it == 0) "空着" else "$it 张" },
+                c.folderMemory
+            ) { startActivity(Intent(this, GalleryActivity::class.java)) },
             RoomCard(RoomIcon.VIDEO, "放映室", "影片 · 视频", "空着", c.folderSummary) { openCollectionRoom("screening") }
         )
 
