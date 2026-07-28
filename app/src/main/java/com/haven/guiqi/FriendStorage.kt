@@ -155,6 +155,7 @@ class FriendStorage(private val context: Context) {
         deleteFileIfExists("echo", friendId)
         deleteFileIfExists("subconscious", "prefs_$friendId")
         ResidentPromptStorage(context).delete(friendId)
+        SleepMessageStorage(context).clear(friendId)
 
         // 印象存在 SharedPreferences 里
         context.getSharedPreferences("haven_impressions", Context.MODE_PRIVATE)

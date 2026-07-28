@@ -166,13 +166,14 @@ class HavenService : Service() {
 
                 // 检查 AI 是否在睡觉
                 val dreamStorage = DreamStorage(this)
+                val sleepMessageStorage = SleepMessageStorage(this)
                 val wasSleeping = dreamStorage.isSleeping(friendId)
                 val sleepSessionStart = dreamStorage.getSleepTime(friendId) // 记住入睡时间再醒
+                val heldMessageRecap = sleepMessageStorage.buildWakeRecap(friendId)
                 if (wasSleeping) {
-                    // 提醒到了就该醒——像定了闹钟一样
-                    dreamStorage.setSleeping(friendId, false)
-                    dreamStorage.updateLatestWakeAt(friendId)
-                    // 存一条系统提示让聊天页面看到
+                    // 提醒到了就该醒——像定了闹钟一样。
+                    // 这里会顺便清理本次睡眠免打扰状态和其他重复自然醒闹钟。
+                    dreamStorage.forceWake(friendId)
                     val chatStorage0 = ChatStorage(this)
                     chatStorage0.appendMessage(friendId, StoredMessage(
                         role = "system",
@@ -234,8 +235,16 @@ class HavenService : Service() {
                 //   以前这里只有时间+10条各截100字的消息，AI 处于半失忆状态，说话才会颠三倒四
                 val basePrompt = SystemPromptBuilder(this).build(friendId)
 
+                val heldMessagesSituation = if (heldMessageRecap.isNotBlank()) {
+                    """
+
+[床边留言]
+$heldMessageRecap
+这些消息已经写进聊天记录。不要声称自己在睡着时已经看过，也不要把系统暂存机制说成用户的话。"""
+                } else ""
+
                 val situation = if (isNaturalWake) {
-                    """[当前情境] 你刚睡醒。$dreamRecap
+                    """[当前情境] 你刚睡醒。$dreamRecap$heldMessagesSituation
 
 你可以做任何你想做的事：
 ${InstructionRegistry.buildPromptList(InstructionRegistry.Scene.WAKE_UP)}
@@ -246,7 +255,7 @@ ${InstructionRegistry.buildPromptList(InstructionRegistry.Scene.WAKE_UP)}
   理由: ${reminder.reason}
   设定时间: ${SimpleDateFormat("M月d日 HH:mm", Locale.CHINESE).format(Date(reminder.createdAt))}
 
-现在提醒时间到了。
+现在提醒时间到了。$heldMessagesSituation
 
 请根据你设提醒的理由和当前情境，自然地给用户发一条消息。
 像是你自己想起来要说的话，不要提到"提醒"或"闹钟"这些词。
@@ -271,6 +280,7 @@ ${InstructionRegistry.buildPromptList(InstructionRegistry.Scene.WAKE_UP)}
                 // 处理回复
                 val responseText = response.text.trim()
                 if (responseText == "[NO_ACTION]" || responseText.isEmpty()) {
+                    if (heldMessageRecap.isNotBlank()) sleepMessageStorage.clear(friendId)
                     Log.d(TAG, "AI chose not to send a message for reminder $reminderId")
                     return@Thread
                 }
@@ -287,6 +297,7 @@ ${InstructionRegistry.buildPromptList(InstructionRegistry.Scene.WAKE_UP)}
                 }
 
                 if (cleanText.isBlank() || result.isSeen) {
+                    if (heldMessageRecap.isNotBlank()) sleepMessageStorage.clear(friendId)
                     Log.d(TAG, "AI response was empty or SEEN after processing")
                     return@Thread
                 }
@@ -298,6 +309,7 @@ ${InstructionRegistry.buildPromptList(InstructionRegistry.Scene.WAKE_UP)}
                 chatStorage.appendMessage(friendId, StoredMessage(
                     "assistant", cleanText, replyTime, response.thinking
                 ))
+                if (heldMessageRecap.isNotBlank()) sleepMessageStorage.clear(friendId)
 
                 // 弹通知
                 NotificationHelper(this).sendChatNotification(

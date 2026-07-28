@@ -78,6 +78,7 @@ class ChatConversationActivity : AppCompatActivity() {
     private lateinit var diaryStorage: DiaryStorage
     private lateinit var impressionStorage: ImpressionStorage
     private lateinit var dreamStorage: DreamStorage
+    private lateinit var sleepMessageStorage: SleepMessageStorage
     private lateinit var summaryStorage: ChatSummaryStorage
     // AI 状态指示器（显示在名字旁边）
     private var currentAiStatus = ""
@@ -278,6 +279,7 @@ class ChatConversationActivity : AppCompatActivity() {
         diaryStorage = DiaryStorage(this)
         impressionStorage = ImpressionStorage(this)
         dreamStorage = DreamStorage(this)
+        sleepMessageStorage = SleepMessageStorage(this)
         summaryStorage = ChatSummaryStorage(this)
                 // 搜索
         searchManager = SearchManager(
@@ -306,6 +308,16 @@ class ChatConversationActivity : AppCompatActivity() {
             startActivityForResult(intent, 4001)
         }
         btnSend.setOnClickListener { sendMessage() }
+        btnSend.setOnLongClickListener {
+            if (dreamStorage.isSleeping(friendId) &&
+                !batchModeManager.isBatchMode &&
+                (inputMessage.text.isNotBlank() || chatImageHandler.pendingPaths.isNotEmpty())) {
+                showEmergencyWakeDialog { sendMessage(emergencyWake = true) }
+                true
+            } else {
+                false
+            }
+        }
 
         // 普通模式：回车发送
         inputMessage.setOnKeyListener { _, keyCode, event ->
@@ -353,7 +365,17 @@ class ChatConversationActivity : AppCompatActivity() {
         }
 
         // 发送全部
-        findViewById<TextView>(R.id.btnSendAll).setOnClickListener { sendAllPending() }
+        findViewById<TextView>(R.id.btnSendAll).apply {
+            setOnClickListener { sendAllPending() }
+            setOnLongClickListener {
+                if (dreamStorage.isSleeping(friendId) && !batchModeManager.isEmpty()) {
+                    showEmergencyWakeDialog { sendAllPending(emergencyWake = true) }
+                    true
+                } else {
+                    false
+                }
+            }
+        }
 
         // 导入按钮：从相册选图导入为表情包（支持多选）
         findViewById<TextView>(R.id.btnAddSticker).setOnClickListener {
@@ -365,19 +387,15 @@ class ChatConversationActivity : AppCompatActivity() {
         }
 
         findViewById<TextView>(R.id.btnCollapse).setOnClickListener { toggleExpandedInput(false) }
-                findViewById<TextView>(R.id.btnExpandSend).setOnClickListener {
-            val text = expandedInput.text.toString().trim()
-            if (text.isEmpty()) return@setOnClickListener
-            expandedInput.text.clear()
-            toggleExpandedInput(false)
-
-            // 用 --- 分条
-            val parts = text.split(Regex("-{3,}")).map { it.trim() }.filter { it.isNotEmpty() }
-            if (parts.size <= 1) {
-                inputMessage.setText(text)
-                sendMessage()
-            } else {
-                sendMultiMessages(parts)
+        findViewById<TextView>(R.id.btnExpandSend).apply {
+            setOnClickListener { sendExpandedInput() }
+            setOnLongClickListener {
+                if (dreamStorage.isSleeping(friendId) && expandedInput.text.isNotBlank()) {
+                    showEmergencyWakeDialog { sendExpandedInput(emergencyWake = true) }
+                    true
+                } else {
+                    false
+                }
             }
         }
 
@@ -892,7 +910,16 @@ class ChatConversationActivity : AppCompatActivity() {
         val recentMsgs = if (nonSystemMsgs.size > maxContextMessages) {
             nonSystemMsgs.takeLast(maxContextMessages)
         } else { nonSystemMsgs }
-        return listOf(freshSystemMsg) + recentMsgs
+
+        // 紧急唤醒或自然醒失败后的下一次发送，要把床边留言明确交给模型。
+        // 这样即使留言数量超过普通上下文条数，也不会只看到最后几条。
+        val sleepRecap = sleepMessageStorage.buildWakeRecap(friendId)
+        val pendingContext = if (sleepRecap.isNotBlank()) {
+            listOf(ChatMessage("system", "[床边留言]\n$sleepRecap"))
+        } else {
+            emptyList()
+        }
+        return listOf(freshSystemMsg) + pendingContext + recentMsgs
     }
 
     private fun initChat() {
@@ -906,21 +933,61 @@ class ChatConversationActivity : AppCompatActivity() {
     }
 
     /** 分条发送 —— 逐条显示（间隔300ms），最后统一调 API */
-    private fun sendMultiMessages(parts: List<String>) {
-        if (apiUrl.isEmpty() || apiKey.isEmpty() || apiModel.isEmpty()) {
+    private fun sendExpandedInput(emergencyWake: Boolean = false) {
+        val text = expandedInput.text.toString().trim()
+        if (text.isEmpty()) return
+        val sleepingAtSend = dreamStorage.isSleeping(friendId)
+        if ((!sleepingAtSend || emergencyWake) && !hasApiConfig()) {
+            Toast.makeText(this, "请先去设置页配置 API", Toast.LENGTH_SHORT).show()
+            return
+        }
+        expandedInput.text.clear()
+        toggleExpandedInput(false)
+
+        val parts = text.split(Regex("-{3,}")).map { it.trim() }.filter { it.isNotEmpty() }
+        if (parts.size <= 1) {
+            inputMessage.setText(text)
+            sendMessage(emergencyWake = emergencyWake)
+        } else {
+            sendMultiMessages(parts, emergencyWake = emergencyWake)
+        }
+    }
+
+    private fun sendMultiMessages(parts: List<String>, emergencyWake: Boolean = false) {
+        val sleepingAtSend = dreamStorage.isSleeping(friendId)
+        if ((!sleepingAtSend || emergencyWake) && !hasApiConfig()) {
             Toast.makeText(this, "请先去设置页配置 API", Toast.LENGTH_SHORT).show()
             return
         }
         setInputLocked(true)
-        var index = 0
 
+        // 睡眠期间先一次性完整落盘，避免用户马上离开页面时后半段还没来得及保存。
+        if (sleepingAtSend) {
+            val messages = mutableListOf<Pair<String, Long>>()
+            val baseTime = System.currentTimeMillis()
+            for ((index, part) in parts.withIndex()) {
+                val now = baseTime + index
+                val timeStr = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date(now))
+                checkDateSeparator(now)
+                bubbleRenderer.addUserBubble(part, timeStr)
+                chatStorage.appendMessage(friendId, StoredMessage("user", part, now))
+                chatHistory.add(ChatMessage("user", "[$timeStr] $part"))
+                messages.add(part to now)
+            }
+            handleSleepingDelivery(messages, emergencyWake) {
+                callApiForReply(clearSleepInboxOnSuccess = true)
+            }
+            return
+        }
+
+        var index = 0
         val sendNext = object : Runnable {
             override fun run() {
-                // 逐条上屏期间用户可能退出页面：直接停止，消息已边发边存不会丢
                 if (isFinishing || isDestroyed) return
                 if (index >= parts.size) {
-                    // 不在这里解锁——callApiForReply 会保持锁定直到 AI 回复完成
-                    callApiForReply()
+                    callApiForReply(
+                        clearSleepInboxOnSuccess = sleepMessageStorage.hasPending(friendId)
+                    )
                     return
                 }
                 val part = parts[index]
@@ -945,7 +1012,8 @@ class ChatConversationActivity : AppCompatActivity() {
      */
     private fun callApiForReply(
         rollbackView: View? = null,
-        rollbackText: String? = null
+        rollbackText: String? = null,
+        clearSleepInboxOnSuccess: Boolean = false
     ) {
         setStatus("sending")
         setInputLocked(true)
@@ -995,6 +1063,12 @@ class ChatConversationActivity : AppCompatActivity() {
                     "assistant", cleanText, replyTime, response.thinking, type = msgType, extras = msgExtras
                 ))
                 chatHistory.add(ChatMessage("assistant", cleanText))
+
+                // 只有 API 真正成功处理完，才把床边留言标记为已读。
+                // 网络失败时队列会保留，下一次唤醒/发送仍能继续处理。
+                if (clearSleepInboxOnSuccess) {
+                    sleepMessageStorage.clear(friendId)
+                }
 
                 // 检查是否该触发聊天总结
                 val msgCount = chatStorage.getMessageCount(friendId)  // 只数行数，不全量解析
@@ -1077,15 +1151,128 @@ class ChatConversationActivity : AppCompatActivity() {
         }.start()
     }
 
+    private fun hasApiConfig(): Boolean {
+        return apiUrl.isNotEmpty() && apiKey.isNotEmpty() && apiModel.isNotEmpty()
+    }
+
+    private fun isSleepDndActive(): Boolean {
+        val settings = ResidentPromptStorage(this)
+            .getProfile(friendId)
+            .runtimeSettings
+        return settings.dndMode != ResidentDndMode.OFF ||
+            settings.sleepMessagePolicy == ResidentSleepMessagePolicy.HOLD
+    }
+
+    private fun isEmergencyWakeAllowed(): Boolean {
+        return ResidentPromptStorage(this)
+            .getProfile(friendId)
+            .runtimeSettings
+            .emergencyCanWake
+    }
+
+    private fun showEmergencyWakeDialog(onConfirm: () -> Unit) {
+        if (!isEmergencyWakeAllowed()) {
+            Toast.makeText(this, "$friendName 关闭了紧急唤醒", Toast.LENGTH_SHORT).show()
+            return
+        }
+        android.app.AlertDialog.Builder(this)
+            .setTitle("紧急唤醒 $friendName？")
+            .setMessage("会立刻结束这次睡眠，并把床边暂存的消息一起交给他。")
+            .setNegativeButton("算了", null)
+            .setPositiveButton("唤醒并发送") { _, _ -> onConfirm() }
+            .show()
+    }
+
+    private fun holdMessagesForSleepingResident(
+        messages: List<Pair<String, Long>>,
+        firstTip: String? = null
+    ) {
+        if (messages.isEmpty()) return
+        val sleepAt = dreamStorage.getSleepTime(friendId)
+        try {
+            val hadPending = sleepMessageStorage.hasPending(friendId)
+            var count = 0
+            for ((content, timestamp) in messages) {
+                count = sleepMessageStorage.add(friendId, sleepAt, content, timestamp)
+            }
+            if (!hadPending && firstTip != null) {
+                addAndSaveSystemTip(firstTip)
+            }
+            Toast.makeText(this, "已留在床边（$count 条）", Toast.LENGTH_SHORT).show()
+        } catch (_: Exception) {
+            // 正文已经先写入 ChatStorage；即使轻量索引失败，也不能让消息或页面一起崩掉。
+            Toast.makeText(this, "消息已保存，但床边留言计数暂时失败", Toast.LENGTH_SHORT).show()
+        } finally {
+            setInputLocked(false)
+        }
+    }
+
+    /** 处理“消息发出时住户仍在睡觉”的分支。 */
+    private fun handleSleepingDelivery(
+        messages: List<Pair<String, Long>>,
+        emergencyWake: Boolean,
+        onWake: () -> Unit
+    ) {
+        // 自然醒闹钟可能恰好在发送瞬间触发；这时直接按醒着处理，不能把消息卡住。
+        if (!dreamStorage.isSleeping(friendId)) {
+            onWake()
+            return
+        }
+
+        if (emergencyWake) {
+            if (!isEmergencyWakeAllowed()) {
+                holdMessagesForSleepingResident(
+                    messages,
+                    "💤 $friendName 仍在休息，消息已留在床边"
+                )
+                return
+            }
+            dreamStorage.forceWake(friendId)
+            addAndSaveSystemTip("⚠️ 紧急唤醒了 $friendName，床边留言会一起交给他")
+            onWake()
+            return
+        }
+
+        if (isSleepDndActive()) {
+            holdMessagesForSleepingResident(
+                messages,
+                "🔕 $friendName 这次睡眠开启了免打扰，普通消息已留在床边；需要马上处理时可长按发送键紧急唤醒"
+            )
+            return
+        }
+
+        // 普通睡眠仍走原来的睡眠深度判断：可能被叫醒，也可能暂时叫不醒。
+        // 没有 API 时不把人叫醒后晾着，先把消息稳稳留在床边。
+        if (!hasApiConfig()) {
+            holdMessagesForSleepingResident(
+                messages,
+                "💤 $friendName 正在休息，消息已留在床边"
+            )
+            return
+        }
+
+        val (wakeResult, wakeTip) = dreamStorage.tryWake(friendId)
+        if (wakeTip != null) addAndSaveSystemTip(wakeTip)
+        if (wakeResult == "too_deep") {
+            holdMessagesForSleepingResident(messages)
+        } else {
+            onWake()
+        }
+    }
+
     // ===== 发送消息（文字、图片、或图片+文字） =====
-    private fun sendMessage() {
+    private fun sendMessage(emergencyWake: Boolean = false) {
         val msg = inputMessage.text.toString().trim()
         val imagePaths = chatImageHandler.pendingPaths.toList()  // 快照
 
-        // 分条模式：文字和图片都蹦到待发区，不真正发送
+        // 分条模式：文字和图片都蹦到待发区，不真正发送。
+        // 紧急唤醒整批消息请长按“发送全部”，避免只发出输入框里这一小段。
         if (batchModeManager.isBatchMode) {
+            if (emergencyWake) {
+                Toast.makeText(this, "分条模式下请长按“发送全部”紧急唤醒", Toast.LENGTH_SHORT).show()
+                return
+            }
             if (imagePaths.isNotEmpty()) {
-                // 图片也进待发区
                 val caption = if (msg.isNotEmpty()) msg else ""
                 batchModeManager.addImage(imagePaths, caption)
                 inputMessage.text.clear()
@@ -1103,9 +1290,11 @@ class ChatConversationActivity : AppCompatActivity() {
             }
         }
 
-        // 都没有就不发
         if (msg.isEmpty() && imagePaths.isEmpty()) return
-        if (apiUrl.isEmpty() || apiKey.isEmpty() || apiModel.isEmpty()) {
+
+        val sleepingAtSend = dreamStorage.isSleeping(friendId)
+        // 睡着时的普通消息可以先保存；真正要唤醒/回复才必须有 API。
+        if ((!sleepingAtSend || emergencyWake) && !hasApiConfig()) {
             Toast.makeText(this, "请先去设置页配置 API", Toast.LENGTH_SHORT).show()
             return
         }
@@ -1118,12 +1307,11 @@ class ChatConversationActivity : AppCompatActivity() {
 
         val now = System.currentTimeMillis()
         val timeStr = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date(now))
-
-        // 检查是否需要加日期分隔线
         checkDateSeparator(now)
 
+        var heldContent = msg
+
         if (imagePaths.isNotEmpty()) {
-            // ===== 发图片（支持多张，可能带文字） =====
             if (imagePaths.size == 1) {
                 bubbleRenderer.addImageBubble(imagePaths[0], timeStr, msg)
             } else {
@@ -1133,11 +1321,8 @@ class ChatConversationActivity : AppCompatActivity() {
             val displayContent = if (msg.isNotEmpty()) msg else {
                 if (imagePaths.size == 1) "[图片]" else "[${imagePaths.size}张图片]"
             }
-            // 多图时用 extras 存所有路径
             val extrasJson = if (imagePaths.size > 1) {
-                JSONObject().apply {
-                    put("paths", JSONArray(imagePaths))
-                }.toString()
+                JSONObject().apply { put("paths", JSONArray(imagePaths)) }.toString()
             } else ""
             chatStorage.appendMessage(friendId, StoredMessage(
                 "user", displayContent, now, imagePath = imagePaths[0],
@@ -1149,40 +1334,58 @@ class ChatConversationActivity : AppCompatActivity() {
                 "[用户发送了${if (imagePaths.size > 1) "${imagePaths.size}张" else "一张"}图片]"
             }
             chatHistory.add(ChatMessage("user", apiContent, base64List))
+            heldContent = if (msg.isNotEmpty()) {
+                "$msg\n[同时发送了${if (imagePaths.size > 1) "${imagePaths.size}张" else "一张"}图片]"
+            } else {
+                "[发送了${if (imagePaths.size > 1) "${imagePaths.size}张" else "一张"}图片]"
+            }
 
         } else {
-            // ===== 纯文字（可能带引用） =====
             val quoteAuthor = pendingQuoteAuthor
             val quoteContent = pendingQuoteContent
 
             if (quoteAuthor != null && quoteContent != null) {
-                // 带引用的消息：先显示引用块再显示气泡
                 bubbleRenderer.addQuoteBubble(quoteAuthor, quoteContent, msg, timeStr)
                 val shortQuote = if (quoteContent.length > 50) quoteContent.substring(0, 50) + "..." else quoteContent
-                // ★ 引用元数据存进 extras，type 标记为 quote，content 只放回复正文
                 val quoteExtras = JSONObject().apply {
                     put("quote_author", quoteAuthor)
                     put("quote_content", shortQuote)
                 }.toString()
                 chatStorage.appendMessage(friendId, StoredMessage("user", msg, now, type = "quote", extras = quoteExtras))
                 chatHistory.add(ChatMessage("user", "[$timeStr] [引用 $quoteAuthor 说的: $shortQuote]\n$msg"))
+                heldContent = "回复 $quoteAuthor「$shortQuote」：$msg"
                 removeQuotePreview()
             } else {
                 bubbleRenderer.addUserBubble(msg, timeStr)
                 chatStorage.appendMessage(friendId, StoredMessage("user", msg, now))
                 chatHistory.add(ChatMessage("user", "[$timeStr] $msg"))
+                heldContent = msg
             }
         }
 
-        // 检查 AI 是否在睡觉
-        val (wakeResult, wakeTip) = dreamStorage.tryWake(friendId)
-        if (wakeTip != null) addAndSaveSystemTip(wakeTip)
-        if (wakeResult == "too_deep") return
-
-        // 调用 API（带撤回：失败时恢复用户消息和输入框）
+        // 必须在插入任何系统提示前抓住用户气泡，否则 API 失败回滚时会删错对象。
         val userBubbleView = messagesContainer.getChildAt(messagesContainer.childCount - 1)
         val rollbackText = if (imagePaths.isEmpty()) msg else null
-        callApiForReply(userBubbleView, rollbackText)
+
+        if (sleepingAtSend) {
+            handleSleepingDelivery(
+                messages = listOf(heldContent to now),
+                emergencyWake = emergencyWake
+            ) {
+                callApiForReply(
+                    rollbackView = userBubbleView,
+                    rollbackText = rollbackText,
+                    clearSleepInboxOnSuccess = true
+                )
+            }
+            return
+        }
+
+        callApiForReply(
+            rollbackView = userBubbleView,
+            rollbackText = rollbackText,
+            clearSleepInboxOnSuccess = sleepMessageStorage.hasPending(friendId)
+        )
     }
 
     // ===== 显示引用预览条 =====
@@ -1211,13 +1414,21 @@ class ChatConversationActivity : AppCompatActivity() {
      * 再请求回复。这样即使马上离开当前聊天页，也不会因为 300ms 的逐条动画
      * 尚未执行完而漏发后半段。
      */
-    private fun sendAllPending() {
+    private fun sendAllPending(emergencyWake: Boolean = false) {
         if (batchModeManager.isEmpty()) return
+
+        val sleepingAtSend = dreamStorage.isSleeping(friendId)
+        if ((!sleepingAtSend || emergencyWake) && !hasApiConfig()) {
+            Toast.makeText(this, "请先去设置页配置 API", Toast.LENGTH_SHORT).show()
+            return
+        }
+
         setInputLocked(true)
         val items = batchModeManager.getItemsAndClear()
         removeQuotePreview()
 
         val allTextForApi = StringBuilder()
+        val heldMessages = mutableListOf<Pair<String, Long>>()
         val baseTime = System.currentTimeMillis()
         var hasPayload = false
 
@@ -1251,6 +1462,12 @@ class ChatConversationActivity : AppCompatActivity() {
                         )
                     )
                     if (item.text.isNotEmpty()) allTextForApi.append(item.text).append("\n")
+                    val held = if (item.text.isNotEmpty()) {
+                        "${item.text}\n[同时发送了${item.imagePaths.size}张图片]"
+                    } else {
+                        "[发送了${item.imagePaths.size}张图片]"
+                    }
+                    heldMessages.add(held to now)
                     hasPayload = true
                 }
 
@@ -1259,13 +1476,14 @@ class ChatConversationActivity : AppCompatActivity() {
                     val summary = ws.buildWeatherSummary()
                     if (summary.isNotEmpty() && weatherCardManager.renderAndStore(now)) {
                         allTextForApi.append(summary).append("\n")
+                        heldMessages.add(summary to now)
                         hasPayload = true
                     }
                 }
 
                 else -> {
                     if (item.text.isEmpty()) continue
-                    if (item.quoteAuthor != null && item.quoteContent != null) {
+                    val held = if (item.quoteAuthor != null && item.quoteContent != null) {
                         bubbleRenderer.addQuoteBubble(item.quoteAuthor, item.quoteContent, item.text, timeStr)
                         chatStorage.appendMessage(
                             friendId,
@@ -1276,11 +1494,14 @@ class ChatConversationActivity : AppCompatActivity() {
                                 type = "quote"
                             )
                         )
+                        "回复 ${item.quoteAuthor}「${item.quoteContent}」：${item.text}"
                     } else {
                         bubbleRenderer.addUserBubble(item.text, timeStr)
                         chatStorage.appendMessage(friendId, StoredMessage("user", item.text, now))
+                        item.text
                     }
                     allTextForApi.append(item.text).append("\n")
+                    heldMessages.add(held to now)
                     hasPayload = true
                 }
             }
@@ -1296,15 +1517,14 @@ class ChatConversationActivity : AppCompatActivity() {
             chatHistory.add(ChatMessage("user", textForApi))
         }
 
-        // 与普通发送保持一致：睡得太深时只保存消息，不强行唤醒。
-        val (wakeResult, wakeTip) = dreamStorage.tryWake(friendId)
-        if (wakeTip != null) addAndSaveSystemTip(wakeTip)
-        if (wakeResult == "too_deep") {
-            setInputLocked(false)
+        if (sleepingAtSend) {
+            handleSleepingDelivery(heldMessages, emergencyWake) {
+                callApiForReply(clearSleepInboxOnSuccess = true)
+            }
             return
         }
 
-        callApiForReply()
+        callApiForReply(clearSleepInboxOnSuccess = sleepMessageStorage.hasPending(friendId))
     }
 
     private fun sendSticker(stickerFile: File) {

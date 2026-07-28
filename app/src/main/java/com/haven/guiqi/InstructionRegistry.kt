@@ -54,7 +54,9 @@ object InstructionRegistry {
         Ability("[RECALL:关键词或日期]", "翻留声（搜聊天记录）", setOf(Scene.CHAT, Scene.WAKE_UP, Scene.IDLE)),
 
         // ── 作息 ──
-        Ability("[SLEEP] / [SLEEP:时长]", "睡觉（自动定起床闹钟）", setOf(Scene.CHAT)),
+        Ability("[SLEEP] / [SLEEP:时长]", "睡觉（自动定起床闹钟；普通消息仍可能叫醒）", setOf(Scene.CHAT)),
+        Ability("[DO_NOT_DISTURB]", "为这次睡眠开启免打扰，普通消息留在床边", setOf(Scene.CHAT)),
+        Ability("[ALLOW_WAKE]", "关闭这次睡眠的免打扰，允许普通消息尝试唤醒", setOf(Scene.CHAT)),
         Ability("[REMIND_ME:时间:理由]", "给自己设提醒", setOf(Scene.ALL)),
         Ability("[CANCEL_REMIND]", "取消最近的提醒", setOf(Scene.CHAT)),
         Ability("[SET_ALARM:HH:MM:备注:模式]", "帮用户设闹钟", setOf(Scene.CHAT)),

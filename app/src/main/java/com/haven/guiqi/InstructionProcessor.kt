@@ -309,12 +309,58 @@ $history
             text = text.replace(match.value, "")
         }
 
+        // ===== [DO_NOT_DISTURB] / [ALLOW_WAKE] =====
+        // 睡眠与免打扰是两个独立状态：普通睡眠仍可能被消息叫醒，
+        // 只有住户明确开启免打扰后，普通消息才会暂存在床边。
+        val doNotDisturbPattern = Regex("\\[DO_NOT_DISTURB]", RegexOption.IGNORE_CASE)
+        if (doNotDisturbPattern.containsMatchIn(text)) {
+            val promptStorage = ResidentPromptStorage(context)
+            val profile = promptStorage.getProfile(friendId)
+            promptStorage.updateRuntimeSettings(
+                friendId,
+                profile.runtimeSettings.copy(
+                    dndMode = ResidentDndMode.THIS_SLEEP,
+                    sleepMessagePolicy = ResidentSleepMessagePolicy.HOLD
+                )
+            )
+            actions.add(
+                if (DreamStorage(context).isSleeping(friendId)) {
+                    "🔕 这次睡眠开启了免打扰"
+                } else {
+                    "🔕 已为这次睡眠开启免打扰"
+                }
+            )
+            text = text.replace(doNotDisturbPattern, "")
+        }
+
+        val allowWakePattern = Regex("\\[ALLOW_WAKE]", RegexOption.IGNORE_CASE)
+        if (allowWakePattern.containsMatchIn(text)) {
+            val promptStorage = ResidentPromptStorage(context)
+            val profile = promptStorage.getProfile(friendId)
+            promptStorage.updateRuntimeSettings(
+                friendId,
+                profile.runtimeSettings.copy(
+                    dndMode = ResidentDndMode.OFF,
+                    sleepMessagePolicy = ResidentSleepMessagePolicy.DELIVER
+                )
+            )
+            actions.add("🔔 普通消息可以尝试唤醒了")
+            text = text.replace(allowWakePattern, "")
+        }
+
         // ===== [SLEEP] 或 [SLEEP:时长] =====
         // AI 自己决定睡多久。没写时长就随机 6~9 小时。
+        // 注意：睡觉本身不会自动开启免打扰。
         val sleepPattern = Regex("\\[SLEEP(?::([^]]+))?]")
         sleepPattern.find(text)?.let { match ->
             val dreamStorage = DreamStorage(context)
             dreamStorage.setSleeping(friendId, true)
+            val sleepAt = dreamStorage.getSleepTime(friendId)
+            runCatching {
+                SleepMessageStorage(context).beginSession(friendId, sleepAt)
+            }.onFailure {
+                Log.w(TAG, "Failed to initialize sleep message inbox for $friendId", it)
+            }
             shouldDream = true
 
             // 解析睡多久

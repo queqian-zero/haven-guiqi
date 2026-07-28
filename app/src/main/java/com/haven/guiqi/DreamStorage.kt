@@ -283,6 +283,58 @@ class DreamStorage(private val context: Context) {
     }
 
     /**
+     * 明确唤醒（紧急唤醒、自然醒、浅睡被叫醒都会走这里）。
+     *
+     * 提前醒来时同时取消尚未触发的“自然醒”闹钟，避免几个小时后
+     * 又被旧闹钟重复叫醒一次；并清理只对本次睡眠有效的免打扰状态。
+     */
+    fun forceWake(friendId: String, cancelNaturalWakeReminder: Boolean = true): Boolean {
+        val wasSleeping = isSleeping(friendId)
+        if (wasSleeping) {
+            setSleeping(friendId, false)
+            updateLatestWakeAt(friendId)
+        }
+
+        if (cancelNaturalWakeReminder) {
+            runCatching {
+                val reminderStorage = ReminderStorage(context)
+                reminderStorage.getPendingReminders(friendId)
+                    .filter { it.reason == "自然醒" }
+                    .forEach { reminder ->
+                        ReminderScheduler.cancel(context, reminder.id)
+                        reminderStorage.markTriggered(reminder.id)
+                    }
+            }
+        }
+
+        runCatching {
+            val promptStorage = ResidentPromptStorage(context)
+            val profile = promptStorage.getProfile(friendId)
+            val current = profile.runtimeSettings
+            val nextDndMode = if (current.dndMode == ResidentDndMode.THIS_SLEEP) {
+                ResidentDndMode.OFF
+            } else {
+                current.dndMode
+            }
+            val nextMessagePolicy = if (nextDndMode == ResidentDndMode.OFF) {
+                ResidentSleepMessagePolicy.DELIVER
+            } else {
+                current.sleepMessagePolicy
+            }
+            if (nextDndMode != current.dndMode || nextMessagePolicy != current.sleepMessagePolicy) {
+                promptStorage.updateRuntimeSettings(
+                    friendId,
+                    current.copy(
+                        dndMode = nextDndMode,
+                        sleepMessagePolicy = nextMessagePolicy
+                    )
+                )
+            }
+        }
+        return wasSleeping
+    }
+
+    /**
      * AI 是否在睡觉
      */
     fun isSleeping(friendId: String): Boolean {
@@ -331,8 +383,7 @@ class DreamStorage(private val context: Context) {
         val hoursAsleep = (System.currentTimeMillis() - sleepTime) / 3600000
 
         if (hoursAsleep >= 10) {
-            setSleeping(friendId, false)
-            updateLatestWakeAt(friendId)
+            forceWake(friendId)
             return "natural" to "☀ 自然醒了（睡了${hoursAsleep}小时）"
         }
 
@@ -340,8 +391,7 @@ class DreamStorage(private val context: Context) {
         return if (Math.random() < depth) {
             "too_deep" to "💤 消息已送达（对方睡着了…吵不醒）"
         } else {
-            setSleeping(friendId, false)
-            updateLatestWakeAt(friendId)
+            forceWake(friendId)
             "woke" to "💤 你把它吵醒了"
         }
     }
