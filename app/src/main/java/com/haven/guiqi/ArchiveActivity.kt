@@ -1,6 +1,11 @@
 package com.haven.guiqi
 
+import android.content.Context
 import android.content.Intent
+import android.graphics.Canvas
+import android.graphics.Paint
+import android.graphics.Path
+import android.graphics.RectF
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Build
@@ -8,6 +13,7 @@ import android.os.Bundle
 import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
+import android.view.animation.DecelerateInterpolator
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -34,11 +40,22 @@ import androidx.core.view.WindowInsetsControllerCompat
  */
 class ArchiveActivity : AppCompatActivity() {
 
-    private lateinit var tabLibrary: TextView
+    private lateinit var backButton: TextView
+    private lateinit var pageTitle: TextView
+    private lateinit var tabsContainer: View
+    private lateinit var tabsDivider: View
+    private lateinit var tabCollection: TextView
     private lateinit var tabArchive: TextView
+    private lateinit var collectionPage: View
+    private lateinit var collectionContainer: LinearLayout
     private lateinit var libraryPage: LinearLayout
     private lateinit var archivePage: View
     private lateinit var cabinetContainer: LinearLayout
+
+    private enum class PageMode { COLLECTION, ARCHIVE, BOOKS }
+    private var pageMode: PageMode = PageMode.COLLECTION
+    private var isPageAnimating = false
+    private val roomTransitionDuration = 220L
 
     /** 当前主题色 */
     private val c get() = ThemeHelper.getColors(this)
@@ -165,45 +182,398 @@ class ArchiveActivity : AppCompatActivity() {
             insets
         }
 
-        tabLibrary = findViewById(R.id.tabLibrary)
+        backButton = findViewById(R.id.btnBack)
+        pageTitle = findViewById(R.id.pageTitle)
+        tabsContainer = findViewById(R.id.tabsContainer)
+        tabsDivider = findViewById(R.id.tabsDivider)
+        tabCollection = findViewById(R.id.tabCollection)
         tabArchive = findViewById(R.id.tabArchive)
+        collectionPage = findViewById(R.id.collectionPage)
+        collectionContainer = findViewById(R.id.collectionContainer)
         libraryPage = findViewById(R.id.libraryPage)
         archivePage = findViewById(R.id.archivePage)
         cabinetContainer = findViewById(R.id.cabinetContainer)
 
-        findViewById<TextView>(R.id.btnBack).setOnClickListener {
-            startActivity(Intent(this, DesktopActivity::class.java).apply {
-                flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
-            })
-            finish()
-        }
+        backButton.setOnClickListener { handleBack() }
 
-        tabLibrary.setOnClickListener { switchTab(false) }
+        tabCollection.setOnClickListener { switchTab(false) }
         tabArchive.setOnClickListener { switchTab(true) }
 
+        buildCollectionHub()
         switchTab(false)
     }
 
     override fun onResume() {
         super.onResume()
-        loadCabinets()
-        if (libraryPage.visibility == View.VISIBLE) loadBookShelf()
+        when (pageMode) {
+            PageMode.ARCHIVE -> loadCabinets()
+            PageMode.BOOKS -> loadBookShelf()
+            PageMode.COLLECTION -> buildCollectionHub()
+        }
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun onBackPressed() {
+        if (pageMode == PageMode.BOOKS) {
+            closeBookRoom()
+        } else {
+            super.onBackPressed()
+        }
+    }
+
+    private fun handleBack() {
+        if (pageMode == PageMode.BOOKS) {
+            closeBookRoom()
+            return
+        }
+        startActivity(Intent(this, DesktopActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+        })
+        finish()
     }
 
     private fun switchTab(isArchive: Boolean) {
+        isPageAnimating = false
+        collectionPage.animate().cancel()
+        libraryPage.animate().cancel()
+        collectionPage.alpha = 1f
+        collectionPage.translationX = 0f
+        libraryPage.alpha = 1f
+        libraryPage.translationX = 0f
+
+        backButton.text = "🏠"
+        pageTitle.text = "馆藏"
+        tabsContainer.visibility = View.VISIBLE
+        tabsDivider.visibility = View.VISIBLE
+        libraryPage.visibility = View.GONE
+
         if (isArchive) {
+            pageMode = PageMode.ARCHIVE
             tabArchive.setTextColor(c.textPrimary)
-            tabLibrary.setTextColor(c.textHint)
+            tabCollection.setTextColor(c.textHint)
             archivePage.visibility = View.VISIBLE
-            libraryPage.visibility = View.GONE
+            collectionPage.visibility = View.GONE
             loadCabinets()
         } else {
-            tabLibrary.setTextColor(c.textPrimary)
+            pageMode = PageMode.COLLECTION
+            tabCollection.setTextColor(c.textPrimary)
             tabArchive.setTextColor(c.textHint)
-            libraryPage.visibility = View.VISIBLE
+            collectionPage.visibility = View.VISIBLE
             archivePage.visibility = View.GONE
-            loadBookShelf()
         }
+    }
+
+    private fun openBookRoom() {
+        // 书阁也作为独立房间打开，和漫廊、画匣、放映室走完全相同的
+        // Activity 进入/返回过渡，不再使用同页动画。
+        startActivity(Intent(this, BookRoomActivity::class.java))
+    }
+
+    private fun closeBookRoom() {
+        if (pageMode != PageMode.BOOKS || isPageAnimating) return
+
+        isPageAnimating = true
+        pageMode = PageMode.COLLECTION
+        backButton.text = "🏠"
+        pageTitle.text = "馆藏"
+        tabsContainer.visibility = View.VISIBLE
+        tabsDivider.visibility = View.VISIBLE
+        archivePage.visibility = View.GONE
+
+        tabCollection.setTextColor(c.textPrimary)
+        tabArchive.setTextColor(c.textHint)
+
+        val distance = resources.displayMetrics.widthPixels * 0.10f
+        collectionPage.apply {
+            visibility = View.VISIBLE
+            alpha = 0f
+            translationX = -distance * 0.35f
+        }
+        libraryPage.apply {
+            visibility = View.VISIBLE
+            alpha = 1f
+            translationX = 0f
+        }
+
+        libraryPage.animate()
+            .alpha(0f)
+            .translationX(distance)
+            .setDuration(roomTransitionDuration - 40L)
+            .setInterpolator(DecelerateInterpolator())
+            .withEndAction {
+                libraryPage.visibility = View.GONE
+                libraryPage.alpha = 1f
+                libraryPage.translationX = 0f
+            }
+            .start()
+
+        collectionPage.animate()
+            .alpha(1f)
+            .translationX(0f)
+            .setDuration(roomTransitionDuration)
+            .setInterpolator(DecelerateInterpolator())
+            .withEndAction { isPageAnimating = false }
+            .start()
+    }
+
+    private fun buildCollectionHub() {
+        collectionContainer.removeAllViews()
+
+        val bookCount = BookStorage(this).loadBooksMeta().size
+        val rooms = listOf(
+            RoomCard(RoomIcon.BOOK, "书阁", "电子书 · 小说", "${bookCount} 本", c.folderDiary) { openBookRoom() },
+            RoomCard(RoomIcon.COMIC, "漫廊", "漫画 · 绘本", "空着", c.folderDream) { openCollectionRoom("comic") },
+            RoomCard(RoomIcon.GALLERY, "画匣", "图片 · 头像 · 背景", "空着", c.folderMemory) { openCollectionRoom("gallery") },
+            RoomCard(RoomIcon.VIDEO, "放映室", "影片 · 视频", "空着", c.folderSummary) { openCollectionRoom("screening") }
+        )
+
+        rooms.forEachIndexed { index, room ->
+            collectionContainer.addView(
+                buildRoomCard(room),
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    dp(82)
+                ).apply {
+                    if (index < rooms.lastIndex) bottomMargin = dp(12)
+                }
+            )
+        }
+    }
+
+    private enum class RoomIcon { BOOK, COMIC, GALLERY, VIDEO }
+
+    private data class RoomCard(
+        val icon: RoomIcon,
+        val title: String,
+        val subtitle: String,
+        val status: String,
+        val tint: Int,
+        val onClick: () -> Unit
+    )
+
+    private fun buildRoomCard(card: RoomCard): LinearLayout {
+        val cardBg = GradientDrawable().apply {
+            setColor(withAlpha(card.tint, if (ThemeHelper.isDark(this@ArchiveActivity)) 34 else 18))
+            cornerRadius = dp(16).toFloat()
+            setStroke(dp(1), withAlpha(card.tint, if (ThemeHelper.isDark(this@ArchiveActivity)) 76 else 52))
+        }
+
+        val iconBg = GradientDrawable().apply {
+            setColor(withAlpha(card.tint, if (ThemeHelper.isDark(this@ArchiveActivity)) 52 else 26))
+            cornerRadius = dp(13).toFloat()
+        }
+
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(16), dp(11), dp(16), dp(11))
+            background = cardBg
+            isClickable = true
+            isFocusable = true
+            setOnClickListener { card.onClick() }
+
+            addView(RoomIconView(this@ArchiveActivity, card.icon, card.tint).apply {
+                background = iconBg
+            }, LinearLayout.LayoutParams(dp(48), dp(48)))
+
+            addView(LinearLayout(this@ArchiveActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER_VERTICAL
+
+                addView(TextView(this@ArchiveActivity).apply {
+                    text = card.title
+                    textSize = 16f
+                    setTextColor(c.textPrimary)
+                    maxLines = 1
+                }, LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ))
+
+                addView(TextView(this@ArchiveActivity).apply {
+                    text = card.subtitle
+                    textSize = 11f
+                    setTextColor(c.textSecondary)
+                    maxLines = 2
+                }, LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { topMargin = dp(4) })
+            }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                marginStart = dp(14)
+            })
+
+            addView(LinearLayout(this@ArchiveActivity).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+
+                addView(TextView(this@ArchiveActivity).apply {
+                    text = card.status
+                    textSize = 10.5f
+                    setTextColor(withAlpha(card.tint, if (ThemeHelper.isDark(this@ArchiveActivity)) 220 else 190))
+                    gravity = Gravity.CENTER
+                    setPadding(dp(10), dp(5), dp(10), dp(5))
+                    background = GradientDrawable().apply {
+                        setColor(withAlpha(card.tint, if (ThemeHelper.isDark(this@ArchiveActivity)) 42 else 22))
+                        cornerRadius = dp(12).toFloat()
+                    }
+                    maxLines = 1
+                }, LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ))
+
+                addView(RoomChevronView(this@ArchiveActivity, card.tint), LinearLayout.LayoutParams(
+                    dp(20), dp(32)
+                ).apply { marginStart = dp(8) })
+            }, LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.MATCH_PARENT
+            ))
+        }
+    }
+
+
+    /** 卡片右侧的纯代码箭头。 */
+    private class RoomChevronView(
+        context: Context,
+        tint: Int
+    ) : View(context) {
+
+        private val density = resources.displayMetrics.density
+        private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = tint
+            style = Paint.Style.STROKE
+            strokeWidth = 1.7f * density
+            strokeCap = Paint.Cap.ROUND
+            strokeJoin = Paint.Join.ROUND
+            alpha = 150
+        }
+
+        override fun onDraw(canvas: Canvas) {
+            super.onDraw(canvas)
+            val cx = width * 0.42f
+            val cy = height * 0.5f
+            val dx = 4.2f * density
+            val dy = 6.2f * density
+            val path = Path().apply {
+                moveTo(cx - dx, cy - dy)
+                lineTo(cx + dx, cy)
+                lineTo(cx - dx, cy + dy)
+            }
+            canvas.drawPath(path, paint)
+        }
+    }
+
+    /** 纯 Canvas 线条图标，不依赖图片素材或图标字体。 */
+    private class RoomIconView(
+        context: Context,
+        private val icon: RoomIcon,
+        private val tint: Int
+    ) : View(context) {
+
+        private val density = resources.displayMetrics.density
+        private val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = tint
+            style = Paint.Style.STROKE
+            strokeWidth = 1.8f * density
+            strokeCap = Paint.Cap.ROUND
+            strokeJoin = Paint.Join.ROUND
+        }
+        private val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = tint
+            style = Paint.Style.FILL
+        }
+
+        override fun onDraw(canvas: Canvas) {
+            super.onDraw(canvas)
+            val w = width.toFloat()
+            val h = height.toFloat()
+            val left = w * 0.24f
+            val top = h * 0.27f
+            val right = w * 0.76f
+            val bottom = h * 0.73f
+
+            when (icon) {
+                RoomIcon.BOOK -> drawBook(canvas, left, top, right, bottom)
+                RoomIcon.COMIC -> drawComic(canvas, left, top, right, bottom)
+                RoomIcon.GALLERY -> drawGallery(canvas, left, top, right, bottom)
+                RoomIcon.VIDEO -> drawVideo(canvas, left, top, right, bottom)
+            }
+        }
+
+        private fun drawBook(canvas: Canvas, l: Float, t: Float, r: Float, b: Float) {
+            val mid = (l + r) / 2f
+            val path = Path().apply {
+                moveTo(mid, t + dpF(2f))
+                cubicTo(mid - dpF(4f), t, l + dpF(2f), t + dpF(1f), l, t + dpF(4f))
+                lineTo(l, b - dpF(2f))
+                cubicTo(l + dpF(7f), b - dpF(5f), mid - dpF(3f), b - dpF(3f), mid, b)
+                cubicTo(mid + dpF(3f), b - dpF(3f), r - dpF(7f), b - dpF(5f), r, b - dpF(2f))
+                lineTo(r, t + dpF(4f))
+                cubicTo(r - dpF(2f), t + dpF(1f), mid + dpF(4f), t, mid, t + dpF(2f))
+                close()
+            }
+            canvas.drawPath(path, stroke)
+            canvas.drawLine(mid, t + dpF(2f), mid, b, stroke)
+        }
+
+        private fun drawComic(canvas: Canvas, l: Float, t: Float, r: Float, b: Float) {
+            val rect = RectF(l, t, r, b)
+            canvas.drawRoundRect(rect, dpF(3f), dpF(3f), stroke)
+            val splitX = l + (r - l) * 0.58f
+            val splitY = t + (b - t) * 0.52f
+            canvas.drawLine(splitX, t, splitX, b, stroke)
+            canvas.drawLine(l, splitY, splitX, splitY, stroke)
+            val bubble = RectF(splitX + dpF(3f), t + dpF(4f), r - dpF(3f), splitY - dpF(3f))
+            canvas.drawRoundRect(bubble, dpF(3f), dpF(3f), stroke)
+            val tail = Path().apply {
+                moveTo(bubble.left + dpF(4f), bubble.bottom)
+                lineTo(bubble.left + dpF(2f), bubble.bottom + dpF(3f))
+                lineTo(bubble.left + dpF(7f), bubble.bottom)
+            }
+            canvas.drawPath(tail, stroke)
+        }
+
+        private fun drawGallery(canvas: Canvas, l: Float, t: Float, r: Float, b: Float) {
+            val rect = RectF(l, t, r, b)
+            canvas.drawRoundRect(rect, dpF(3f), dpF(3f), stroke)
+            canvas.drawCircle(r - dpF(6f), t + dpF(6f), dpF(2f), fill)
+            val mountain = Path().apply {
+                moveTo(l + dpF(3f), b - dpF(4f))
+                lineTo(l + dpF(9f), t + dpF(10f))
+                lineTo(l + dpF(14f), b - dpF(9f))
+                lineTo(l + dpF(18f), t + dpF(12f))
+                lineTo(r - dpF(3f), b - dpF(4f))
+            }
+            canvas.drawPath(mountain, stroke)
+        }
+
+        private fun drawVideo(canvas: Canvas, l: Float, t: Float, r: Float, b: Float) {
+            val rect = RectF(l, t, r, b)
+            canvas.drawRoundRect(rect, dpF(4f), dpF(4f), stroke)
+            val cx = (l + r) / 2f + dpF(1f)
+            val cy = (t + b) / 2f
+            val triangle = Path().apply {
+                moveTo(cx - dpF(4f), cy - dpF(6f))
+                lineTo(cx + dpF(6f), cy)
+                lineTo(cx - dpF(4f), cy + dpF(6f))
+                close()
+            }
+            canvas.drawPath(triangle, fill)
+        }
+
+        private fun dpF(value: Float): Float = value * density
+    }
+
+    private fun withAlpha(color: Int, alpha: Int): Int {
+        return (color and 0x00FFFFFF) or (alpha.coerceIn(0, 255) shl 24)
+    }
+
+    private fun openCollectionRoom(room: String) {
+        startActivity(Intent(this, CollectionRoomActivity::class.java).apply {
+            putExtra(CollectionRoomActivity.EXTRA_ROOM, room)
+        })
     }
 
     /**
@@ -373,7 +743,7 @@ class ArchiveActivity : AppCompatActivity() {
         }
         val statView = TextView(this).apply {
             text = statsText
-            textSize = 10f
+            textSize = 11f
             setTextColor(c.accent)
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,

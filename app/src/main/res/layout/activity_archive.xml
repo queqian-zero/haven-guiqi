@@ -25,6 +25,7 @@
             android:textSize="16sp" />
 
         <TextView
+            android:id="@+id/pageTitle"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
@@ -43,8 +44,9 @@
         android:layout_height="0.5dp"
         android:background="@color/haven_divider" />
 
-    <!-- ===== 两个标签 ===== -->
+    <!-- ===== 藏品 / 档案馆 ===== -->
     <LinearLayout
+        android:id="@+id/tabsContainer"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
@@ -53,13 +55,13 @@
         android:gravity="center">
 
         <TextView
-            android:id="@+id/tabLibrary"
+            android:id="@+id/tabCollection"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:gravity="center"
-            android:text="书城"
-            android:textColor="@color/haven_text_hint"
+            android:text="藏品"
+            android:textColor="@color/haven_text_primary"
             android:textSize="14sp" />
 
         <TextView
@@ -69,38 +71,42 @@
             android:layout_weight="1"
             android:gravity="center"
             android:text="档案馆"
-            android:textColor="@color/haven_text_primary"
+            android:textColor="@color/haven_text_hint"
             android:textSize="14sp" />
     </LinearLayout>
 
     <View
+        android:id="@+id/tabsDivider"
         android:layout_width="match_parent"
         android:layout_height="0.5dp"
         android:background="@color/haven_divider" />
 
-    <!-- ===== 书城占位 ===== -->
+    <!-- ===== 藏品玄关 ===== -->
+    <ScrollView
+        android:id="@+id/collectionPage"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:fillViewport="true"
+        android:scrollbars="none"
+        android:visibility="visible">
+
+        <LinearLayout
+            android:id="@+id/collectionContainer"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingHorizontal="16dp"
+            android:paddingTop="18dp"
+            android:paddingBottom="40dp" />
+    </ScrollView>
+
+    <!-- ===== 书阁：保留现有书架功能 ===== -->
     <LinearLayout
         android:id="@+id/libraryPage"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:gravity="center"
         android:orientation="vertical"
-        android:visibility="gone">
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="📚"
-            android:textSize="40sp" />
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:text="书城正在建设中..."
-            android:textColor="@color/haven_text_hint"
-            android:textSize="14sp" />
-    </LinearLayout>
+        android:visibility="gone" />
 
     <!-- ===== 档案馆 ===== -->
     <ScrollView
@@ -108,7 +114,7 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:scrollbars="none"
-        android:visibility="visible">
+        android:visibility="gone">
 
         <LinearLayout
             android:id="@+id/cabinetContainer"

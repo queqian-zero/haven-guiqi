@@ -57,6 +57,8 @@
             android:windowSoftInputMode="adjustResize" />
         <activity android:name=".ChatSettingsActivity" />
         <activity android:name=".ArchiveActivity" />
+        <activity android:name=".CollectionRoomActivity" />
+        <activity android:name=".BookRoomActivity" />
         <activity android:name=".ArchiveDetailActivity" />
         <activity android:name=".ArchiveFolderActivity" />
         <activity android:name=".DreamArchiveActivity" />
