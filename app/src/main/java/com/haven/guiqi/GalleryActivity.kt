@@ -48,42 +48,59 @@ class GalleryActivity : AppCompatActivity() {
     private lateinit var emptyTitle: TextView
     private lateinit var emptyHint: TextView
     private lateinit var countText: TextView
+    private lateinit var selectionBar: LinearLayout
+    private lateinit var selectionCount: TextView
 
+    private val selectedItemIds = linkedSetOf<String>()
     private var currentCategory: GalleryStorage.Category? = null
     private var currentAlbumId: String? = null
     private var showUnclassifiedOnly = false
 
     private var pendingImportCategory = GalleryStorage.Category.GENERAL
     private var pendingImportAlbumId: String? = null
+    private var skipInitialResumeRefresh = true
     private val imageExecutor = Executors.newFixedThreadPool(2)
 
     private val imagePicker = registerForActivityResult(
         ActivityResultContracts.OpenMultipleDocuments()
     ) { uris ->
         if (uris.isEmpty()) return@registerForActivityResult
-        var success = 0
-        val failures = mutableListOf<String>()
-        uris.forEach { uri ->
-            try {
-                storage.importImage(uri, pendingImportCategory, pendingImportAlbumId)
-                success++
-            } catch (e: Exception) {
-                failures += (e.message ?: "未知错误")
+
+        // 捕获本次选择的目标，避免导入期间再次操作把图片放进另一组。
+        val importCategory = pendingImportCategory
+        val importAlbumId = pendingImportAlbumId
+        Toast.makeText(this, "正在放进画匣：${uris.size} 张…", Toast.LENGTH_SHORT).show()
+
+        imageExecutor.execute {
+            var success = 0
+            val failures = mutableListOf<String>()
+            uris.forEach { uri ->
+                try {
+                    storage.importImage(uri, importCategory, importAlbumId)
+                    success++
+                } catch (e: Exception) {
+                    failures += (e.message ?: "未知错误")
+                }
+            }
+
+            runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                val message = when {
+                    failures.isEmpty() -> "已放进画匣：$success 张"
+                    success > 0 -> "放入 $success 张，${failures.size} 张失败"
+                    else -> "导入失败：${failures.firstOrNull() ?: "无法读取图片"}"
+                }
+                Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
+
+                clearSelection(refreshGallery = false)
+                currentCategory = importCategory
+                currentAlbumId = importAlbumId
+                showUnclassifiedOnly = importAlbumId == null
+                renderFilters()
+                renderAlbumFilters()
+                renderGallery()
             }
         }
-        val message = when {
-            failures.isEmpty() -> "已放进画匣：$success 张"
-            success > 0 -> "放入 $success 张，${failures.size} 张失败"
-            else -> "导入失败：${failures.firstOrNull() ?: "无法读取图片"}"
-        }
-        Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
-
-        currentCategory = pendingImportCategory
-        currentAlbumId = pendingImportAlbumId
-        showUnclassifiedOnly = pendingImportAlbumId == null
-        renderFilters()
-        renderAlbumFilters()
-        renderGallery()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -97,6 +114,10 @@ class GalleryActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        if (skipInitialResumeRefresh) {
+            skipInitialResumeRefresh = false
+            return
+        }
         if (::grid.isInitialized) {
             renderAlbumFilters()
             renderGallery()
@@ -106,6 +127,11 @@ class GalleryActivity : AppCompatActivity() {
     override fun onDestroy() {
         imageExecutor.shutdownNow()
         super.onDestroy()
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun onBackPressed() {
+        if (selectedItemIds.isNotEmpty()) clearSelection() else super.onBackPressed()
     }
 
     private fun configureWindow() {
@@ -145,7 +171,9 @@ class GalleryActivity : AppCompatActivity() {
                 textSize = 34f
                 gravity = Gravity.CENTER
                 setTextColor(c.textPrimary)
-                setOnClickListener { finish() }
+                setOnClickListener {
+                    if (selectedItemIds.isNotEmpty()) clearSelection() else finish()
+                }
             }, LinearLayout.LayoutParams(dp(44), dp(44)))
 
             addView(LinearLayout(this@GalleryActivity).apply {
@@ -204,6 +232,33 @@ class GalleryActivity : AppCompatActivity() {
             LinearLayout.LayoutParams.MATCH_PARENT,
             LinearLayout.LayoutParams.WRAP_CONTENT
         ))
+
+        selectionBar = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            visibility = View.GONE
+            background = rounded(c.card, 14, c.border)
+            setPadding(dp(14), dp(8), dp(8), dp(8))
+
+            selectionCount = TextView(this@GalleryActivity).apply {
+                textSize = 12f
+                setTextColor(c.textPrimary)
+            }
+            addView(selectionCount, LinearLayout.LayoutParams(
+                0,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                1f
+            ))
+            addView(makeSelectionAction("移动", c.accentStrong) { moveSelectedItems() })
+            addView(makeSelectionAction("删除", c.errorText) { deleteSelectedItems() })
+            addView(makeSelectionAction("取消", c.textSecondary) { clearSelection() })
+        }
+        root.addView(selectionBar, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        ).apply {
+            setMargins(dp(14), 0, dp(14), dp(10))
+        })
 
         val contentFrame = FrameLayout(this)
         root.addView(contentFrame, LinearLayout.LayoutParams(
@@ -275,6 +330,7 @@ class GalleryActivity : AppCompatActivity() {
                 selected = currentCategory == category,
                 addStartMargin = index > 0
             ) {
+                clearSelection(refreshGallery = false)
                 currentCategory = category
                 currentAlbumId = null
                 showUnclassifiedOnly = false
@@ -301,6 +357,7 @@ class GalleryActivity : AppCompatActivity() {
             addStartMargin = false,
             compact = true
         ) {
+            clearSelection(refreshGallery = false)
             currentAlbumId = null
             showUnclassifiedOnly = false
             renderAlbumFilters()
@@ -314,6 +371,7 @@ class GalleryActivity : AppCompatActivity() {
             addStartMargin = true,
             compact = true
         ) {
+            clearSelection(refreshGallery = false)
             currentAlbumId = null
             showUnclassifiedOnly = true
             renderAlbumFilters()
@@ -328,6 +386,7 @@ class GalleryActivity : AppCompatActivity() {
                 addStartMargin = true,
                 compact = true
             ) {
+                clearSelection(refreshGallery = false)
                 currentAlbumId = album.id
                 showUnclassifiedOnly = false
                 renderAlbumFilters()
@@ -346,6 +405,7 @@ class GalleryActivity : AppCompatActivity() {
             addStartMargin = true,
             compact = true
         ) {
+            clearSelection(refreshGallery = false)
             showCreateAlbumDialog(category) { album ->
                 currentAlbumId = album.id
                 showUnclassifiedOnly = false
@@ -384,13 +444,95 @@ class GalleryActivity : AppCompatActivity() {
         return chip
     }
 
+    private fun makeSelectionAction(
+        label: String,
+        color: Int,
+        onClick: () -> Unit
+    ): TextView {
+        return TextView(this).apply {
+            text = label
+            textSize = 12f
+            gravity = Gravity.CENTER
+            setTextColor(color)
+            setPadding(dp(10), dp(6), dp(10), dp(6))
+            setOnClickListener { onClick() }
+        }
+    }
+
+    private fun updateSelectionBar() {
+        if (!::selectionBar.isInitialized) return
+        val count = selectedItemIds.size
+        selectionBar.visibility = if (count > 0) View.VISIBLE else View.GONE
+        if (count > 0) selectionCount.text = "已选 $count 张"
+    }
+
+    private fun toggleSelection(itemId: String) {
+        if (!selectedItemIds.add(itemId)) selectedItemIds.remove(itemId)
+        updateSelectionBar()
+        renderGallery()
+    }
+
+    private fun clearSelection(refreshGallery: Boolean = true) {
+        if (selectedItemIds.isEmpty()) {
+            updateSelectionBar()
+            return
+        }
+        selectedItemIds.clear()
+        updateSelectionBar()
+        if (refreshGallery && ::grid.isInitialized) renderGallery()
+    }
+
+    private fun moveSelectedItems() {
+        val ids = selectedItemIds.toList()
+        if (ids.isEmpty()) return
+        val categories = GalleryStorage.Category.values().asList().toTypedArray()
+        AlertDialog.Builder(this)
+            .setTitle("把 ${ids.size} 张图片移动到哪一类")
+            .setItems(categories.map { it.label }.toTypedArray()) { _, which ->
+                val targetCategory = categories[which]
+                chooseAlbumDestination(
+                    category = targetCategory,
+                    title = "放进 ${targetCategory.label} 的哪一组",
+                    allowCreate = true
+                ) { targetAlbumId ->
+                    val moved = storage.moveMany(ids, targetCategory, targetAlbumId)
+                    clearSelection(refreshGallery = false)
+                    renderAlbumFilters()
+                    renderGallery()
+                    Toast.makeText(this, "已移动 $moved 张", Toast.LENGTH_SHORT).show()
+                }
+            }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    private fun deleteSelectedItems() {
+        val ids = selectedItemIds.toList()
+        if (ids.isEmpty()) return
+        AlertDialog.Builder(this)
+            .setTitle("从画匣删除 ${ids.size} 张图片？")
+            .setMessage("只会删除画匣里的副本，不会动你手机相册中的原图。")
+            .setPositiveButton("删除") { _, _ ->
+                val deleted = storage.deleteMany(ids)
+                clearSelection(refreshGallery = false)
+                renderGallery()
+                Toast.makeText(this, "已删除 $deleted 张", Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
     private fun renderGallery() {
+        val allItems = storage.listAll()
+        selectedItemIds.retainAll(allItems.map { it.id }.toSet())
+        updateSelectionBar()
+
         val items = storage.listByCategory(
             category = currentCategory,
             albumId = currentAlbumId,
             unclassifiedOnly = showUnclassifiedOnly
         )
-        val total = storage.count()
+        val total = allItems.size
         countText.text = if (total == 0) "全屋共用 · 还没有图片" else "全屋共用 · $total 张图片"
         grid.removeAllViews()
 
@@ -404,17 +546,55 @@ class GalleryActivity : AppCompatActivity() {
 
         val side = ((resources.displayMetrics.widthPixels - dp(28) - dp(16)) / 3f).toInt()
         items.forEachIndexed { index, item ->
-            val image = ImageView(this).apply {
-                scaleType = ImageView.ScaleType.CENTER_CROP
-                background = rounded(c.card, 12, c.border)
-                clipToOutline = true
+            val selected = item.id in selectedItemIds
+            val cell = FrameLayout(this).apply {
                 contentDescription = item.displayName
-                setOnClickListener { showPreview(item) }
+                setOnClickListener {
+                    if (selectedItemIds.isNotEmpty()) toggleSelection(item.id) else showPreview(item)
+                }
                 setOnLongClickListener {
-                    showItemMenu(item)
+                    toggleSelection(item.id)
                     true
                 }
             }
+            val image = ImageView(this).apply {
+                scaleType = ImageView.ScaleType.CENTER_CROP
+                background = rounded(c.card, 12, if (selected) c.accentStrong else c.border)
+                clipToOutline = true
+                alpha = if (selected) 0.68f else 1f
+            }
+            cell.addView(image, FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+            ))
+
+            if (selected) {
+                cell.addView(View(this).apply {
+                    background = rounded(
+                        Color.argb(
+                            42,
+                            Color.red(c.accentStrong),
+                            Color.green(c.accentStrong),
+                            Color.blue(c.accentStrong)
+                        ),
+                        12
+                    )
+                }, FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                    FrameLayout.LayoutParams.MATCH_PARENT
+                ))
+                cell.addView(TextView(this).apply {
+                    text = "✓"
+                    textSize = 13f
+                    gravity = Gravity.CENTER
+                    setTextColor(c.textOnAccent)
+                    background = rounded(c.accentStrong, 12)
+                }, FrameLayout.LayoutParams(dp(24), dp(24), Gravity.TOP or Gravity.END).apply {
+                    topMargin = dp(7)
+                    marginEnd = dp(7)
+                })
+            }
+
             val params = GridLayout.LayoutParams().apply {
                 width = side
                 height = side
@@ -426,7 +606,7 @@ class GalleryActivity : AppCompatActivity() {
                     dp(4)
                 )
             }
-            grid.addView(image, params)
+            grid.addView(cell, params)
             loadSampled(storage.fileFor(item), side * 2, image)
         }
     }
@@ -447,7 +627,7 @@ class GalleryActivity : AppCompatActivity() {
             }
             currentAlbumId != null -> {
                 emptyTitle.text = "这个分类还是空的"
-                emptyHint.text = "上传图片，或长按其他图片把它移动进来。"
+                emptyHint.text = "上传图片，或长按图片进入多选后移动进来。"
             }
             else -> {
                 emptyTitle.text = "这一类还没有图片"

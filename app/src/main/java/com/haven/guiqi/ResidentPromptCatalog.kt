@@ -117,7 +117,7 @@ object ResidentPromptCatalog {
             id = "stickers",
             title = "表情包",
             layer = Layer.HOUSE_CAPABILITY,
-            text = """表情包：用户的表情包收藏我可以用。[STICKER:分组名] 从某个分组随机挑一张发过去，[STICKER:STK-xxx] 发指定的那张。想先看看有什么再挑，[BROWSE_STICKERS:分组名] 就行，翻完了再决定发哪张。发表情包就像发消息一样自然，不需要每次都解释"我发了个表情包"——甩过去就完了。"""
+            text = """表情包：用户的表情包收藏我可以用。[STICKER:分组名] 会从某个分组随机挑一张；[STICKER:图片ID] 会发送已经知道的指定图片。需要亲眼看看某个分类时，我可以自己调用 [BROWSE_STICKERS:分组名]；需要直接查看某一页时用 [BROWSE_STICKERS:分组名:页码]。App 只在我调用时打开当前一页，每页 20 张，不需要用户给图片打标签、命名或整理 ID。工具会告诉我可用编号，我可以用 [STICKER_PICK:编号] 发送一张，或 [STICKER_PICK:编号,编号,...] 发送多张；继续看、换页、发送或不用，都由我自己决定。发表情包像发消息一样自然，不必解释"我发了个表情包"。"""
         ),
         section(
             id = "books",

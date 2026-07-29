@@ -15,6 +15,7 @@ class HavenApplication : Application(), Application.ActivityLifecycleCallbacks {
     override fun onCreate() {
         super.onCreate()
         ThemeHelper.init(this)
+        FullBackupManager.handleApplicationStart(this)
         registerActivityLifecycleCallbacks(this)
     }
 

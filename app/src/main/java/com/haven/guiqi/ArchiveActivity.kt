@@ -56,6 +56,7 @@ class ArchiveActivity : AppCompatActivity() {
     private var pageMode: PageMode = PageMode.COLLECTION
     private var isPageAnimating = false
     private val roomTransitionDuration = 220L
+    private var skipInitialResumeRefresh = true
 
     /** 当前主题色 */
     private val c get() = ThemeHelper.getColors(this)
@@ -205,6 +206,10 @@ class ArchiveActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        if (skipInitialResumeRefresh) {
+            skipInitialResumeRefresh = false
+            return
+        }
         when (pageMode) {
             PageMode.ARCHIVE -> loadCabinets()
             PageMode.BOOKS -> loadBookShelf()

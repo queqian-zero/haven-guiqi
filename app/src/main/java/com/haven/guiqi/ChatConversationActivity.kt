@@ -73,6 +73,10 @@ class ChatConversationActivity : AppCompatActivity() {
     private lateinit var stickerActionBar: LinearLayout
     private lateinit var stickerStorage: StickerStorage
     private lateinit var stickerPanelManager: StickerPanelManager
+    private var pendingStickerImportGroup = StickerStorage.DEFAULT_GROUP
+    /** 当前待发送表情包的本地透明快照与 API JPEG 快照。 */
+    private var pendingStickerDisplayPath: String? = null
+    private var pendingStickerApiPath: String? = null
     private lateinit var batchModeManager: BatchModeManager
     private lateinit var memoryStorage: MemoryStorage
     private lateinit var diaryStorage: DiaryStorage
@@ -377,13 +381,9 @@ class ChatConversationActivity : AppCompatActivity() {
             }
         }
 
-        // 导入按钮：从相册选图导入为表情包（支持多选）
+        // 导入按钮：先选画匣内部分类，再从相册多选；只保存一份到共享画匣。
         findViewById<TextView>(R.id.btnAddSticker).setOnClickListener {
-            val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
-                type = "image/*"
-                putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
-            }
-            startActivityForResult(intent, PICK_STICKER)
+            showStickerImportGroupDialog()
         }
 
         findViewById<TextView>(R.id.btnCollapse).setOnClickListener { toggleExpandedInput(false) }
@@ -403,8 +403,8 @@ class ChatConversationActivity : AppCompatActivity() {
         initChat()
     }
 
-    // 离开页面时记下消息条数；回来时如果对不上（比如 TA 在你不在时主动说话了），自动刷新
-    private var pausedMessageCount = -1
+    // 离开页面时只记聊天文件的轻量版本标记；不再为了比较变化而全文件数行。
+    private var pausedChatRevision: ChatFileRevision? = null
 
     override fun onResume() {
         super.onResume()
@@ -423,17 +423,18 @@ class ChatConversationActivity : AppCompatActivity() {
             bubbleRenderer.friendAvatarPath = latestFriend.avatarPath
         }
 
-        if (pausedMessageCount >= 0 && chatStorage.getMessageCount(friendId) != pausedMessageCount) {
+        val pausedRevision = pausedChatRevision
+        if (pausedRevision != null && chatStorage.getFileRevision(friendId) != pausedRevision) {
             messagesContainer.removeAllViews()
             chatHistory.clear()
             initChat()
         }
-        pausedMessageCount = -1
+        pausedChatRevision = null
     }
 
     override fun onPause() {
         super.onPause()
-        pausedMessageCount = chatStorage.getMessageCount(friendId)
+        pausedChatRevision = chatStorage.getFileRevision(friendId)
     }
 
     override fun onDestroy() {
@@ -468,18 +469,29 @@ class ChatConversationActivity : AppCompatActivity() {
                 uris.add(data.data!!)
             }
 
-            var successCount = 0
-            for (uri in uris) {
-                if (stickerStorage.importFromUri(uri) != null) successCount++
-            }
+            val targetGroup = pendingStickerImportGroup
+            Toast.makeText(this, "正在收藏 ${uris.size} 张到「$targetGroup」…", Toast.LENGTH_SHORT).show()
+            Thread {
+                var successCount = 0
+                for (uri in uris) {
+                    if (stickerStorage.importFromUri(uri, targetGroup) != null) successCount++
+                }
 
-            if (successCount > 0) {
-                val msg = if (successCount == 1) "表情包已收藏！" else "已收藏 $successCount 张表情包！"
-                Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
-                stickerPanelManager.refreshGrid()
-            } else {
-                Toast.makeText(this, "导入失败", Toast.LENGTH_SHORT).show()
-            }
+                runOnUiThread {
+                    if (isFinishing || isDestroyed) return@runOnUiThread
+                    if (successCount > 0) {
+                        val countText = if (successCount == 1) "1 张" else "$successCount 张"
+                        Toast.makeText(
+                            this,
+                            "已收藏 $countText 到「$targetGroup」",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                        stickerPanelManager.refreshGrid()
+                    } else {
+                        Toast.makeText(this, "导入失败", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }.start()
         }
     }
 
@@ -877,6 +889,9 @@ class ChatConversationActivity : AppCompatActivity() {
                 inputMessage.clearFocus()
                 hideKeyboard()
             }
+            // 锁定输入栏只代表“不要自动收起”，不能吞掉系统返回键。
+            // 键盘已经在上一个分支关闭后，再按返回应正常离开聊天页。
+            isComposerExpanded && isComposerPinned -> super.onBackPressed()
             isComposerExpanded -> collapseComposer()
             else -> super.onBackPressed()
         }
@@ -1005,6 +1020,125 @@ class ChatConversationActivity : AppCompatActivity() {
     }
  
     /**
+     * 表情包视觉浏览工具。
+     *
+     * 平时完全不读取图片；只有住户明确输出 [BROWSE_STICKERS:分组名] 时才运行。
+     * 每次只生成当前一页（4×5，共 20 张），住户可以继续请求任意页，直到自己决定结束。
+     * 中间工具调用不会写入聊天正文，但会作为工具轨迹显示在思考区域。
+     */
+    private fun resolveVisualStickerBrowse(
+        api: ApiHelper,
+        baseContext: List<ChatMessage>,
+        firstResponse: ApiResponse
+    ): ApiResponse {
+        var currentResponse = firstResponse
+        val thinkingParts = mutableListOf<String>()
+        val numberToId = linkedMapOf<Int, String>()
+        var activeGroup: String? = null
+
+        fun addThinking(text: String) {
+            val cleaned = text.trim()
+            if (cleaned.isNotEmpty()) thinkingParts.add(cleaned)
+        }
+
+        addThinking(firstResponse.thinking)
+
+        while (true) {
+            val request = StickerBrowseSelection.findBrowseRequest(currentResponse.text)
+            if (request == null) {
+                if (numberToId.isNotEmpty()) {
+                    updateStickerBrowseStatus("$friendName 正在输入…")
+                }
+                return currentResponse.copy(
+                    thinking = thinkingParts.joinToString("\n\n"),
+                    text = StickerBrowseSelection.resolve(currentResponse.text, numberToId)
+                )
+            }
+
+            updateStickerBrowseStatus("$friendName 正在查看「${request.group}」表情包…")
+
+            // 只用 applicationContext 读取和生成临时预览，避免把页面对象交给图片处理层。
+            val preview = StickerBrowsePreview.buildPage(
+                applicationContext,
+                request.group,
+                request.page
+            )
+            if (!activeGroup.equals(preview.requestedGroup, ignoreCase = true)) {
+                numberToId.clear()
+                activeGroup = preview.requestedGroup
+            }
+            if (preview.imageBase64 != null) {
+                numberToId.putAll(preview.numberToId)
+            }
+
+            val pageLabel = if (preview.totalPages > 0) {
+                "第 ${preview.page}/${preview.totalPages} 页"
+            } else {
+                "空分类"
+            }
+            addThinking("🔧 调用表情包工具：查看「${preview.requestedGroup}」$pageLabel")
+            updateStickerBrowseStatus(
+                if (preview.totalPages > 0) {
+                    "$friendName 正在查看「${preview.requestedGroup}」· $pageLabel"
+                } else {
+                    "$friendName 正在查看「${preview.requestedGroup}」表情包"
+                }
+            )
+
+            val toolResult = buildStickerToolResult(preview)
+            val images = preview.imageBase64?.let { listOf(it) } ?: emptyList()
+
+            // 每一次请求只携带当前页，不把已经看过的所有拼图反复塞回网络请求。
+            // 住户想回看某一页时，可以再次调用那一页。
+            val followUp = baseContext.toMutableList().apply {
+                add(ChatMessage("assistant", currentResponse.text))
+                add(ChatMessage("user", toolResult, images))
+            }
+
+            currentResponse = api.sendChat(followUp)
+            addThinking(currentResponse.thinking)
+        }
+    }
+
+    private fun buildStickerToolResult(preview: StickerBrowsePreview.Result): String {
+        if (preview.totalCount == 0) {
+            return """[表情包工具结果]
+分类「${preview.requestedGroup}」目前没有图片。
+接下来由你自己决定：可以查看其他分类，或自然地完成本轮回复。不要向用户解释后台工具协议。"""
+        }
+
+        if (!preview.pageInRange) {
+            return """[表情包工具结果]
+分类「${preview.requestedGroup}」共有 ${preview.totalPages} 页，你请求的第 ${preview.requestedPage} 页不存在。
+接下来由你自己决定：可以调用 [BROWSE_STICKERS:${preview.requestedGroup}:有效页码]，也可以自然地完成本轮回复。不要向用户解释后台工具协议。"""
+        }
+
+        if (preview.imageBase64 == null) {
+            return """[表情包工具结果]
+「${preview.requestedGroup}」第 ${preview.page}/${preview.totalPages} 页的预览生成失败，当前没有可供你查看的图片。
+接下来由你自己决定：可以重试这一页、查看其他页或分类，也可以自然地完成本轮回复。不要向用户解释后台工具协议。"""
+        }
+
+        val range = "${preview.firstNumber}-${preview.lastNumber}"
+        return """[表情包工具结果]
+你正在查看「${preview.requestedGroup}」第 ${preview.page}/${preview.totalPages} 页，本页编号为 $range，共 ${preview.totalCount} 张。
+这是一项按需工具，接下来完全由你决定：
+- 继续查看任意页：[BROWSE_STICKERS:${preview.requestedGroup}:页码]
+- 查看其他分类：[BROWSE_STICKERS:分类名]
+- 发送当前或已经看过的任意一张或多张：[STICKER_PICK:编号] 或 [STICKER_PICK:编号,编号,...]
+- 不需要表情包时，直接自然地完成本轮回复。
+不要输出真实图片 ID，也不要向用户解释编号、预览拼图或后台选择过程。"""
+    }
+
+    private fun updateStickerBrowseStatus(message: String) {
+        handler.post {
+            if (!isFinishing && !isDestroyed) {
+                bubbleRenderer.updateTypingIndicator(message)
+            }
+        }
+    }
+
+    /**
      * 调用 API 获取 AI 回复（统一入口）
      *
      * sendMessage、sendMultiMessages、sendAllPending 全走这里。
@@ -1021,7 +1155,9 @@ class ChatConversationActivity : AppCompatActivity() {
         Thread {
             try {
                 val api = ApiHelper(apiUrl, apiKey, apiModel, apiType)
-                val response = api.sendChat(buildContextWindow())
+                val contextWindow = buildContextWindow()
+                val firstResponse = api.sendChat(contextWindow)
+                val response = resolveVisualStickerBrowse(api, contextWindow, firstResponse)
                 val replyTime = System.currentTimeMillis()
                 val replyTimeStr = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
                     .format(Date(replyTime))
@@ -1263,7 +1399,11 @@ class ChatConversationActivity : AppCompatActivity() {
     // ===== 发送消息（文字、图片、或图片+文字） =====
     private fun sendMessage(emergencyWake: Boolean = false) {
         val msg = inputMessage.text.toString().trim()
-        val imagePaths = chatImageHandler.pendingPaths.toList()  // 快照
+        val imagePaths = chatImageHandler.pendingPaths.toList()  // API 侧图片快照
+        val stickerDisplayPath = pendingStickerDisplayPath?.takeIf {
+            pendingStickerApiPath == imagePaths.singleOrNull() && File(it).isFile
+        }
+        val isStickerSend = stickerDisplayPath != null
 
         // 分条模式：文字和图片都蹦到待发区，不真正发送。
         // 紧急唤醒整批消息请长按“发送全部”，避免只发出输入框里这一小段。
@@ -1274,9 +1414,16 @@ class ChatConversationActivity : AppCompatActivity() {
             }
             if (imagePaths.isNotEmpty()) {
                 val caption = if (msg.isNotEmpty()) msg else ""
-                batchModeManager.addImage(imagePaths, caption)
+                batchModeManager.addImage(
+                    paths = imagePaths,
+                    caption = caption,
+                    displayPaths = if (isStickerSend) listOf(stickerDisplayPath!!) else imagePaths,
+                    isSticker = isStickerSend
+                )
                 inputMessage.text.clear()
                 chatImageHandler.clear()
+                pendingStickerDisplayPath = null
+                pendingStickerApiPath = null
                 return
             } else if (msg.isNotEmpty()) {
                 if (pendingQuoteAuthor != null && pendingQuoteContent != null) {
@@ -1301,6 +1448,8 @@ class ChatConversationActivity : AppCompatActivity() {
 
         inputMessage.text.clear()
         chatImageHandler.clear()
+        pendingStickerDisplayPath = null
+        pendingStickerApiPath = null
 
         // 如果发图片就不带引用了
         if (imagePaths.isNotEmpty()) removeQuotePreview()
@@ -1312,24 +1461,39 @@ class ChatConversationActivity : AppCompatActivity() {
         var heldContent = msg
 
         if (imagePaths.isNotEmpty()) {
-            if (imagePaths.size == 1) {
-                bubbleRenderer.addImageBubble(imagePaths[0], timeStr, msg)
+            if (isStickerSend) {
+                bubbleRenderer.addStickerBubble(stickerDisplayPath!!, timeStr, msg)
+                chatStorage.appendMessage(
+                    friendId,
+                    StoredMessage(
+                        "user",
+                        if (msg.isNotEmpty()) msg else "[表情包]",
+                        now,
+                        imagePath = stickerDisplayPath,
+                        type = "sticker"
+                    )
+                )
             } else {
-                bubbleRenderer.addMultiImageBubble(imagePaths, timeStr, msg)
-            }
+                if (imagePaths.size == 1) {
+                    bubbleRenderer.addImageBubble(imagePaths[0], timeStr, msg)
+                } else {
+                    bubbleRenderer.addMultiImageBubble(imagePaths, timeStr, msg)
+                }
 
-            val displayContent = if (msg.isNotEmpty()) msg else {
-                if (imagePaths.size == 1) "[图片]" else "[${imagePaths.size}张图片]"
+                val displayContent = if (msg.isNotEmpty()) msg else {
+                    if (imagePaths.size == 1) "[图片]" else "[${imagePaths.size}张图片]"
+                }
+                val extrasJson = if (imagePaths.size > 1) {
+                    JSONObject().apply { put("paths", JSONArray(imagePaths)) }.toString()
+                } else ""
+                chatStorage.appendMessage(friendId, StoredMessage(
+                    "user", displayContent, now, imagePath = imagePaths[0],
+                    type = "image", extras = extrasJson
+                ))
             }
-            val extrasJson = if (imagePaths.size > 1) {
-                JSONObject().apply { put("paths", JSONArray(imagePaths)) }.toString()
-            } else ""
-            chatStorage.appendMessage(friendId, StoredMessage(
-                "user", displayContent, now, imagePath = imagePaths[0],
-                type = "image", extras = extrasJson
-            ))
 
             val base64List = imagePaths.map { ImageHelper.toBase64(File(it)) }
+            // AI 侧保持原有图片消息语义；表情包只在本地改显示方式。
             val apiContent = if (msg.isNotEmpty()) msg else {
                 "[用户发送了${if (imagePaths.size > 1) "${imagePaths.size}张" else "一张"}图片]"
             }
@@ -1444,16 +1608,41 @@ class ChatConversationActivity : AppCompatActivity() {
             when (item.type) {
                 "image" -> {
                     if (item.imagePaths.isEmpty()) continue
-                    if (item.imagePaths.size == 1) {
-                        bubbleRenderer.addImageBubble(item.imagePaths[0], timeStr, item.text)
+                    val displayPaths = item.displayImagePaths.ifEmpty { item.imagePaths }
+                    if (item.isSticker && displayPaths.size == 1) {
+                        bubbleRenderer.addStickerBubble(displayPaths[0], timeStr, item.text)
+                        chatStorage.appendMessage(
+                            friendId,
+                            StoredMessage(
+                                "user",
+                                if (item.text.isNotEmpty()) item.text else "[表情包]",
+                                now,
+                                imagePath = displayPaths[0],
+                                type = "sticker"
+                            )
+                        )
                     } else {
-                        bubbleRenderer.addMultiImageBubble(item.imagePaths, timeStr, item.text)
+                        if (displayPaths.size == 1) {
+                            bubbleRenderer.addImageBubble(displayPaths[0], timeStr, item.text)
+                        } else {
+                            bubbleRenderer.addMultiImageBubble(displayPaths, timeStr, item.text)
+                        }
+                        val display = if (item.text.isNotEmpty()) item.text else "[${displayPaths.size}张图片]"
+                        val extras = if (displayPaths.size > 1) {
+                            JSONObject().apply { put("paths", JSONArray(displayPaths)) }.toString()
+                        } else ""
+                        chatStorage.appendMessage(
+                            friendId,
+                            StoredMessage(
+                                "user",
+                                display,
+                                now,
+                                imagePath = displayPaths[0],
+                                type = "image",
+                                extras = extras
+                            )
+                        )
                     }
-                    val display = if (item.text.isNotEmpty()) item.text else "[${item.imagePaths.size}张图片]"
-                    chatStorage.appendMessage(
-                        friendId,
-                        StoredMessage("user", display, now, imagePath = item.imagePaths[0], type = "image")
-                    )
                     chatHistory.add(
                         ChatMessage(
                             "user",
@@ -1527,10 +1716,69 @@ class ChatConversationActivity : AppCompatActivity() {
         callApiForReply(clearSleepInboxOnSuccess = sleepMessageStorage.hasPending(friendId))
     }
 
+    /** 聊天面板导入也直接写入画匣，并允许一次选定内部分类。 */
+    private fun showStickerImportGroupDialog() {
+        val groups = stickerStorage.loadGroups().map { it.first }.distinct().toMutableList()
+        groups.add("＋ 新建分类")
+
+        android.app.AlertDialog.Builder(this)
+            .setTitle("放进表情包的哪一组")
+            .setItems(groups.toTypedArray()) { _, which ->
+                if (which == groups.lastIndex) {
+                    val input = EditText(this).apply {
+                        hint = "分类名"
+                        setPadding(48, 32, 48, 32)
+                    }
+                    android.app.AlertDialog.Builder(this)
+                        .setTitle("新建表情包分类")
+                        .setView(input)
+                        .setNegativeButton("取消", null)
+                        .setPositiveButton("新建并导入") { _, _ ->
+                            val name = input.text.toString().trim()
+                            when {
+                                name.isEmpty() -> Toast.makeText(this, "分类名不能为空", Toast.LENGTH_SHORT).show()
+                                stickerStorage.ensureGroup(name) -> {
+                                    pendingStickerImportGroup = name
+                                    launchStickerPicker()
+                                }
+                                else -> Toast.makeText(this, "这个分类名不能使用", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                        .show()
+                } else {
+                    pendingStickerImportGroup = groups[which]
+                    launchStickerPicker()
+                }
+            }
+            .show()
+    }
+
+    private fun launchStickerPicker() {
+        val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
+            type = "image/*"
+            putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+        }
+        startActivityForResult(intent, PICK_STICKER)
+    }
+
     private fun sendSticker(stickerFile: File) {
-        chatImageHandler.pendingPaths.clear()
-        chatImageHandler.pendingPaths.add(stickerFile.absolutePath)
-        stickerPanelManager.hide(); sendMessage()
+        // 本地显示保留透明通道；送进 API 的仍是原有白底 JPEG。
+        stickerPanelManager.hide()
+        Thread {
+            val snapshot = StickerSnapshot.createPair(this, stickerFile)
+            runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                if (snapshot == null) {
+                    Toast.makeText(this, "表情包读取失败", Toast.LENGTH_SHORT).show()
+                    return@runOnUiThread
+                }
+                pendingStickerDisplayPath = snapshot.displayFile.absolutePath
+                pendingStickerApiPath = snapshot.apiFile.absolutePath
+                chatImageHandler.pendingPaths.clear()
+                chatImageHandler.pendingPaths.add(snapshot.apiFile.absolutePath)
+                sendMessage()
+            }
+        }.start()
     }
     private fun triggerChatSummary(friendId: String, currentCount: Int) {
         summaryStorage.triggerSummary(friendId, currentCount, chatStorage, apiUrl, apiKey, apiModel, apiType)

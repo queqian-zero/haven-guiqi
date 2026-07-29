@@ -35,6 +35,7 @@ class FriendDetailActivity : AppCompatActivity() {
     private lateinit var friendStorage: FriendStorage
     private lateinit var chatStorage: ChatStorage
     private var friendId = ""
+    private var skipInitialResumeRefresh = true
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -74,6 +75,10 @@ class FriendDetailActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        if (skipInitialResumeRefresh) {
+            skipInitialResumeRefresh = false
+            return
+        }
         buildDetail()
     }
 
@@ -123,9 +128,9 @@ class FriendDetailActivity : AppCompatActivity() {
             }
         }
 
-        // 续火花
-        val messages = chatStorage.loadMessages(friend.id)
-        val streak = calculateStreak(friend.id)
+        // 续火花与消息数都走轻量统计，不解析整份聊天正文
+        val messageCount = chatStorage.getMessageCount(friend.id)
+        val streak = chatStorage.getConsecutiveChatStreak(friend.id)
         val streakText = if (streak > 0) {
             TextView(this).apply {
                 layoutParams = LinearLayout.LayoutParams(
@@ -186,7 +191,7 @@ class FriendDetailActivity : AppCompatActivity() {
             (diff / 86400000).toInt() + 1
         } else 0
 
-        statsCard.addView(statItem("${messages.size}", "消息"))
+        statsCard.addView(statItem("$messageCount", "消息"))
         statsCard.addView(statItem("$daysKnown", "相识(天)"))
         statsCard.addView(statItem("$streak", "续火花"))
         detailContainer.addView(statsCard)
@@ -302,45 +307,6 @@ class FriendDetailActivity : AppCompatActivity() {
             setTextColor(c.timeText)
         }
         detailContainer.addView(footerText)
-    }
-
-    // ===== 计算续火花 =====
-    private fun calculateStreak(friendId: String): Int {
-        val messages = chatStorage.loadMessages(friendId)
-        if (messages.isEmpty()) return 0
-
-        val chatDays = messages.map { msg ->
-            val cal = Calendar.getInstance().apply { timeInMillis = msg.timestamp }
-            "${cal.get(Calendar.YEAR)}-${cal.get(Calendar.DAY_OF_YEAR)}"
-        }.distinct().sortedDescending()
-
-        if (chatDays.isEmpty()) return 0
-
-        val today = Calendar.getInstance()
-        val todayKey = "${today.get(Calendar.YEAR)}-${today.get(Calendar.DAY_OF_YEAR)}"
-        val yesterday = Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, -1) }
-        val yesterdayKey = "${yesterday.get(Calendar.YEAR)}-${yesterday.get(Calendar.DAY_OF_YEAR)}"
-
-        val startDay = if (chatDays.contains(todayKey)) {
-            today.clone() as Calendar
-        } else if (chatDays.contains(yesterdayKey)) {
-            yesterday.clone() as Calendar
-        } else {
-            return 0
-        }
-
-        var streak = 0
-        val checkDay = startDay.clone() as Calendar
-        while (true) {
-            val dayKey = "${checkDay.get(Calendar.YEAR)}-${checkDay.get(Calendar.DAY_OF_YEAR)}"
-            if (chatDays.contains(dayKey)) {
-                streak++
-                checkDay.add(Calendar.DAY_OF_YEAR, -1)
-            } else {
-                break
-            }
-        }
-        return streak
     }
 
     // ===== 编辑头像字符 =====

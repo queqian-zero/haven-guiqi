@@ -13,6 +13,7 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import java.text.SimpleDateFormat
 import java.util.*
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * HavenService - 归栖前台服务
@@ -35,6 +36,7 @@ class HavenService : Service() {
         private const val EXTRA_REMINDER_ID = "reminder_id"
         private const val EXTRA_FRIEND_ID = "friend_id"
         private const val HEARTBEAT_INTERVAL_MS = 4 * 60 * 60 * 1000L  // 4小时
+        private val suppressNextRestart = AtomicBoolean(false)
 
         /**
          * 启动前台服务
@@ -53,6 +55,15 @@ class HavenService : Service() {
          */
         fun stop(context: Context) {
             context.stopService(Intent(context, HavenService::class.java))
+        }
+
+        /**
+         * 完整数据恢复时使用：这次停止是用户主动触发的，onDestroy 不应立刻自启。
+         */
+        fun stopForDataRestore(context: Context) {
+            suppressNextRestart.set(true)
+            val stopRequested = context.stopService(Intent(context, HavenService::class.java))
+            if (!stopRequested) suppressNextRestart.set(false)
         }
 
         /**
@@ -124,6 +135,10 @@ class HavenService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        if (suppressNextRestart.getAndSet(false)) {
+            Log.d(TAG, "Service intentionally stopped for full data restore")
+            return
+        }
         // 服务被杀时尝试重启
         val restartIntent = Intent(this, HavenService::class.java)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {

@@ -66,7 +66,7 @@ object InstructionRegistry {
         Ability("[SEEN]", "已读不回", setOf(Scene.CHAT)),
         Ability("[SPLIT]", "分条发送", setOf(Scene.CHAT)),
         Ability("[STICKER:关键词]", "发表情包", setOf(Scene.CHAT)),
-        Ability("[BROWSE_STICKERS]", "浏览表情包", setOf(Scene.CHAT)),
+        Ability("[BROWSE_STICKERS:分组名] / [BROWSE_STICKERS:分组名:页码]", "按需看图浏览表情包", setOf(Scene.CHAT)),
 
         // ── 记忆管理 ──
         Ability("[FORGET:记忆ID]", "忘掉一条记忆", setOf(Scene.CHAT)),

@@ -379,7 +379,7 @@
                     android:background="@drawable/input_bg"
                     android:gravity="center_vertical"
                     android:paddingHorizontal="12dp"
-                    android:text="导入数据"
+                    android:text="导入全部数据"
                     android:textColor="@color/haven_settings_value"
                     android:textSize="13sp" />
             </LinearLayout>

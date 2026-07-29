@@ -27,9 +27,12 @@ class FriendTabManager(
     private fun dp(v: Int): Int = (v * activity.resources.displayMetrics.density).toInt()
 
     // ===== 刷新好友列表 =====
-    fun refresh() {
+    fun refresh(
+        precomputedFriends: List<Friend>? = null,
+        precomputedStreaks: Map<String, Int>? = null
+    ) {
         friendsList.removeAllViews()
-        val friends = friendStorage.loadFriends()
+        val friends = precomputedFriends ?: friendStorage.loadFriends()
 
         val groups = friends.groupBy { it.group }
         for ((groupName, groupFriends) in groups) {
@@ -43,7 +46,7 @@ class FriendTabManager(
             friendsList.addView(groupTitle)
 
             for (f in groupFriends) {
-                addFriendCard(f)
+                addFriendCard(f, precomputedStreaks?.get(f.id))
             }
         }
 
@@ -78,7 +81,7 @@ class FriendTabManager(
     }
 
     // ===== 好友卡片 =====
-    private fun addFriendCard(friend: Friend) {
+    private fun addFriendCard(friend: Friend, precomputedStreak: Int? = null) {
         val card = LinearLayout(activity).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -136,7 +139,7 @@ class FriendTabManager(
         detailRow.addView(tvGroup)
         detailRow.addView(tvCode)
 
-        val streak = calculateStreak(friend.id)
+        val streak = precomputedStreak ?: calculateStreak(friend.id)
         if (streak > 0) {
             val tvStreak = TextView(activity).apply {
                 text = "🔥$streak"
@@ -387,41 +390,6 @@ class FriendTabManager(
     }
 
     // ===== 续火花（来信Tab也需要用） =====
-    fun calculateStreak(friendId: String): Int {
-        val messages = chatStorage.loadMessages(friendId)
-        if (messages.isEmpty()) return 0
-
-        val chatDays = messages.map { msg ->
-            val cal = java.util.Calendar.getInstance().apply { timeInMillis = msg.timestamp }
-            "${cal.get(java.util.Calendar.YEAR)}-${cal.get(java.util.Calendar.DAY_OF_YEAR)}"
-        }.distinct().sortedDescending()
-
-        if (chatDays.isEmpty()) return 0
-
-        val today = java.util.Calendar.getInstance()
-        val todayKey = "${today.get(java.util.Calendar.YEAR)}-${today.get(java.util.Calendar.DAY_OF_YEAR)}"
-        val yesterday = java.util.Calendar.getInstance().apply { add(java.util.Calendar.DAY_OF_YEAR, -1) }
-        val yesterdayKey = "${yesterday.get(java.util.Calendar.YEAR)}-${yesterday.get(java.util.Calendar.DAY_OF_YEAR)}"
-
-        val startDay = if (chatDays.contains(todayKey)) {
-            today.clone() as java.util.Calendar
-        } else if (chatDays.contains(yesterdayKey)) {
-            yesterday.clone() as java.util.Calendar
-        } else {
-            return 0
-        }
-
-        var streak = 0
-        val checkDay = startDay.clone() as java.util.Calendar
-        while (true) {
-            val dayKey = "${checkDay.get(java.util.Calendar.YEAR)}-${checkDay.get(java.util.Calendar.DAY_OF_YEAR)}"
-            if (chatDays.contains(dayKey)) {
-                streak++
-                checkDay.add(java.util.Calendar.DAY_OF_YEAR, -1)
-            } else {
-                break
-            }
-        }
-        return streak
-    }
+    fun calculateStreak(friendId: String): Int =
+        chatStorage.getConsecutiveChatStreak(friendId)
 }

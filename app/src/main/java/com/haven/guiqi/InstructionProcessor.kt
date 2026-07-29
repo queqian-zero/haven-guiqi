@@ -630,12 +630,12 @@ $history
         while (stickerMatch != null) {
             val arg = stickerMatch.groupValues[1].trim()
             var resolvedPath: String? = null
-            if (arg.startsWith("STK-")) {
-                val sticker = stickerStorage.findById(arg)
-                if (sticker != null) {
-                    val file = stickerStorage.getFile(sticker)
-                    if (file != null) resolvedPath = file.absolutePath
-                }
+            // 11.3 起画匣新表情包的 ID 不一定以 STK- 开头：先按 ID 查，
+            // 查不到再把参数当成分组名。旧 STK-xxx 仍然完全兼容。
+            val directSticker = stickerStorage.findById(arg)
+            if (directSticker != null) {
+                val file = stickerStorage.getFile(directSticker)
+                if (file != null) resolvedPath = file.absolutePath
             } else {
                 val stickers = stickerStorage.loadByGroup(arg)
                 if (stickers.isNotEmpty()) {
@@ -645,9 +645,17 @@ $history
                 }
             }
             if (resolvedPath != null) {
-                // 替换成内联标记，留在原位
-                stickerCleanText = stickerCleanText.replaceFirst(stickerMatch.value, "[STICKER_IMG:$resolvedPath]")
-                stickerPaths.add(resolvedPath)
+                // 聊天记录使用独立快照：以后从画匣删掉原图，也不会让历史消息破图。
+                val snapshotPath = StickerSnapshot.create(context, java.io.File(resolvedPath))?.absolutePath
+                if (snapshotPath != null) {
+                    stickerCleanText = stickerCleanText.replaceFirst(
+                        stickerMatch.value,
+                        "[STICKER_IMG:$snapshotPath]"
+                    )
+                    stickerPaths.add(snapshotPath)
+                } else {
+                    stickerCleanText = stickerCleanText.replaceFirst(stickerMatch.value, "")
+                }
             } else {
                 stickerCleanText = stickerCleanText.replaceFirst(stickerMatch.value, "")
             }

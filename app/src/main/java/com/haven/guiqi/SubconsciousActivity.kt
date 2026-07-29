@@ -23,6 +23,7 @@ class SubconsciousActivity : AppCompatActivity() {
     private lateinit var friendName: String
     private lateinit var storage: SubconsciousStorage
     private lateinit var container: LinearLayout
+    private var skipInitialResumeRefresh = true
 
     private val c get() = ThemeHelper.getColors(this)
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
@@ -78,6 +79,10 @@ class SubconsciousActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        if (skipInitialResumeRefresh) {
+            skipInitialResumeRefresh = false
+            return
+        }
         renderItems()
     }
 

@@ -1,17 +1,20 @@
 package com.haven.guiqi
 
 import android.app.AlertDialog
+import android.net.Uri
 import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.Process
 import android.view.View
 import android.view.WindowManager
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
@@ -24,6 +27,9 @@ import java.io.InputStreamReader
 import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
 import java.net.URL
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 class SettingsActivity : AppCompatActivity() {
 
@@ -50,6 +56,21 @@ class SettingsActivity : AppCompatActivity() {
     )
     private var currentLanguageIndex = 0
     private var currentPresetName = "默认"
+
+    private lateinit var fullBackupManager: FullBackupManager
+    private var busyDialog: AlertDialog? = null
+
+    private val fullExportLauncher = registerForActivityResult(
+        ActivityResultContracts.CreateDocument("application/zip")
+    ) { uri: Uri? ->
+        if (uri != null) performFullExport(uri)
+    }
+
+    private val fullImportLauncher = registerForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? ->
+        if (uri != null) performFullImport(uri)
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -98,6 +119,7 @@ class SettingsActivity : AppCompatActivity() {
         btnPreset = findViewById(R.id.btnPreset)
         btnSavePreset = findViewById(R.id.btnSavePreset)
         btnDeletePreset = findViewById(R.id.btnDeletePreset)
+        fullBackupManager = FullBackupManager(this)
 
         loadSettings()
 
@@ -183,14 +205,250 @@ class SettingsActivity : AppCompatActivity() {
             deleteCurrentPreset()
         }
 
-        // ===== 导出/导入 =====
-        btnExport.setOnClickListener {
-            Toast.makeText(this, "导出功能开发中", Toast.LENGTH_SHORT).show()
+        // ===== 完整导出/导入 =====
+        btnExport.setOnClickListener { confirmAndStartFullExport() }
+        btnImport.setOnClickListener { confirmAndStartFullImport() }
+
+        mainHandler.post { maybeOfferRestoreSafety() }
+    }
+
+
+    private fun confirmAndStartFullExport() {
+        AlertDialog.Builder(this)
+            .setTitle("导出全部数据")
+            .setMessage(
+                "完整备份会包含聊天、画匣图片、头像、书架、记忆、日记、梦境、设置和 API 密钥。\n\n" +
+                    "备份文件没有加密，请只保存在你信任的位置。"
+            )
+            .setPositiveButton("选择保存位置") { _, _ ->
+                val stamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
+                fullExportLauncher.launch("归栖完整备份_$stamp.guiqi.zip")
+            }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    private fun performFullExport(uri: Uri) {
+        setBackupButtonsEnabled(false)
+        showBusy("正在导出全部数据", "聊天、画匣和住户资料正在装进备份……")
+
+        Thread {
+            try {
+                val result = fullBackupManager.exportTo(uri)
+                mainHandler.post {
+                    clearBusy()
+                    setBackupButtonsEnabled(true)
+                    AlertDialog.Builder(this)
+                        .setTitle("导出完成 ✓")
+                        .setMessage(
+                            "已备份 ${result.fileCount} 个文件，共 ${formatBytes(result.totalBytes)}。\n\n" +
+                                "这个 ZIP 包含私密聊天和 API 密钥，不要发给别人。"
+                        )
+                        .setPositiveButton("好", null)
+                        .show()
+                }
+            } catch (e: Exception) {
+                mainHandler.post {
+                    clearBusy()
+                    setBackupButtonsEnabled(true)
+                    Toast.makeText(this, "导出失败：${e.message}", Toast.LENGTH_LONG).show()
+                }
+            }
+        }.start()
+    }
+
+    private fun confirmAndStartFullImport() {
+        if (fullBackupManager.hasRestoreSafety()) {
+            showRestoreSafetyDialog()
+            return
         }
-        btnImport.setOnClickListener {
-            Toast.makeText(this, "导入功能开发中", Toast.LENGTH_SHORT).show()
+
+        AlertDialog.Builder(this)
+            .setTitle("导入全部数据")
+            .setMessage(
+                "导入会替换当前归栖里的聊天、画匣、设置和全部住户资料。\n\n" +
+                    "导入前的数据会先保留为一份本地保护副本，可以撤销一次。"
+            )
+            .setPositiveButton("选择备份文件") { _, _ ->
+                fullImportLauncher.launch(
+                    arrayOf(
+                        "application/zip",
+                        "application/octet-stream",
+                        "application/x-zip-compressed"
+                    )
+                )
+            }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    private fun performFullImport(uri: Uri) {
+        setBackupButtonsEnabled(false)
+        showBusy("正在恢复全部数据", "正在校验备份并保护当前数据，请不要退出……")
+
+        Thread {
+            try {
+                val result = fullBackupManager.restoreFrom(uri)
+                mainHandler.post {
+                    clearBusy()
+                    setBackupButtonsEnabled(true)
+                    showRestartRequired(
+                        title = "恢复完成 ✓",
+                        message = "已恢复 ${result.fileCount} 个文件，共 ${formatBytes(result.totalBytes)}。\n\n" +
+                            "导入前的数据已经保留为本地保护副本。现在需要退出归栖；重新打开后，新数据才会完全生效。"
+                    )
+                }
+            } catch (e: Exception) {
+                mainHandler.post {
+                    clearBusy()
+                    setBackupButtonsEnabled(true)
+                    Toast.makeText(this, "导入失败：${e.message}", Toast.LENGTH_LONG).show()
+                }
+            }
+        }.start()
+    }
+
+    private fun maybeOfferRestoreSafety() {
+        if (!isFinishing && fullBackupManager.hasRestoreSafety()) {
+            showRestoreSafetyDialog()
         }
     }
+
+    private fun showRestoreSafetyDialog() {
+        if (isFinishing) return
+        val createdAt = fullBackupManager.restoreSafetyCreatedAt()
+        val timeText = if (createdAt > 0L) {
+            SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date(createdAt))
+        } else {
+            "上次导入前"
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle("导入前的保护副本")
+            .setMessage(
+                "$timeText 的原数据还保留在本机缓存中。\n\n" +
+                    "新数据确认正常后可以删除；不满意也可以撤销上次完整导入。"
+            )
+            .setPositiveButton("撤销导入") { _, _ -> confirmRollbackRestore() }
+            .setNegativeButton("删除副本") { _, _ -> confirmDiscardRestoreSafety() }
+            .setNeutralButton("稍后", null)
+            .show()
+    }
+
+    private fun confirmRollbackRestore() {
+        AlertDialog.Builder(this)
+            .setTitle("撤销上次导入？")
+            .setMessage("当前恢复进来的数据会被替换回导入前的状态。")
+            .setPositiveButton("撤销") { _, _ -> performRollbackRestore() }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    private fun performRollbackRestore() {
+        setBackupButtonsEnabled(false)
+        showBusy("正在撤销导入", "正在换回导入前的数据，请不要退出……")
+        Thread {
+            try {
+                val result = fullBackupManager.rollbackLastRestore()
+                mainHandler.post {
+                    clearBusy()
+                    setBackupButtonsEnabled(true)
+                    showRestartRequired(
+                        title = "已经撤销 ✓",
+                        message = "已换回导入前的数据（${result.fileCount} 个文件）。\n\n" +
+                            "现在需要退出归栖；重新打开后才会完全生效。"
+                    )
+                }
+            } catch (e: Exception) {
+                mainHandler.post {
+                    clearBusy()
+                    setBackupButtonsEnabled(true)
+                    Toast.makeText(this, "撤销失败：${e.message}", Toast.LENGTH_LONG).show()
+                }
+            }
+        }.start()
+    }
+
+    private fun confirmDiscardRestoreSafety() {
+        AlertDialog.Builder(this)
+            .setTitle("删除保护副本？")
+            .setMessage("删除后将不能再撤销上次完整导入；当前正在使用的数据不会受影响。")
+            .setPositiveButton("删除") { _, _ ->
+                fullBackupManager.discardRestoreSafety()
+                Toast.makeText(this, "保护副本已删除", Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    private fun showBusy(title: String, message: String) {
+        clearBusy()
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(24), dp(18), dp(24), dp(12))
+            addView(android.widget.ProgressBar(this@SettingsActivity).apply {
+                isIndeterminate = true
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { gravity = android.view.Gravity.CENTER_HORIZONTAL }
+            })
+            addView(TextView(this@SettingsActivity).apply {
+                text = message
+                textSize = 14f
+                gravity = android.view.Gravity.CENTER
+                setPadding(0, dp(14), 0, 0)
+            })
+        }
+        busyDialog = AlertDialog.Builder(this)
+            .setTitle(title)
+            .setView(content)
+            .setCancelable(false)
+            .create()
+        busyDialog?.show()
+    }
+
+    private fun clearBusy() {
+        busyDialog?.dismiss()
+        busyDialog = null
+    }
+
+    private fun setBackupButtonsEnabled(enabled: Boolean) {
+        btnExport.isEnabled = enabled
+        btnImport.isEnabled = enabled
+        btnExport.alpha = if (enabled) 1f else 0.5f
+        btnImport.alpha = if (enabled) 1f else 0.5f
+    }
+
+    private fun showRestartRequired(title: String, message: String) {
+        AlertDialog.Builder(this)
+            .setTitle(title)
+            .setMessage(message)
+            .setCancelable(false)
+            .setPositiveButton("退出归栖") { _, _ ->
+                HavenService.stopForDataRestore(this)
+                finishAffinity()
+                mainHandler.postDelayed({
+                    Process.killProcess(Process.myPid())
+                }, 150L)
+            }
+            .show()
+    }
+
+    private fun formatBytes(bytes: Long): String {
+        if (bytes < 1024L) return "$bytes B"
+        val units = arrayOf("KB", "MB", "GB", "TB")
+        var value = bytes.toDouble()
+        var unit = -1
+        do {
+            value /= 1024.0
+            unit++
+        } while (value >= 1024.0 && unit < units.lastIndex)
+        return String.format(Locale.getDefault(), "%.1f %s", value, units[unit])
+    }
+
+    private fun dp(value: Int): Int =
+        (value * resources.displayMetrics.density).toInt()
 
     // ===== 拉取模型列表 =====
     private fun fetchModels(apiUrl: String, apiKey: String) {

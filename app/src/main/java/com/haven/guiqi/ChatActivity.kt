@@ -5,6 +5,8 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
@@ -19,6 +21,7 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import java.text.SimpleDateFormat
 import java.util.*
+import java.util.concurrent.Executors
 
 class ChatActivity : AppCompatActivity() {
 
@@ -64,6 +67,24 @@ class ChatActivity : AppCompatActivity() {
     private lateinit var friendTabManager: FriendTabManager
     private lateinit var profileTabManager: ProfileTabManager
     private lateinit var backupManager: BackupManager
+
+    /**
+     * 前端列表专用单线程：只负责读取“来信摘要、火花、统计”等展示数据。
+     * 不参与 AI 回复、记忆、工具或住户后台任务。
+     */
+    private val frontEndExecutor = Executors.newSingleThreadExecutor()
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val tabLoaded = BooleanArray(4)
+    private val tabDirty = BooleanArray(4) { true }
+    private val tabRequestIds = IntArray(4)
+    private var currentTabIndex = 0
+    private var skipInitialResumeRefresh = true
+
+    private data class MessageListItem(
+        val friend: Friend,
+        val lastMessage: StoredMessage?,
+        val streak: Int
+    )
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -124,7 +145,8 @@ class ChatActivity : AppCompatActivity() {
         backupManager = BackupManager(this, friendStorage, chatStorage)
         footprintStorage = FootprintStorage(this)
         friendTabManager = FriendTabManager(this, friendsList, friendStorage, chatStorage) {
-            refreshMessagesList()
+            invalidateTabs(0, 1, 3)
+            refreshCurrentTab()
         }
         profileTabManager = ProfileTabManager(this, profileContainer, friendStorage, chatStorage,
             onExport = { startExport() },
@@ -154,19 +176,32 @@ class ChatActivity : AppCompatActivity() {
         findViewById<TextView>(R.id.btnPostFootprint).setOnClickListener {
             showPostFootprintDialog()
         }
+
+        // 初次只加载当前可见的“来信”页；其他三个标签点到时再加载。
+        switchTab(0)
     }
 
-    // 每次回到这个页面都刷新列表（从聊天回来后显示最新消息）
+    // 从聊天详情或编辑页面回来后，只刷新当前可见标签；隐藏标签先标脏，点开再更。
     override fun onResume() {
         super.onResume()
-        refreshMessagesList()
-        friendTabManager.refresh()
-        profileTabManager.refresh()
-        refreshFootprints()
+        if (skipInitialResumeRefresh) {
+            skipInitialResumeRefresh = false
+            return
+        }
+        invalidateTabs(0, 1, 2, 3)
+        refreshCurrentTab()
+    }
+
+    override fun onDestroy() {
+        tabRequestIds.indices.forEach { tabRequestIds[it]++ }
+        frontEndExecutor.shutdownNow()
+        mainHandler.removeCallbacksAndMessages(null)
+        super.onDestroy()
     }
 
     // ===== 切换标签页 =====
     private fun switchTab(index: Int) {
+        currentTabIndex = index
         tabMessages.visibility = View.GONE
         tabFriends.visibility = View.GONE
         tabFootprints.visibility = View.GONE
@@ -205,42 +240,142 @@ class ChatActivity : AppCompatActivity() {
                 labelTabProfile.setTextColor(activeColor)
             }
         }
+
+        refreshCurrentTab()
+    }
+
+    private fun invalidateTabs(vararg indexes: Int) {
+        for (index in indexes) {
+            if (index in tabDirty.indices) tabDirty[index] = true
+        }
+    }
+
+    private fun refreshCurrentTab(force: Boolean = false) {
+        val index = currentTabIndex
+        if (!force && tabLoaded[index] && !tabDirty[index]) return
+        when (index) {
+            0 -> refreshMessagesListAsync()
+            1 -> refreshFriendsAsync()
+            2 -> refreshFootprintsAsync()
+            3 -> refreshProfileAsync()
+        }
+    }
+
+    private fun nextRequestId(tabIndex: Int): Int {
+        tabRequestIds[tabIndex] += 1
+        return tabRequestIds[tabIndex]
+    }
+
+    private fun isRequestCurrent(tabIndex: Int, requestId: Int): Boolean =
+        !isFinishing && !isDestroyed && tabRequestIds[tabIndex] == requestId
+
+    private fun showLoadingHintIfEmpty(container: LinearLayout, text: String) {
+        if (container.childCount > 0) return
+        addEmptyHint(container, text)
     }
 
     // ===== 刷新来信列表 =====
-    private fun refreshMessagesList() {
-        messagesList.removeAllViews()
-        val friends = friendStorage.loadFriends()
+    private fun refreshMessagesListAsync() {
+        val tabIndex = 0
+        val requestId = nextRequestId(tabIndex)
+        showLoadingHintIfEmpty(messagesList, "正在整理来信…")
 
-        if (friends.isEmpty()) {
+        frontEndExecutor.execute {
+            val rows = try {
+                friendStorage.loadFriends().map { friend ->
+                    MessageListItem(
+                        friend = friend,
+                        lastMessage = chatStorage.getLastMessage(friend.id),
+                        streak = chatStorage.getConsecutiveChatStreak(friend.id)
+                    )
+                }.sortedByDescending { item ->
+                    item.lastMessage?.timestamp ?: item.friend.createdAt
+                }
+            } catch (_: Exception) {
+                emptyList()
+            }
+
+            mainHandler.post {
+                if (!isRequestCurrent(tabIndex, requestId)) return@post
+                renderMessagesList(rows)
+                tabLoaded[tabIndex] = true
+                tabDirty[tabIndex] = false
+            }
+        }
+    }
+
+    private fun renderMessagesList(items: List<MessageListItem>) {
+        messagesList.removeAllViews()
+        if (items.isEmpty()) {
             addEmptyHint(messagesList, "还没有好友，去好友页添加一个吧 ♡")
             return
         }
 
-        // 按最后一条消息的时间排序（最近的在前面）
-        data class FriendWithLastMsg(
-            val friend: Friend,
-            val lastMsg: StoredMessage?
-        )
+        for (item in items) {
+            val lastText = item.lastMessage?.content ?: "还没有聊过天~"
+            val lastTime = item.lastMessage?.let { formatTimeShort(it.timestamp) } ?: ""
+            addMessageCard(item.friend, lastText, lastTime, item.streak)
+        }
+    }
 
-        val list = friends.map { f ->
-            val msgs = chatStorage.loadMessages(f.id)
-            FriendWithLastMsg(f, msgs.lastOrNull())
-        }.sortedByDescending { it.lastMsg?.timestamp ?: it.friend.createdAt }
+    private fun refreshFriendsAsync() {
+        val tabIndex = 1
+        val requestId = nextRequestId(tabIndex)
+        showLoadingHintIfEmpty(friendsList, "正在整理好友…")
 
-        for (item in list) {
-            val lastText = item.lastMsg?.content ?: "还没有聊过天~"
-            val lastTime = if (item.lastMsg != null) {
-                formatTimeShort(item.lastMsg.timestamp)
-            } else {
-                ""
+        frontEndExecutor.execute {
+            val friends = try { friendStorage.loadFriends() } catch (_: Exception) { emptyList() }
+            val streaks = friends.associate { friend ->
+                friend.id to chatStorage.getConsecutiveChatStreak(friend.id)
             }
-            addMessageCard(item.friend, lastText, lastTime)
+
+            mainHandler.post {
+                if (!isRequestCurrent(tabIndex, requestId)) return@post
+                friendTabManager.refresh(friends, streaks)
+                tabLoaded[tabIndex] = true
+                tabDirty[tabIndex] = false
+            }
+        }
+    }
+
+    private fun refreshProfileAsync() {
+        val tabIndex = 3
+        val requestId = nextRequestId(tabIndex)
+        showLoadingHintIfEmpty(profileContainer, "正在整理资料…")
+
+        frontEndExecutor.execute {
+            val friends = try { friendStorage.loadFriends() } catch (_: Exception) { emptyList() }
+            val totalMessages = friends.sumOf { friend ->
+                chatStorage.getMessageCount(friend.id)
+            }
+
+            mainHandler.post {
+                if (!isRequestCurrent(tabIndex, requestId)) return@post
+                profileTabManager.refresh(friends, totalMessages)
+                tabLoaded[tabIndex] = true
+                tabDirty[tabIndex] = false
+            }
+        }
+    }
+
+    private fun refreshFootprintsAsync() {
+        val tabIndex = 2
+        val requestId = nextRequestId(tabIndex)
+        showLoadingHintIfEmpty(footprintsList, "正在整理足迹…")
+
+        frontEndExecutor.execute {
+            val footprints = try { footprintStorage.loadFootprints() } catch (_: Exception) { emptyList() }
+            mainHandler.post {
+                if (!isRequestCurrent(tabIndex, requestId)) return@post
+                refreshFootprints(footprints)
+                tabLoaded[tabIndex] = true
+                tabDirty[tabIndex] = false
+            }
         }
     }
 
     // ===== 刷新"我的"页面 =====
-    private fun addMessageCard(friend: Friend, lastMessage: String, time: String) {
+    private fun addMessageCard(friend: Friend, lastMessage: String, time: String, streak: Int) {
         val dp = { value: Int -> (value * resources.displayMetrics.density).toInt() }
 
         val card = LinearLayout(this).apply {
@@ -346,8 +481,7 @@ class ChatActivity : AppCompatActivity() {
 
         infoLayout.addView(tvLastMsg)
 
-        // 续火花
-        val streak = friendTabManager.calculateStreak(friend.id)
+        // 续火花（后台已从文件尾部轻量计算）
         if (streak > 0) {
             val streakView = TextView(this).apply {
                 this.text = "🔥 $streak 天"
@@ -376,11 +510,11 @@ class ChatActivity : AppCompatActivity() {
     }
 
     // ===== 刷新足迹列表 =====
-    private fun refreshFootprints() {
+    private fun refreshFootprints(precomputed: List<Footprint>? = null) {
         footprintsList.removeAllViews()
         val dp = { value: Int -> (value * resources.displayMetrics.density).toInt() }
 
-        val footprints = footprintStorage.loadFootprints()
+        val footprints = precomputed ?: footprintStorage.loadFootprints()
 
         if (footprints.isEmpty()) {
             val hint = TextView(this).apply {
@@ -673,9 +807,8 @@ class ChatActivity : AppCompatActivity() {
     private fun doImport(uri: Uri) {
         val result = backupManager.doImport(uri)
         if (result != null) {
-            refreshMessagesList()
-            friendTabManager.refresh()
-            profileTabManager.refresh()
+            invalidateTabs(0, 1, 2, 3)
+            refreshCurrentTab(force = true)
         }
     }
 

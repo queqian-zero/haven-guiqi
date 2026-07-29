@@ -69,7 +69,7 @@ class ChatSettingsActivity : AppCompatActivity() {
 
         val friend = FriendStorage(this).getFriend(friendId)
         val chatStorage = ChatStorage(this)
-        val msgCount = chatStorage.loadMessages(friendId).size
+        val msgCount = chatStorage.getMessageCount(friendId)
 
         // 读取保存的上下文条数
         val prefs = getSharedPreferences("haven_chat_prefs", MODE_PRIVATE)

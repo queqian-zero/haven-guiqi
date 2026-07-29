@@ -27,6 +27,7 @@ import androidx.core.view.WindowInsetsControllerCompat
 class BookRoomActivity : AppCompatActivity() {
 
     private lateinit var libraryPage: LinearLayout
+    private var skipInitialResumeRefresh = true
 
     private val c get() = ThemeHelper.getColors(this)
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
@@ -125,6 +126,10 @@ class BookRoomActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        if (skipInitialResumeRefresh) {
+            skipInitialResumeRefresh = false
+            return
+        }
         if (::libraryPage.isInitialized) loadBookShelf()
     }
 

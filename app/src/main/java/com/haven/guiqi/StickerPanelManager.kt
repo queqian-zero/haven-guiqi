@@ -2,6 +2,7 @@ package com.haven.guiqi
 
 import android.app.Activity
 import android.app.AlertDialog
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Outline
 import android.view.Gravity
@@ -64,17 +65,19 @@ class StickerPanelManager(
         // 1. 分组标签栏
         stickerGroupTabs.removeAllViews()
         val groups = stickerStorage.loadGroups()
-        if (groups.isNotEmpty()) {
-            val allCount = stickerStorage.count()
-            val allTab = makeGroupTab("全部($allCount)", currentGroup == null)
-            allTab.setOnClickListener { currentGroup = null; refreshGrid() }
-            stickerGroupTabs.addView(allTab)
-            for ((name, count) in groups) {
-                val tab = makeGroupTab("$name($count)", currentGroup == name)
-                tab.setOnClickListener { currentGroup = name; refreshGrid() }
+        val groupNames = groups.map { it.first }.toSet()
+        if (currentGroup != null && currentGroup !in groupNames) currentGroup = null
+        val allCount = stickerStorage.count()
+        val allTab = makeGroupTab("全部($allCount)", currentGroup == null)
+        allTab.setOnClickListener { currentGroup = null; refreshGrid() }
+        stickerGroupTabs.addView(allTab)
+        for ((name, count) in groups) {
+            val tab = makeGroupTab("$name($count)", currentGroup == name)
+            tab.setOnClickListener { currentGroup = name; refreshGrid() }
+            if (name != StickerStorage.DEFAULT_GROUP) {
                 tab.setOnLongClickListener { showGroupOptionsDialog(name); true }
-                stickerGroupTabs.addView(tab)
             }
+            stickerGroupTabs.addView(tab)
         }
         // 2. 管理按钮状态
         activity.findViewById<TextView>(R.id.btnManageSticker).apply {
@@ -85,6 +88,7 @@ class StickerPanelManager(
         stickerGrid.removeAllViews()
         val stickers = if (currentGroup != null) stickerStorage.loadByGroup(currentGroup!!)
                        else stickerStorage.loadStickers()
+        selectedIds.retainAll(stickers.map { it.id }.toSet())
         if (stickers.isEmpty()) {
             stickerGrid.addView(TextView(activity).apply {
                 text = if (currentGroup != null) "「${currentGroup}」里还没有表情包"
@@ -135,7 +139,7 @@ class StickerPanelManager(
                         outline.setRoundRect(0, 0, view.width, view.height, dp(8).toFloat())
                     }
                 }
-                val bitmap = BitmapFactory.decodeFile(file.absolutePath)
+                val bitmap = decodeSampledBitmap(file, thumbSize)
                 if (bitmap != null) setImageBitmap(bitmap)
             }
             imgContainer.addView(imageView)
@@ -181,6 +185,23 @@ class StickerPanelManager(
         }
         // 4. 管理模式底部操作栏
         buildActionBar(stickers)
+    }
+
+    /** 只解码接近缩略图尺寸的位图，避免画匣里原图较大时聊天面板一次吃满内存。 */
+    private fun decodeSampledBitmap(file: java.io.File, targetSize: Int): Bitmap? {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(file.absolutePath, bounds)
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+
+        var sampleSize = 1
+        while (bounds.outWidth / sampleSize > targetSize * 2 ||
+            bounds.outHeight / sampleSize > targetSize * 2) {
+            sampleSize *= 2
+        }
+        return BitmapFactory.decodeFile(
+            file.absolutePath,
+            BitmapFactory.Options().apply { inSampleSize = sampleSize.coerceAtLeast(1) }
+        )
     }
 
     private fun buildActionBar(stickers: List<Sticker>) {
@@ -297,6 +318,7 @@ class StickerPanelManager(
     }
 
     private fun showGroupOptionsDialog(groupName: String) {
+        if (groupName == StickerStorage.DEFAULT_GROUP) return
         AlertDialog.Builder(activity).setTitle("分组：$groupName")
             .setItems(arrayOf("重命名", "删除分组（表情包移到未分类）")) { _, which ->
                 when (which) {
@@ -305,10 +327,16 @@ class StickerPanelManager(
                         AlertDialog.Builder(activity).setTitle("重命名分组").setView(input)
                             .setPositiveButton("确定") { _, _ ->
                                 val n = input.text.toString().trim()
-                                if (n.isNotEmpty() && n != groupName) {
-                                    stickerStorage.renameGroup(groupName, n)
-                                    if (currentGroup == groupName) currentGroup = n
-                                    refreshGrid()
+                                when {
+                                    n.isEmpty() || n == groupName -> Unit
+                                    n.equals(StickerStorage.DEFAULT_GROUP, ignoreCase = true) -> {
+                                        Toast.makeText(activity, "“未分类”是系统分类名", Toast.LENGTH_SHORT).show()
+                                    }
+                                    else -> {
+                                        stickerStorage.renameGroup(groupName, n)
+                                        if (currentGroup == groupName) currentGroup = n
+                                        refreshGrid()
+                                    }
                                 }
                             }.setNegativeButton("取消", null).show()
                     }

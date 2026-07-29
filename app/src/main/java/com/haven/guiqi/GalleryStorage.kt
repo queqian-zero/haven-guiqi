@@ -8,6 +8,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
+import java.nio.file.Files
 import java.util.UUID
 
 /**
@@ -15,8 +16,17 @@ import java.util.UUID
  *
  * 图片会复制到应用私有目录，不依赖原相册 URI 的长期权限；
  * 大分类与内部分类只用于整理，不限制住户如何使用图片。
+ *
+ * 11.3 起，聊天表情包也以这里为唯一数据源。表情包标签跟随 Item 保存，
+ * 因此从画匣移动、改名或删除分类后，聊天面板和住户指令会立即看到同一份结果。
  */
 class GalleryStorage(private val context: Context) {
+
+    companion object {
+        /** 所有 GalleryStorage 实例共用一把锁，避免画匣和聊天页同时写索引时互相覆盖。 */
+        private val GLOBAL_LOCK = Any()
+        private const val RESERVED_UNCLASSIFIED_NAME = "未分类"
+    }
 
     enum class Category(val key: String, val label: String) {
         AVATAR("avatar", "头像"),
@@ -42,20 +52,21 @@ class GalleryStorage(private val context: Context) {
         val displayName: String,
         val category: Category,
         val albumId: String?,
-        val createdAt: Long
+        val createdAt: Long,
+        /** 主要供表情包使用的简短描述；其他图片类型保持空字符串即可。 */
+        val label: String = ""
     )
 
     private val rootDir: File = File(context.filesDir, "shared_gallery")
     private val imagesDir: File = File(rootDir, "images")
     private val indexFile: File = File(rootDir, "index.json")
     private val albumsFile: File = File(rootDir, "albums.json")
-    private val lock = Any()
 
     init {
         imagesDir.mkdirs()
     }
 
-    fun listAll(): List<Item> = synchronized(lock) {
+    fun listAll(): List<Item> = synchronized(GLOBAL_LOCK) {
         val validAlbumIds = loadAlbumsLocked().map { it.id }.toSet()
         loadIndexLocked()
             .filter { fileFor(it).isFile }
@@ -92,7 +103,7 @@ class GalleryStorage(private val context: Context) {
 
     fun fileFor(item: Item): File = File(imagesDir, item.fileName)
 
-    fun listAlbums(category: Category): List<Album> = synchronized(lock) {
+    fun listAlbums(category: Category): List<Album> = synchronized(GLOBAL_LOCK) {
         loadAlbumsLocked()
             .filter { it.category == category }
             .sortedWith(compareBy<Album> { it.createdAt }.thenBy { it.name })
@@ -100,13 +111,39 @@ class GalleryStorage(private val context: Context) {
 
     fun findAlbum(albumId: String?): Album? {
         if (albumId.isNullOrBlank()) return null
-        return synchronized(lock) { loadAlbumsLocked().firstOrNull { it.id == albumId } }
+        return synchronized(GLOBAL_LOCK) { loadAlbumsLocked().firstOrNull { it.id == albumId } }
     }
 
-    fun createAlbum(category: Category, rawName: String): Album = synchronized(lock) {
+    fun findAlbumByName(category: Category, rawName: String): Album? {
+        val name = normalizeAlbumName(rawName)
+        if (name.isEmpty()) return null
+        return synchronized(GLOBAL_LOCK) {
+            loadAlbumsLocked().firstOrNull {
+                it.category == category && it.name.equals(name, ignoreCase = true)
+            }
+        }
+    }
+
+    fun createAlbum(category: Category, rawName: String): Album = synchronized(GLOBAL_LOCK) {
+        createAlbumLocked(category, rawName)
+    }
+
+    /** 找到同名内部分类；不存在时创建。供聊天表情包兼容层使用。 */
+    fun getOrCreateAlbum(category: Category, rawName: String): Album = synchronized(GLOBAL_LOCK) {
+        val name = normalizeAlbumName(rawName)
+        require(name.isNotEmpty()) { "分类名不能为空" }
+        loadAlbumsLocked().firstOrNull {
+            it.category == category && it.name.equals(name, ignoreCase = true)
+        } ?: createAlbumLocked(category, name)
+    }
+
+    private fun createAlbumLocked(category: Category, rawName: String): Album {
         val name = normalizeAlbumName(rawName)
         require(name.isNotEmpty()) { "分类名不能为空" }
         require(name.length <= 24) { "分类名最多 24 个字" }
+        require(!name.equals(RESERVED_UNCLASSIFIED_NAME, ignoreCase = true)) {
+            "“未分类”是系统分类名"
+        }
 
         val albums = loadAlbumsLocked().toMutableList()
         require(albums.none { it.category == category && it.name.equals(name, ignoreCase = true) }) {
@@ -121,13 +158,16 @@ class GalleryStorage(private val context: Context) {
         )
         albums += album
         saveAlbumsLocked(albums)
-        album
+        return album
     }
 
-    fun renameAlbum(albumId: String, rawName: String): Boolean = synchronized(lock) {
+    fun renameAlbum(albumId: String, rawName: String): Boolean = synchronized(GLOBAL_LOCK) {
         val name = normalizeAlbumName(rawName)
         require(name.isNotEmpty()) { "分类名不能为空" }
         require(name.length <= 24) { "分类名最多 24 个字" }
+        require(!name.equals(RESERVED_UNCLASSIFIED_NAME, ignoreCase = true)) {
+            "“未分类”是系统分类名"
+        }
 
         val albums = loadAlbumsLocked().toMutableList()
         val index = albums.indexOfFirst { it.id == albumId }
@@ -143,7 +183,7 @@ class GalleryStorage(private val context: Context) {
     }
 
     /** 删除内部分类时，图片保留并回到该大分类的“未分类”。 */
-    fun deleteAlbum(albumId: String): Boolean = synchronized(lock) {
+    fun deleteAlbum(albumId: String): Boolean = synchronized(GLOBAL_LOCK) {
         val albums = loadAlbumsLocked().toMutableList()
         if (albums.none { it.id == albumId }) return@synchronized false
 
@@ -159,50 +199,153 @@ class GalleryStorage(private val context: Context) {
      * 导入一张图片。先写临时文件并校验，再原子式加入索引，避免半张图留在画匣里。
      */
     fun importImage(uri: Uri, category: Category, albumId: String? = null): Item {
-        synchronized(lock) {
+        synchronized(GLOBAL_LOCK) {
             val validAlbumId = validAlbumIdLocked(category, albumId)
             val displayName = queryDisplayName(uri).ifBlank { "图片" }
             val extension = extensionFor(displayName, context.contentResolver.getType(uri))
-            val id = UUID.randomUUID().toString()
-            val finalName = "$id.$extension"
-            val tempFile = File(imagesDir, "$finalName.part")
-            val finalFile = File(imagesDir, finalName)
+            val tempFile = File(imagesDir, "${UUID.randomUUID()}.$extension.part")
 
             try {
                 context.contentResolver.openInputStream(uri).use { input ->
                     requireNotNull(input) { "无法读取图片" }
                     FileOutputStream(tempFile).use { output -> input.copyTo(output) }
                 }
-
-                val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                BitmapFactory.decodeFile(tempFile.absolutePath, bounds)
-                require(bounds.outWidth > 0 && bounds.outHeight > 0) { "文件不是可识别的图片" }
-
-                if (!tempFile.renameTo(finalFile)) {
-                    tempFile.copyTo(finalFile, overwrite = true)
-                    tempFile.delete()
-                }
-
-                val item = Item(
-                    id = id,
-                    fileName = finalName,
+                return commitTempFileLocked(
+                    tempFile = tempFile,
+                    extension = extension,
+                    itemId = UUID.randomUUID().toString(),
                     displayName = displayName,
                     category = category,
                     albumId = validAlbumId,
-                    createdAt = System.currentTimeMillis()
+                    createdAt = System.currentTimeMillis(),
+                    label = ""
                 )
-                val items = loadIndexLocked().toMutableList().apply { add(item) }
-                saveIndexLocked(items)
-                return item
             } catch (e: Exception) {
                 tempFile.delete()
-                finalFile.delete()
                 throw e
             }
         }
     }
 
-    fun move(itemId: String, category: Category, albumId: String? = null): Boolean = synchronized(lock) {
+    /**
+     * 把应用已有的图片文件并入画匣。
+     *
+     * 主要用于把 11.2 及更早版本的旧表情包安全迁移进共享画匣。preferredId
+     * 让旧的 STK-xxx 标识继续有效；重复执行时会识别已有条目，因此迁移可重试。
+     */
+    fun importExistingFile(
+        source: File,
+        category: Category,
+        albumId: String? = null,
+        displayName: String = source.name,
+        label: String = "",
+        preferredId: String? = null,
+        createdAt: Long = source.lastModified().takeIf { it > 0L } ?: System.currentTimeMillis()
+    ): Item = synchronized(GLOBAL_LOCK) {
+        require(source.isFile) { "图片文件不存在" }
+        val validAlbumId = validAlbumIdLocked(category, albumId)
+        val requestedId = preferredId?.trim().orEmpty().takeIf { it.isNotEmpty() }
+
+        if (requestedId != null) {
+            val items = loadIndexLocked().toMutableList()
+            val existingIndex = items.indexOfFirst { it.id == requestedId }
+            if (existingIndex >= 0) {
+                val existing = items[existingIndex]
+                if (fileFor(existing).isFile) {
+                    val updated = existing.copy(
+                        displayName = displayName.ifBlank { existing.displayName },
+                        category = category,
+                        albumId = validAlbumId,
+                        createdAt = createdAt,
+                        label = label.ifBlank { existing.label }
+                    )
+                    if (updated != existing) {
+                        items[existingIndex] = updated
+                        saveIndexLocked(items)
+                    }
+                    return@synchronized updated
+                }
+            }
+        }
+
+        val extension = extensionFor(displayName, null)
+        val tempFile = File(imagesDir, "${UUID.randomUUID()}.$extension.part")
+        try {
+            // 旧表情包与画匣位于同一应用私有文件系统时优先建硬链接：
+            // 画匣和旧聊天路径可同时存在，但不会额外复制图片数据。
+            try {
+                Files.createLink(tempFile.toPath(), source.toPath())
+            } catch (_: Exception) {
+                source.inputStream().use { input ->
+                    FileOutputStream(tempFile).use { output -> input.copyTo(output) }
+                }
+            }
+            commitTempFileLocked(
+                tempFile = tempFile,
+                extension = extension,
+                itemId = requestedId ?: UUID.randomUUID().toString(),
+                displayName = displayName.ifBlank { "图片" },
+                category = category,
+                albumId = validAlbumId,
+                createdAt = createdAt,
+                label = label.trim()
+            )
+        } catch (e: Exception) {
+            tempFile.delete()
+            throw e
+        }
+    }
+
+    private fun commitTempFileLocked(
+        tempFile: File,
+        extension: String,
+        itemId: String,
+        displayName: String,
+        category: Category,
+        albumId: String?,
+        createdAt: Long,
+        label: String
+    ): Item {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(tempFile.absolutePath, bounds)
+        require(bounds.outWidth > 0 && bounds.outHeight > 0) { "文件不是可识别的图片" }
+
+        val finalName = "${UUID.randomUUID()}.$extension"
+        val finalFile = File(imagesDir, finalName)
+        try {
+            if (!tempFile.renameTo(finalFile)) {
+                tempFile.copyTo(finalFile, overwrite = true)
+                tempFile.delete()
+            }
+
+            val item = Item(
+                id = itemId,
+                fileName = finalName,
+                displayName = displayName,
+                category = category,
+                albumId = albumId,
+                createdAt = createdAt,
+                label = label
+            )
+            val items = loadIndexLocked().toMutableList()
+            val previousIndex = items.indexOfFirst { it.id == itemId }
+            if (previousIndex >= 0) {
+                val previous = items[previousIndex]
+                if (previous.fileName != finalName) fileFor(previous).delete()
+                items[previousIndex] = item
+            } else {
+                items.add(item)
+            }
+            saveIndexLocked(items)
+            return item
+        } catch (e: Exception) {
+            tempFile.delete()
+            finalFile.delete()
+            throw e
+        }
+    }
+
+    fun move(itemId: String, category: Category, albumId: String? = null): Boolean = synchronized(GLOBAL_LOCK) {
         val items = loadIndexLocked().toMutableList()
         val index = items.indexOfFirst { it.id == itemId }
         if (index < 0) return@synchronized false
@@ -214,18 +357,72 @@ class GalleryStorage(private val context: Context) {
         true
     }
 
-    fun delete(itemId: String): Boolean = synchronized(lock) {
+    fun moveMany(itemIds: Collection<String>, category: Category, albumId: String? = null): Int =
+        synchronized(GLOBAL_LOCK) {
+            if (itemIds.isEmpty()) return@synchronized 0
+            val idSet = itemIds.toSet()
+            val validAlbumId = validAlbumIdLocked(category, albumId)
+            var changed = 0
+            val items = loadIndexLocked().map { item ->
+                if (item.id in idSet) {
+                    changed++
+                    item.copy(category = category, albumId = validAlbumId)
+                } else {
+                    item
+                }
+            }
+            if (changed > 0) saveIndexLocked(items)
+            changed
+        }
+
+    fun setLabel(itemId: String, rawLabel: String): Boolean = synchronized(GLOBAL_LOCK) {
+        val items = loadIndexLocked().toMutableList()
+        val index = items.indexOfFirst { it.id == itemId }
+        if (index < 0) return@synchronized false
+        items[index] = items[index].copy(label = normalizeLabel(rawLabel))
+        saveIndexLocked(items)
+        true
+    }
+
+    fun setLabels(itemIds: Collection<String>, rawLabel: String): Int = synchronized(GLOBAL_LOCK) {
+        if (itemIds.isEmpty()) return@synchronized 0
+        val idSet = itemIds.toSet()
+        val label = normalizeLabel(rawLabel)
+        var changed = 0
+        val items = loadIndexLocked().map { item ->
+            if (item.id in idSet) {
+                changed++
+                item.copy(label = label)
+            } else {
+                item
+            }
+        }
+        if (changed > 0) saveIndexLocked(items)
+        changed
+    }
+
+    fun delete(itemId: String): Boolean = synchronized(GLOBAL_LOCK) {
         val items = loadIndexLocked().toMutableList()
         val item = items.firstOrNull { it.id == itemId } ?: return@synchronized false
-        val newItems = items.filterNot { it.id == itemId }
-        saveIndexLocked(newItems)
+        saveIndexLocked(items.filterNot { it.id == itemId })
         fileFor(item).delete()
         true
     }
 
+    fun deleteMany(itemIds: Collection<String>): Int = synchronized(GLOBAL_LOCK) {
+        if (itemIds.isEmpty()) return@synchronized 0
+        val idSet = itemIds.toSet()
+        val items = loadIndexLocked()
+        val removed = items.filter { it.id in idSet }
+        if (removed.isEmpty()) return@synchronized 0
+        saveIndexLocked(items.filterNot { it.id in idSet })
+        removed.forEach { fileFor(it).delete() }
+        removed.size
+    }
+
     fun find(itemId: String): Item? = listAll().firstOrNull { it.id == itemId }
 
-    /** 供后续住户指令调用；分类为空时可从整个画匣里取。 */
+    /** 供住户指令调用；分类为空时可从整个画匣里取。 */
     fun randomItem(category: Category? = null, albumId: String? = null): Item? {
         return listByCategory(category, albumId).randomOrNull()
     }
@@ -239,6 +436,10 @@ class GalleryStorage(private val context: Context) {
 
     private fun normalizeAlbumName(rawName: String): String {
         return rawName.trim().replace(Regex("\\s+"), " ")
+    }
+
+    private fun normalizeLabel(rawLabel: String): String {
+        return rawLabel.trim().replace(Regex("\\s+"), " ").take(80)
     }
 
     private fun loadIndexLocked(): List<Item> {
@@ -258,7 +459,8 @@ class GalleryStorage(private val context: Context) {
                             displayName = obj.optString("displayName", "图片"),
                             category = Category.fromKey(obj.optString("category")),
                             albumId = obj.optString("albumId").takeIf { it.isNotBlank() },
-                            createdAt = obj.optLong("createdAt", 0L)
+                            createdAt = obj.optLong("createdAt", 0L),
+                            label = obj.optString("label", "")
                         )
                     )
                 }
@@ -279,6 +481,7 @@ class GalleryStorage(private val context: Context) {
                 put("category", item.category.key)
                 if (item.albumId != null) put("albumId", item.albumId)
                 put("createdAt", item.createdAt)
+                if (item.label.isNotEmpty()) put("label", item.label)
             })
         }
         writeJsonAtomically(indexFile, array.toString())

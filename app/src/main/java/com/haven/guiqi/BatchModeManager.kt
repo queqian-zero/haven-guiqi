@@ -27,7 +27,11 @@ class BatchModeManager(
     data class PendingItem(
         val type: String,  // "text" / "image" / "weather"
         val text: String = "",
+        /** 送进 API 的图片路径。 */
         val imagePaths: List<String> = emptyList(),
+        /** 本地界面显示用路径；表情包可保留透明通道。 */
+        val displayImagePaths: List<String> = imagePaths,
+        val isSticker: Boolean = false,
         val quoteAuthor: String? = null,
         val quoteContent: String? = null
     )
@@ -88,8 +92,21 @@ class BatchModeManager(
         refreshUI()
     }
 
-    fun addImage(paths: List<String>, caption: String) {
-        items.add(PendingItem("image", caption, paths))
+    fun addImage(
+        paths: List<String>,
+        caption: String,
+        displayPaths: List<String> = paths,
+        isSticker: Boolean = false
+    ) {
+        items.add(
+            PendingItem(
+                type = "image",
+                text = caption,
+                imagePaths = paths,
+                displayImagePaths = displayPaths,
+                isSticker = isSticker
+            )
+        )
         refreshUI()
     }
 
@@ -137,12 +154,17 @@ class BatchModeManager(
                 val thumb = ImageView(activity).apply {
                     layoutParams = LinearLayout.LayoutParams(dp(32), dp(32)).apply { marginEnd = dp(8) }
                     scaleType = ImageView.ScaleType.CENTER_CROP
-                    val bitmap = BitmapFactory.decodeFile(item.imagePaths.firstOrNull() ?: "")
+                    val bitmap = BitmapFactory.decodeFile(item.displayImagePaths.firstOrNull() ?: "")
                     if (bitmap != null) setImageBitmap(bitmap)
                 }
                 row.addView(thumb)
                 row.addView(TextView(activity).apply {
-                    text = if (item.text.isNotEmpty()) "📷 ${item.text}" else "📷 ${item.imagePaths.size}张图片"
+                    text = when {
+                        item.isSticker && item.text.isNotEmpty() -> "表情包 · ${item.text}"
+                        item.isSticker -> "表情包"
+                        item.text.isNotEmpty() -> "📷 ${item.text}"
+                        else -> "📷 ${item.imagePaths.size}张图片"
+                    }
                     textSize = 12f; setTextColor(c.textPrimary)
                     layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
                 })

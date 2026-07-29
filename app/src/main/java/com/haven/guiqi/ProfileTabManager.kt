@@ -26,7 +26,10 @@ class ProfileTabManager(
     private val c get() = ThemeHelper.getColors(activity)
     private fun dp(v: Int): Int = (v * activity.resources.displayMetrics.density).toInt()
 
-    fun refresh() {
+    fun refresh(
+        precomputedFriends: List<Friend>? = null,
+        precomputedTotalMessages: Int? = null
+    ) {
         profileContainer.removeAllViews()
         val prefs = activity.getSharedPreferences("haven_prefs", AppCompatActivity.MODE_PRIVATE)
         val userName = prefs.getString("user_name", "") ?: ""
@@ -100,10 +103,9 @@ class ProfileTabManager(
         profileContainer.addView(avatarSection)
 
         // ===== 统计卡片 =====
-        val friends = friendStorage.loadFriends()
-        var totalMessages = 0
-        for (f in friends) {
-            totalMessages += chatStorage.loadMessages(f.id).size
+        val friends = precomputedFriends ?: friendStorage.loadFriends()
+        val totalMessages = precomputedTotalMessages ?: friends.sumOf { friend ->
+            chatStorage.getMessageCount(friend.id)
         }
 
         val statsCard = LinearLayout(activity).apply {
@@ -153,8 +155,8 @@ class ProfileTabManager(
             "你的自我描述，AI 好奇时可以翻看（不会主动塞给 AI）") { showEditMyBioDialog() }
 
         addSectionTitle("数据管理")
-        addItem("导出数据", "", "把好友和聊天记录导出备份") { onExport() }
-        addItem("导入数据", "", "从备份文件恢复好友和聊天记录") { onImport() }
+        addItem("导出聊天 JSON", "", "只备份好友、聊天和住户提示词；不含画匣等文件") { onExport() }
+        addItem("导入聊天 JSON", "", "恢复好友、聊天和住户提示词；完整恢复请到系统设置") { onImport() }
 
         addSectionTitle("关于")
         val wallCount = WallStorage(activity).count()

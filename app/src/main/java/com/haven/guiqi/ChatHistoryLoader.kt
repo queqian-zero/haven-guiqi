@@ -32,7 +32,6 @@ class ChatHistoryLoader(
     private var loadedMessageCount = 0
     private val messagesPerPage = 50
     private var allSavedMessages: List<StoredMessage> = emptyList()
-    private var totalMessageCount = 0        // 存档里的总条数（只数行，很快）
     private var fullHistoryLoaded = false    // 完整历史是否已加载（点"加载更早"才加载）
 
     // 日期分隔线状态
@@ -89,14 +88,17 @@ class ChatHistoryLoader(
         val userInfo = if (userName.isNotEmpty()) "\n用户名称: $userName" else ""
         chatHistory.add(ChatMessage("system", "当前时间: $timeInfo$userInfo"))
 
-        // ★ 关键优化：不再把整个仓库搬进来
-        // 只解析真正需要的部分：AI 上下文条数 和 首屏渲染条数，取大者
+        // 只从文件尾部读取真正需要的部分：AI 上下文条数和首屏 50 条，取大者。
+        // 不再先全文件数行、再全文件 readLines() 一遍。
         val ctxCount = activity.getSharedPreferences("haven_chat_prefs", android.content.Context.MODE_PRIVATE)
             .getInt("context_$friendId", 30)
-        totalMessageCount = chatStorage.getMessageCount(friendId)
-        val recentMessages = chatStorage.loadRecentMessages(friendId, maxOf(messagesPerPage, ctxCount))
+        val recentPage = chatStorage.loadRecentMessagesPage(
+            friendId,
+            maxOf(messagesPerPage, ctxCount)
+        )
+        val recentMessages = recentPage.messages
 
-        if (totalMessageCount == 0) {
+        if (recentMessages.isEmpty()) {
             lastMessageDate = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
             bubbleRenderer.addDaySeparator(System.currentTimeMillis())
             if (!apiConfigured) {
@@ -110,12 +112,12 @@ class ChatHistoryLoader(
             // 给 API 的上下文：只需要用户设置的条数
             buildChatHistoryFromSaved(recentMessages.takeLast(ctxCount))
 
-            // 只渲染最近 50 条消息的气泡（性能优化）
-            val toRender = if (totalMessageCount > messagesPerPage) {
+            // UI 永远只渲染最近 50 条。
+            // 如果 AI 上下文设置大于 50，额外读取的部分只给上下文使用，不上屏。
+            val hasEarlierForUi = recentPage.hasOlder || recentMessages.size > messagesPerPage
+            val toRender = recentMessages.takeLast(messagesPerPage)
+            if (hasEarlierForUi) {
                 bubbleRenderer.addLoadMoreButton()
-                recentMessages.takeLast(messagesPerPage)
-            } else {
-                recentMessages
             }
             loadedMessageCount = toRender.size
 
@@ -222,6 +224,9 @@ class ChatHistoryLoader(
                     } catch (_: Exception) {
                         bubbleRenderer.addUserBubble(msg.content, timeStr)
                     }
+                } else if (msg.type == "sticker" && msg.imagePath.isNotEmpty()) {
+                    val caption = msg.content.takeUnless { it == "[表情包]" }.orEmpty()
+                    bubbleRenderer.addStickerBubble(msg.imagePath, timeStr, caption)
                 } else if (msg.imagePath.isNotEmpty()) {
                     val caption = msg.content.let {
                         if (it == "[图片]" || it.startsWith("[") && it.endsWith("张图片]")) "" else it

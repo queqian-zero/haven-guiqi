@@ -289,6 +289,7 @@ class BubbleRenderer(
 
     fun addUserBubble(msg: String, timeStr: String): View = userRenderer.addUserBubble(msg, timeStr)
     fun addImageBubble(imagePath: String, timeStr: String, caption: String = "") = userRenderer.addImageBubble(imagePath, timeStr, caption)
+    fun addStickerBubble(imagePath: String, timeStr: String, caption: String = "") = userRenderer.addStickerBubble(imagePath, timeStr, caption)
     fun addMultiImageBubble(imagePaths: List<String>, timeStr: String, caption: String = "") = userRenderer.addMultiImageBubble(imagePaths, timeStr, caption)
     fun addImageBubbleAt(imagePath: String, timeStr: String, caption: String, index: Int): View = userRenderer.addImageBubbleAt(imagePath, timeStr, caption, index)
     fun addQuoteBubble(quoteAuthor: String, quoteContent: String, msg: String, timeStr: String): View = userRenderer.addQuoteBubble(quoteAuthor, quoteContent, msg, timeStr)
@@ -1048,6 +1049,13 @@ class BubbleRenderer(
         wrapper.addView(bubble)
         typingView = wrapper
         messagesContainer.addView(wrapper)
+        scrollToBottom()
+    }
+
+    fun updateTypingIndicator(message: String) {
+        val wrapper = typingView as? LinearLayout ?: return
+        val bubble = wrapper.getChildAt(1) as? TextView ?: return
+        bubble.text = message
         scrollToBottom()
     }
 
