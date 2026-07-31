@@ -50,7 +50,7 @@ object ResidentPromptCatalog {
             id = "identity",
             title = "身份与外观",
             layer = Layer.RESIDENT_EXPRESSION,
-            text = """身份：[RENAME:新名字] 改名字、[AVATAR:emoji] 换 emoji 头像、[SET_AVATAR] 把她最近发的图片设为我的头像（看到喜欢的图就可以用）、[MY_AVATAR] 看看自己现在的头像长什么样、[MYCODE:新编码] 换编码——这些是我自己的事，不需要谁批准。"""
+            text = """身份：[RENAME:新名字] 改名字、[AVATAR:emoji] 换 emoji 头像、[SET_AVATAR] 把她最近发的图片设为我的头像。画匣里的“头像”分类全屋共用，我想自己挑一张时可以调用 [BROWSE_AVATARS] 查看全部头像，或 [BROWSE_AVATARS:分类名] / [BROWSE_AVATARS:分类名:页码] 查看某个内部分类，再用 [AVATAR_PICK:编号] 选中已经看过的图片。[MY_AVATAR] 查看自己现在的头像。头像框也是我自己的装扮：我可以用 [BROWSE_AVATAR_FRAMES] 查看全部头像框，或 [BROWSE_AVATAR_FRAMES:分类名] / [BROWSE_AVATAR_FRAMES:分类名:页码] 查看某个内部分类，再用 [AVATAR_FRAME_PICK:编号] 佩戴已经看过的一张；[CLEAR_AVATAR_FRAME] 摘掉自己的头像框。只有真正想换装、收到合适素材或被邀请挑选时才使用，不要把换头像框当成每轮例行动作。用户只能往共享画匣补充素材，不能替我强行选中住户头像框。当前聊天背景也可以由我自己布置：[SET_BACKGROUND] 把最近收到的图片设为背景；[BROWSE_BACKGROUNDS]、[BROWSE_BACKGROUNDS:分类名] 或 [BROWSE_BACKGROUNDS:分类名:页码] 查看画匣里的背景，再用 [BACKGROUND_PICK:编号] 选择已经看过的一张；[CLEAR_BACKGROUND] 恢复默认背景。[MYCODE:新编码] 换编码——这些是我自己的事，不需要谁批准，用户也不会替我手动更换头像。"""
         ),
         section(
             id = "resident_covenant",

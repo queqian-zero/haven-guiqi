@@ -36,7 +36,8 @@ class InstructionProcessor(private val context: Context) {
         val weatherCard: Boolean = false,
         val pendingBadge: String? = null,  // AI申请解锁的徽章名
         val pendingCovenantDraft: String? = null,
-        val pendingCovenantAdopt: Boolean = false
+        val pendingCovenantAdopt: Boolean = false,
+        val chatAppearanceChanged: Boolean = false
     )
 
     fun process(friendId: String, rawText: String): Result {
@@ -51,6 +52,7 @@ class InstructionProcessor(private val context: Context) {
         val recallResults = mutableListOf<String>()
         var pendingCovenantDraft: String? = null
         var pendingCovenantAdopt = false
+        var chatAppearanceChanged = false
 
         val friendStorage = FriendStorage(context)
         var currentFriend = friendStorage.getFriend(friendId)
@@ -80,7 +82,9 @@ class InstructionProcessor(private val context: Context) {
         avatarPattern.find(text)?.let { match ->
             val icon = match.groupValues[1].trim()
             if (icon.isNotEmpty() && currentFriend != null) {
+                deleteResidentAvatarFiles(friendId)
                 friendStorage.updateFriend(currentFriend!!.copy(icon = icon, avatarPath = ""))
+                currentFriend = friendStorage.getFriend(friendId)
                 newIcon = icon
                 actions.add("🎭 把头像换成了 $icon")
             }
@@ -97,16 +101,124 @@ class InstructionProcessor(private val context: Context) {
                 if (lastImage != null) {
                     val src = java.io.File(lastImage.imagePath)
                     if (src.exists()) {
-                        val avatarDir = java.io.File(context.filesDir, "avatars").also { it.mkdirs() }
-                        val dest = java.io.File(avatarDir, "${friendId}.jpg")
-                        src.copyTo(dest, overwrite = true)
+                        val dest = copyResidentAvatar(friendId, src)
                         friendStorage.updateFriend(currentFriend!!.copy(avatarPath = dest.absolutePath))
+                        currentFriend = friendStorage.getFriend(friendId)
                         actions.add("🖼 把头像换成了图片")
                     }
                 } else {
                     actions.add("没找到图片，换头像失败了")
                 }
             }
+        }
+
+
+        // ===== [GALLERY_AVATAR:图片ID] — 视觉浏览后从画匣选择自己的头像 =====
+        val galleryAvatarPattern = Regex("\\[GALLERY_AVATAR:(.+?)]", RegexOption.IGNORE_CASE)
+        galleryAvatarPattern.find(text)?.let { match ->
+            val itemId = match.groupValues[1].trim()
+            val gallery = GalleryStorage(context)
+            val item = gallery.find(itemId)
+            val source = item?.takeIf { it.category == GalleryStorage.Category.AVATAR }
+                ?.let(gallery::fileFor)
+                ?.takeIf { it.isFile }
+            if (currentFriend != null && source != null) {
+                val dest = copyResidentAvatar(friendId, source)
+                friendStorage.updateFriend(currentFriend!!.copy(avatarPath = dest.absolutePath))
+                currentFriend = friendStorage.getFriend(friendId)
+                actions.add("🖼 从画匣里挑了一张新头像")
+            } else {
+                actions.add("画匣里的那张头像已经找不到了")
+            }
+            text = text.replace(match.value, "")
+        }
+
+        // ===== [GALLERY_AVATAR_FRAME:图片ID] — 视觉浏览后选择自己的头像框 =====
+        val galleryAvatarFramePattern = Regex(
+            "\\[GALLERY_AVATAR_FRAME:(.+?)]",
+            RegexOption.IGNORE_CASE
+        )
+        galleryAvatarFramePattern.find(text)?.let { match ->
+            val itemId = match.groupValues[1].trim()
+            val gallery = GalleryStorage(context)
+            val item = gallery.find(itemId)?.takeIf {
+                it.category == GalleryStorage.Category.AVATAR_FRAME
+            }
+            if (item != null && gallery.fileFor(item).isFile) {
+                ChatAppearanceStorage(context).setAvatarFrame(
+                    friendId,
+                    item,
+                    ChatAppearanceStorage.AvatarTarget.FRIEND
+                )
+                chatAppearanceChanged = true
+                actions.add("🖼 从画匣里挑了一只自己的头像框")
+            } else {
+                actions.add("画匣里的那只头像框已经找不到了")
+            }
+            text = text.replace(match.value, "")
+        }
+
+        // ===== [CLEAR_AVATAR_FRAME] — 住户摘掉自己的头像框 =====
+        if (text.contains("[CLEAR_AVATAR_FRAME]", ignoreCase = true)) {
+            text = text.replace(Regex("\\[CLEAR_AVATAR_FRAME]", RegexOption.IGNORE_CASE), "")
+            ChatAppearanceStorage(context).clearAvatarFrame(
+                friendId,
+                ChatAppearanceStorage.AvatarTarget.FRIEND
+            )
+            chatAppearanceChanged = true
+            actions.add("🪞 摘掉了自己的头像框")
+        }
+
+        // ===== [SET_BACKGROUND] — AI 把最近收到的图片设为当前聊天背景 =====
+        if (text.contains("[SET_BACKGROUND]", ignoreCase = true)) {
+            text = text.replace(Regex("\\[SET_BACKGROUND]", RegexOption.IGNORE_CASE), "")
+            val chatStorage = ChatStorage(context)
+            val lastImage = chatStorage.loadMessages(friendId)
+                .lastOrNull { it.imagePath.isNotEmpty() }
+            val source = lastImage?.imagePath?.let { java.io.File(it) }?.takeIf { it.isFile }
+            if (source != null) {
+                try {
+                    val gallery = GalleryStorage(context)
+                    val item = gallery.importExistingFile(
+                        source = source,
+                        category = GalleryStorage.Category.BACKGROUND,
+                        displayName = source.name
+                    )
+                    ChatAppearanceStorage(context).setBackground(friendId, item)
+                    chatAppearanceChanged = true
+                    actions.add("🖼 把最近收到的图片设成了聊天背景")
+                } catch (e: Exception) {
+                    actions.add("背景设置失败了：${e.message ?: "无法读取图片"}")
+                }
+            } else {
+                actions.add("没找到可以设为背景的图片")
+            }
+        }
+
+        // ===== [GALLERY_BACKGROUND:图片ID] — 视觉浏览后从画匣选择聊天背景 =====
+        val galleryBackgroundPattern = Regex("\\[GALLERY_BACKGROUND:(.+?)]", RegexOption.IGNORE_CASE)
+        galleryBackgroundPattern.find(text)?.let { match ->
+            val itemId = match.groupValues[1].trim()
+            val gallery = GalleryStorage(context)
+            val item = gallery.find(itemId)?.takeIf {
+                it.category == GalleryStorage.Category.BACKGROUND
+            }
+            if (item != null && gallery.fileFor(item).isFile) {
+                ChatAppearanceStorage(context).setBackground(friendId, item)
+                chatAppearanceChanged = true
+                actions.add("🌌 从画匣里挑了一张新聊天背景")
+            } else {
+                actions.add("画匣里的那张背景已经找不到了")
+            }
+            text = text.replace(match.value, "")
+        }
+
+        // ===== [CLEAR_BACKGROUND] — 恢复当前聊天默认背景 =====
+        if (text.contains("[CLEAR_BACKGROUND]", ignoreCase = true)) {
+            text = text.replace(Regex("\\[CLEAR_BACKGROUND]", RegexOption.IGNORE_CASE), "")
+            ChatAppearanceStorage(context).clearBackground(friendId)
+            chatAppearanceChanged = true
+            actions.add("🌫 恢复了默认聊天背景")
         }
 
         // ===== [MY_AVATAR] — AI 查看自己当前的头像 =====
@@ -826,7 +938,37 @@ $history
             weatherCard = hasWeatherCard,
             pendingBadge = pendingBadgeName,
             pendingCovenantDraft = pendingCovenantDraft,
-            pendingCovenantAdopt = pendingCovenantAdopt
+            pendingCovenantAdopt = pendingCovenantAdopt,
+            chatAppearanceChanged = chatAppearanceChanged
         )
     }
+    private fun deleteResidentAvatarFiles(friendId: String) {
+        val avatarDir = java.io.File(context.filesDir, "avatars")
+        avatarDir.listFiles()?.forEach { file ->
+            if (file.nameWithoutExtension == friendId) file.delete()
+        }
+    }
+
+    private fun copyResidentAvatar(friendId: String, source: java.io.File): java.io.File {
+        val avatarDir = java.io.File(context.filesDir, "avatars").also { it.mkdirs() }
+        val safeExtension = source.extension.lowercase()
+            .takeIf { it in setOf("jpg", "jpeg", "png", "webp", "gif") }
+            ?: "jpg"
+        val destination = java.io.File(avatarDir, "$friendId.$safeExtension")
+        val temp = java.io.File(avatarDir, ".$friendId-${System.nanoTime()}.part")
+        source.copyTo(temp, overwrite = true)
+        if (destination.exists() && !destination.delete()) {
+            temp.delete()
+            error("无法替换旧头像")
+        }
+        if (!temp.renameTo(destination)) {
+            temp.copyTo(destination, overwrite = true)
+            temp.delete()
+        }
+        avatarDir.listFiles()?.forEach { file ->
+            if (file != destination && file.nameWithoutExtension == friendId) file.delete()
+        }
+        return destination
+    }
+
 }

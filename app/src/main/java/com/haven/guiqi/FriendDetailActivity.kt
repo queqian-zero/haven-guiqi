@@ -101,7 +101,6 @@ class FriendDetailActivity : AppCompatActivity() {
         }
 
         val avatarCircle = FriendAvatarHelper.create(this, friend, 72)
-        avatarCircle.setOnClickListener { showEditIconDialog(friend) }
 
         val nameText = TextView(this).apply {
             layoutParams = LinearLayout.LayoutParams(
@@ -216,9 +215,10 @@ class FriendDetailActivity : AppCompatActivity() {
             }
         }
 
-        addEditableItem("头像", friend.icon, "点击更换头像字符") {
-            showEditIconDialog(friend)
-        }
+        addInfoItem(
+            "头像",
+            if (friend.avatarPath.isNotEmpty()) "住户当前使用图片头像" else "住户当前使用 ${friend.icon}"
+        )
 
         addEditableItem("编码", friend.visibleCode, "好友的编码，点击复制") {
             val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
@@ -307,73 +307,6 @@ class FriendDetailActivity : AppCompatActivity() {
             setTextColor(c.timeText)
         }
         detailContainer.addView(footerText)
-    }
-
-    // ===== 编辑头像字符 =====
-    private fun showEditIconDialog(friend: Friend) {
-        val dp = { value: Int -> (value * resources.displayMetrics.density).toInt() }
-
-        val icons = arrayOf("★", "♡", "☆", "♪", "✦", "◆", "○", "△", "☀", "☁", "🌙", "🔥", "🌸", "🍀", "⚡", "🎵")
-
-        val grid = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(16), dp(12), dp(16), dp(12))
-        }
-
-        // 每行4个
-        for (row in icons.indices step 4) {
-            val rowLayout = LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
-                ).apply { bottomMargin = dp(8) }
-            }
-
-            for (col in 0 until 4) {
-                val idx = row + col
-                if (idx >= icons.size) break
-
-                val iconBtn = TextView(this).apply {
-                    layoutParams = LinearLayout.LayoutParams(dp(48), dp(48)).apply {
-                        marginStart = dp(6); marginEnd = dp(6)
-                    }
-                    gravity = Gravity.CENTER
-                    this.text = icons[idx]
-                    textSize = 20f
-                    setTextColor(if (icons[idx] == friend.icon) c.highlightColor else c.textSecondary)
-                    setBackgroundResource(R.drawable.icon_bg)
-                }
-                rowLayout.addView(iconBtn)
-            }
-            grid.addView(rowLayout)
-        }
-
-        val dialog = AlertDialog.Builder(this)
-            .setTitle("选择头像")
-            .setView(grid)
-            .setNegativeButton("取消", null)
-            .create()
-
-        // 给每个图标按钮加点击事件
-        fun setupClicks(layout: LinearLayout) {
-            for (i in 0 until layout.childCount) {
-                val rowLayout = layout.getChildAt(i) as? LinearLayout ?: continue
-                for (j in 0 until rowLayout.childCount) {
-                    val btn = rowLayout.getChildAt(j) as? TextView ?: continue
-                    btn.setOnClickListener {
-                        val icon = btn.text.toString()
-                        friendStorage.updateFriend(friend.copy(icon = icon))
-                        Toast.makeText(this, "头像已更换 ♡", Toast.LENGTH_SHORT).show()
-                        dialog.dismiss()
-                        buildDetail()
-                    }
-                }
-            }
-        }
-        setupClicks(grid)
-        dialog.show()
     }
 
     // ===== 通用编辑对话框 =====

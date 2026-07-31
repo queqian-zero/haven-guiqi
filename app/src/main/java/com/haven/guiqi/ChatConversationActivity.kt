@@ -34,10 +34,18 @@ import androidx.core.view.WindowInsetsControllerCompat
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
+import java.util.concurrent.Executors
 
 class ChatConversationActivity : AppCompatActivity() {
     /** 当前主题色 */
     private val c get() = ThemeHelper.getColors(this)
+    private lateinit var chatRoot: View
+    /** 覆盖完整窗口（含状态栏与手势导航区）的背景承载层。 */
+    private lateinit var chatBackgroundHost: View
+    private lateinit var appearanceStorage: ChatAppearanceStorage
+    private val appearanceExecutor = Executors.newSingleThreadExecutor()
+    private var appliedAppearanceRevision = Long.MIN_VALUE
+    private var appearanceGeneration = 0L
     private lateinit var tvFriendName: TextView
     private lateinit var tvStatus: TextView
     private lateinit var messagesContainer: LinearLayout
@@ -146,9 +154,10 @@ class ChatConversationActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
 
         WindowCompat.setDecorFitsSystemWindows(window, false)
-        // 顶部状态栏、底部手势导航区都跟聊天页同色，避免上下出现纯黑色横条
-        window.statusBarColor = c.background
-        window.navigationBarColor = c.background
+        // 系统栏必须透明，完整聊天背景由 android.R.id.content 承载并延伸到栏下方。
+        // 不能再使用主题背景色，否则浅色模式会出现白条、深色模式会出现深色条。
+        window.statusBarColor = Color.TRANSPARENT
+        window.navigationBarColor = Color.TRANSPARENT
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             window.isStatusBarContrastEnforced = false
             window.isNavigationBarContrastEnforced = false
@@ -159,6 +168,12 @@ class ChatConversationActivity : AppCompatActivity() {
         }
 
         setContentView(R.layout.activity_chat_conversation)
+        chatBackgroundHost = findViewById(android.R.id.content)
+        chatRoot = findViewById(R.id.chatRoot)
+        // 背景统一画在全窗口承载层；聊天内容层保持透明，避免遮住系统栏下方的背景。
+        chatRoot.setBackgroundColor(Color.TRANSPARENT)
+        chatBackgroundHost.setBackgroundResource(R.drawable.chat_bg)
+        appearanceStorage = ChatAppearanceStorage(this)
 
         val insetsController = WindowInsetsControllerCompat(window, window.decorView)
         insetsController.systemBarsBehavior =
@@ -167,8 +182,7 @@ class ChatConversationActivity : AppCompatActivity() {
         insetsController.isAppearanceLightStatusBars = useDarkSystemIcons
         insetsController.isAppearanceLightNavigationBars = useDarkSystemIcons
 
-        val contentView = findViewById<View>(android.R.id.content)
-        ViewCompat.setOnApplyWindowInsetsListener(contentView) { view, insets ->
+        ViewCompat.setOnApplyWindowInsetsListener(chatBackgroundHost) { view, insets ->
             val top = insets.getInsets(WindowInsetsCompat.Type.statusBars()).top
             // ★ 键盘弹起时加底部 padding，让输入框不被盖住
             val imeBottom = insets.getInsets(WindowInsetsCompat.Type.ime()).bottom
@@ -232,6 +246,7 @@ class ChatConversationActivity : AppCompatActivity() {
         bubbleRenderer.friendName = friendName
         bubbleRenderer.friendIcon = friendIcon
         bubbleRenderer.friendAvatarPath = avatarPath
+        applyChatAppearance()
         chatStorage = ChatStorage(this)
         chatHistoryLoader = ChatHistoryLoader(
             this, chatStorage, bubbleRenderer, chatHistory, messagesContainer, friendId
@@ -422,6 +437,7 @@ class ChatConversationActivity : AppCompatActivity() {
             bubbleRenderer.friendIcon = friendIcon
             bubbleRenderer.friendAvatarPath = latestFriend.avatarPath
         }
+        applyChatAppearance()
 
         val pausedRevision = pausedChatRevision
         if (pausedRevision != null && chatStorage.getFileRevision(friendId) != pausedRevision) {
@@ -438,14 +454,119 @@ class ChatConversationActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
-        super.onDestroy()
+        appearanceGeneration++
+        appearanceExecutor.shutdownNow()
+        if (::chatBackgroundHost.isInitialized) {
+            appearanceStorage.releaseBackground(chatBackgroundHost)
+        }
         networkMonitor.stop()
+        super.onDestroy()
     }
+
+    private fun applyChatAppearance(force: Boolean = false) {
+        if (friendId.isBlank() || !::chatRoot.isInitialized || !::bubbleRenderer.isInitialized) return
+        val revision = appearanceStorage.getRevision(friendId)
+        if (!force && appliedAppearanceRevision == revision) return
+        appliedAppearanceRevision = revision
+        val generation = ++appearanceGeneration
+        val customBackgroundFile = appearanceStorage.getBackgroundFile(friendId)
+        val hasCustomBackground = customBackgroundFile != null
+        bubbleRenderer.friendAvatarFramePath = appearanceStorage.getAvatarFrameFile(
+            friendId,
+            ChatAppearanceStorage.AvatarTarget.FRIEND
+        )?.absolutePath.orEmpty()
+        bubbleRenderer.userAvatarFramePath = appearanceStorage.getAvatarFrameFile(
+            friendId,
+            ChatAppearanceStorage.AvatarTarget.USER
+        )?.absolutePath.orEmpty()
+
+        val friendFrameTransform = appearanceStorage.getAvatarFrameTransform(
+            friendId,
+            ChatAppearanceStorage.AvatarTarget.FRIEND
+        )
+        bubbleRenderer.friendAvatarFrameScalePercent = friendFrameTransform.scalePercent
+        bubbleRenderer.friendAvatarFrameOffsetXPercent = friendFrameTransform.offsetXPercent
+        bubbleRenderer.friendAvatarFrameOffsetYPercent = friendFrameTransform.offsetYPercent
+
+        val userFrameTransform = appearanceStorage.getAvatarFrameTransform(
+            friendId,
+            ChatAppearanceStorage.AvatarTarget.USER
+        )
+        bubbleRenderer.userAvatarFrameScalePercent = userFrameTransform.scalePercent
+        bubbleRenderer.userAvatarFrameOffsetXPercent = userFrameTransform.offsetXPercent
+        bubbleRenderer.userAvatarFrameOffsetYPercent = userFrameTransform.offsetYPercent
+
+        bubbleRenderer.avatarDisplayMode = appearanceStorage.getAvatarDisplayMode(friendId)
+        bubbleRenderer.friendAvatarShape = appearanceStorage.getAvatarShape(
+            friendId,
+            ChatAppearanceStorage.AvatarTarget.FRIEND
+        )
+        bubbleRenderer.userAvatarShape = appearanceStorage.getAvatarShape(
+            friendId,
+            ChatAppearanceStorage.AvatarTarget.USER
+        )
+        bubbleRenderer.syncAvatarAppearance()
+        bubbleRenderer.useCustomChatBackground = hasCustomBackground
+        applyCollapsedComposerAppearance(hasCustomBackground)
+
+        val targetWidth = chatBackgroundHost.width.takeIf { it > 0 }
+            ?: resources.displayMetrics.widthPixels
+        val targetHeight = chatBackgroundHost.height.takeIf { it > 0 }
+            ?: resources.displayMetrics.heightPixels
+        appearanceExecutor.execute {
+            val drawable = appearanceStorage.loadBackgroundDrawable(
+                friendId,
+                targetWidth,
+                targetHeight
+            )
+            val posted = chatBackgroundHost.post {
+                if (!isFinishing && !isDestroyed &&
+                    generation == appearanceGeneration &&
+                    appliedAppearanceRevision == revision) {
+                    appearanceStorage.applyBackground(chatBackgroundHost, drawable)
+                } else {
+                    appearanceStorage.releaseDrawable(drawable)
+                }
+            }
+            if (!posted) appearanceStorage.releaseDrawable(drawable)
+        }
+    }
+
+    private fun applyCollapsedComposerAppearance(hasCustomBackground: Boolean) {
+        if (!::composerCollapsedButton.isInitialized) return
+        val dark = ThemeHelper.isDark(this)
+        val surface = if (hasCustomBackground) {
+            withAlpha(if (dark) c.card else Color.WHITE, if (dark) 198 else 176)
+        } else {
+            c.card
+        }
+        val border = if (hasCustomBackground) {
+            withAlpha(c.textPrimary, if (dark) 48 else 38)
+        } else {
+            c.borderMedium
+        }
+        composerCollapsedButton.background = GradientDrawable().apply {
+            setColor(surface)
+            cornerRadius = dp(17).toFloat()
+            setStroke(dp(1), border)
+        }
+        composerCollapsedButton.setTextColor(
+            if (hasCustomBackground) c.textPrimary else c.accent
+        )
+    }
+
+    private fun withAlpha(color: Int, alpha: Int): Int = Color.argb(
+        alpha.coerceIn(0, 255),
+        Color.red(color),
+        Color.green(color),
+        Color.blue(color)
+    )
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == 4001 && resultCode == RESULT_OK) {
             bubbleRenderer.friendAvatarPath = FriendStorage(this).getFriend(friendId)?.avatarPath ?: ""
+            applyChatAppearance(force = true)
             messagesContainer.removeAllViews(); chatHistory.clear(); initChat(); return
         }
         if (requestCode == TAKE_PHOTO && resultCode == RESULT_OK) {
@@ -1130,6 +1251,342 @@ class ChatConversationActivity : AppCompatActivity() {
 不要输出真实图片 ID，也不要向用户解释编号、预览拼图或后台选择过程。"""
     }
 
+
+    /**
+     * 画匣头像视觉浏览工具。
+     *
+     * 用户不能替住户选头像；只有住户自己输出 [BROWSE_AVATARS] 时才按需打开画匣头像，
+     * 再由住户用 [AVATAR_PICK:编号] 选择已经亲眼看过的图片。
+     */
+    private fun resolveVisualAvatarBrowse(
+        api: ApiHelper,
+        baseContext: List<ChatMessage>,
+        firstResponse: ApiResponse
+    ): ApiResponse {
+        var currentResponse = firstResponse
+        val thinkingParts = mutableListOf<String>()
+        val numberToId = linkedMapOf<Int, String>()
+        var activeAlbum: String? = null
+
+        fun addThinking(text: String) {
+            val cleaned = text.trim()
+            if (cleaned.isNotEmpty()) thinkingParts.add(cleaned)
+        }
+
+        addThinking(firstResponse.thinking)
+
+        while (true) {
+            val request = AvatarBrowseSelection.findBrowseRequest(currentResponse.text)
+            if (request == null) {
+                if (numberToId.isNotEmpty()) updateStickerBrowseStatus("$friendName 正在输入…")
+                return currentResponse.copy(
+                    thinking = thinkingParts.joinToString("\n\n"),
+                    text = AvatarBrowseSelection.resolve(currentResponse.text, numberToId)
+                )
+            }
+
+            updateStickerBrowseStatus("$friendName 正在画匣里挑头像…")
+            val preview = AvatarBrowsePreview.buildPage(
+                applicationContext,
+                request.album,
+                request.page
+            )
+            if (!activeAlbum.equals(preview.requestedAlbum, ignoreCase = true)) {
+                numberToId.clear()
+                activeAlbum = preview.requestedAlbum
+            }
+            if (preview.imageBase64 != null) numberToId.putAll(preview.numberToId)
+
+            val pageLabel = if (preview.totalPages > 0) {
+                "第 ${preview.page}/${preview.totalPages} 页"
+            } else {
+                "空分类"
+            }
+            addThinking("🔧 打开画匣头像：${preview.requestedAlbum} · $pageLabel")
+            updateStickerBrowseStatus(
+                if (preview.totalPages > 0) {
+                    "$friendName 正在挑头像 · $pageLabel"
+                } else {
+                    "$friendName 正在查看画匣头像"
+                }
+            )
+
+            val toolResult = buildAvatarToolResult(preview)
+            val images = preview.imageBase64?.let { listOf(it) } ?: emptyList()
+            val followUp = baseContext.toMutableList().apply {
+                add(ChatMessage("assistant", currentResponse.text))
+                add(ChatMessage("user", toolResult, images))
+            }
+            currentResponse = api.sendChat(followUp)
+            addThinking(currentResponse.thinking)
+        }
+    }
+
+    private fun buildAvatarToolResult(preview: AvatarBrowsePreview.Result): String {
+        val albumList = preview.availableAlbums.takeIf { it.isNotEmpty() }
+            ?.joinToString("、")
+            ?: "暂无内部分类"
+
+        if (!preview.albumExists) {
+            return """[画匣头像工具结果]
+没有找到头像分类「${preview.requestedAlbum}」。现有内部分类：$albumList。
+接下来由你自己决定：可以调用 [BROWSE_AVATARS] 查看全部头像，查看其他分类，或自然地完成本轮回复。不要向用户解释后台工具协议。"""
+        }
+
+        if (preview.totalCount == 0) {
+            return """[画匣头像工具结果]
+头像分类「${preview.requestedAlbum}」目前没有图片。现有内部分类：$albumList。
+接下来由你自己决定：可以查看其他分类，继续使用当前头像，或自然地完成本轮回复。不要向用户解释后台工具协议。"""
+        }
+
+        if (!preview.pageInRange) {
+            return """[画匣头像工具结果]
+头像分类「${preview.requestedAlbum}」共有 ${preview.totalPages} 页，你请求的第 ${preview.requestedPage} 页不存在。
+可以调用 [BROWSE_AVATARS:${preview.requestedAlbum}:有效页码]，也可以自然地完成本轮回复。不要向用户解释后台工具协议。"""
+        }
+
+        if (preview.imageBase64 == null) {
+            return """[画匣头像工具结果]
+「${preview.requestedAlbum}」第 ${preview.page}/${preview.totalPages} 页预览生成失败。
+可以重试、查看其他页，或继续使用当前头像。不要向用户解释后台工具协议。"""
+        }
+
+        val range = "${preview.firstNumber}-${preview.lastNumber}"
+        return """[画匣头像工具结果]
+你正在查看头像「${preview.requestedAlbum}」第 ${preview.page}/${preview.totalPages} 页，本页编号为 $range，共 ${preview.totalCount} 张。
+接下来完全由你决定：
+- 继续查看任意页：[BROWSE_AVATARS:${preview.requestedAlbum}:页码]
+- 查看全部头像：[BROWSE_AVATARS]
+- 查看其他内部分类：[BROWSE_AVATARS:分类名]
+- 选择已经看过的一张作为自己的头像：[AVATAR_PICK:编号]
+- 不换头像时，直接自然地完成本轮回复。
+不要输出真实图片 ID，也不要向用户解释编号、拼图或后台选择过程。"""
+    }
+
+    /**
+     * 画匣头像框视觉浏览工具。
+     *
+     * 住户只能替自己挑选或摘下头像框；用户头像框使用完全独立的存储键，
+     * 这里的临时编号永远不会映射到用户侧设置。
+     */
+    private fun resolveVisualAvatarFrameBrowse(
+        api: ApiHelper,
+        baseContext: List<ChatMessage>,
+        firstResponse: ApiResponse
+    ): ApiResponse {
+        var currentResponse = firstResponse
+        val thinkingParts = mutableListOf<String>()
+        val numberToId = linkedMapOf<Int, String>()
+        var activeAlbum: String? = null
+
+        fun addThinking(text: String) {
+            val cleaned = text.trim()
+            if (cleaned.isNotEmpty()) thinkingParts.add(cleaned)
+        }
+
+        addThinking(firstResponse.thinking)
+
+        while (true) {
+            val request = AvatarFrameBrowseSelection.findBrowseRequest(currentResponse.text)
+            if (request == null) {
+                if (numberToId.isNotEmpty()) updateStickerBrowseStatus("$friendName 正在输入…")
+                return currentResponse.copy(
+                    thinking = thinkingParts.joinToString("\n\n"),
+                    text = AvatarFrameBrowseSelection.resolve(currentResponse.text, numberToId)
+                )
+            }
+
+            updateStickerBrowseStatus("$friendName 正在画匣里挑头像框…")
+            val preview = AvatarFrameBrowsePreview.buildPage(
+                applicationContext,
+                request.album,
+                request.page
+            )
+            if (!activeAlbum.equals(preview.requestedAlbum, ignoreCase = true)) {
+                numberToId.clear()
+                activeAlbum = preview.requestedAlbum
+            }
+            if (preview.imageBase64 != null) numberToId.putAll(preview.numberToId)
+
+            val pageLabel = if (preview.totalPages > 0) {
+                "第 ${preview.page}/${preview.totalPages} 页"
+            } else {
+                "空分类"
+            }
+            addThinking("🔧 打开画匣头像框：${preview.requestedAlbum} · $pageLabel")
+            updateStickerBrowseStatus(
+                if (preview.totalPages > 0) {
+                    "$friendName 正在挑头像框 · $pageLabel"
+                } else {
+                    "$friendName 正在查看画匣头像框"
+                }
+            )
+
+            val toolResult = buildAvatarFrameToolResult(preview)
+            val images = preview.imageBase64?.let { listOf(it) } ?: emptyList()
+            val followUp = baseContext.toMutableList().apply {
+                add(ChatMessage("assistant", currentResponse.text))
+                add(ChatMessage("user", toolResult, images))
+            }
+            currentResponse = api.sendChat(followUp)
+            addThinking(currentResponse.thinking)
+        }
+    }
+
+    private fun buildAvatarFrameToolResult(preview: AvatarFrameBrowsePreview.Result): String {
+        val albumList = preview.availableAlbums.takeIf { it.isNotEmpty() }
+            ?.joinToString("、")
+            ?: "暂无内部分类"
+
+        if (!preview.albumExists) {
+            return """[画匣头像框工具结果]
+没有找到头像框分类「${preview.requestedAlbum}」。现有内部分类：$albumList。
+接下来由你自己决定：可以调用 [BROWSE_AVATAR_FRAMES] 查看全部头像框，查看其他分类，或自然地完成本轮回复。不要向用户解释后台工具协议。"""
+        }
+
+        if (preview.totalCount == 0) {
+            return """[画匣头像框工具结果]
+头像框分类「${preview.requestedAlbum}」目前没有图片。现有内部分类：$albumList。
+接下来由你自己决定：可以查看其他分类、继续佩戴当前头像框、摘掉头像框，或自然地完成本轮回复。不要向用户解释后台工具协议。"""
+        }
+
+        if (!preview.pageInRange) {
+            return """[画匣头像框工具结果]
+头像框分类「${preview.requestedAlbum}」共有 ${preview.totalPages} 页，你请求的第 ${preview.requestedPage} 页不存在。
+可以调用 [BROWSE_AVATAR_FRAMES:${preview.requestedAlbum}:有效页码]，也可以自然地完成本轮回复。不要向用户解释后台工具协议。"""
+        }
+
+        if (preview.imageBase64 == null) {
+            return """[画匣头像框工具结果]
+「${preview.requestedAlbum}」第 ${preview.page}/${preview.totalPages} 页预览生成失败。
+可以重试、查看其他页，或继续佩戴当前头像框。不要向用户解释后台工具协议。"""
+        }
+
+        val range = "${preview.firstNumber}-${preview.lastNumber}"
+        return """[画匣头像框工具结果]
+你正在查看头像框「${preview.requestedAlbum}」第 ${preview.page}/${preview.totalPages} 页，本页编号为 $range，共 ${preview.totalCount} 张。拼图中的星形头像只是帮助你观察透明边框，不是实际头像。
+接下来完全由你决定：
+- 继续查看任意页：[BROWSE_AVATAR_FRAMES:${preview.requestedAlbum}:页码]
+- 查看全部头像框：[BROWSE_AVATAR_FRAMES]
+- 查看其他内部分类：[BROWSE_AVATAR_FRAMES:分类名]
+- 佩戴已经看过的一张：[AVATAR_FRAME_PICK:编号]
+- 摘掉当前头像框：[CLEAR_AVATAR_FRAME]
+- 不换头像框时，直接自然地完成本轮回复。
+不要输出真实图片 ID，也不要向用户解释编号、拼图或后台选择过程。"""
+    }
+
+    /**
+     * 画匣背景视觉浏览工具。
+     *
+     * 住户可以自行查看画匣“背景”分类，并用临时编号选择当前聊天背景。
+     * 真实画匣 ID 不会暴露给模型或用户。
+     */
+    private fun resolveVisualBackgroundBrowse(
+        api: ApiHelper,
+        baseContext: List<ChatMessage>,
+        firstResponse: ApiResponse
+    ): ApiResponse {
+        var currentResponse = firstResponse
+        val thinkingParts = mutableListOf<String>()
+        val numberToId = linkedMapOf<Int, String>()
+        var activeAlbum: String? = null
+
+        fun addThinking(text: String) {
+            val cleaned = text.trim()
+            if (cleaned.isNotEmpty()) thinkingParts.add(cleaned)
+        }
+
+        addThinking(firstResponse.thinking)
+
+        while (true) {
+            val request = BackgroundBrowseSelection.findBrowseRequest(currentResponse.text)
+            if (request == null) {
+                if (numberToId.isNotEmpty()) updateStickerBrowseStatus("$friendName 正在输入…")
+                return currentResponse.copy(
+                    thinking = thinkingParts.joinToString("\n\n"),
+                    text = BackgroundBrowseSelection.resolve(currentResponse.text, numberToId)
+                )
+            }
+
+            updateStickerBrowseStatus("$friendName 正在画匣里挑聊天背景…")
+            val preview = BackgroundBrowsePreview.buildPage(
+                applicationContext,
+                request.album,
+                request.page
+            )
+            if (!activeAlbum.equals(preview.requestedAlbum, ignoreCase = true)) {
+                numberToId.clear()
+                activeAlbum = preview.requestedAlbum
+            }
+            if (preview.imageBase64 != null) numberToId.putAll(preview.numberToId)
+
+            val pageLabel = if (preview.totalPages > 0) {
+                "第 ${preview.page}/${preview.totalPages} 页"
+            } else {
+                "空分类"
+            }
+            addThinking("🔧 打开画匣背景：${preview.requestedAlbum} · $pageLabel")
+            updateStickerBrowseStatus(
+                if (preview.totalPages > 0) {
+                    "$friendName 正在挑聊天背景 · $pageLabel"
+                } else {
+                    "$friendName 正在查看画匣背景"
+                }
+            )
+
+            val toolResult = buildBackgroundToolResult(preview)
+            val images = preview.imageBase64?.let { listOf(it) } ?: emptyList()
+            val followUp = baseContext.toMutableList().apply {
+                add(ChatMessage("assistant", currentResponse.text))
+                add(ChatMessage("user", toolResult, images))
+            }
+            currentResponse = api.sendChat(followUp)
+            addThinking(currentResponse.thinking)
+        }
+    }
+
+    private fun buildBackgroundToolResult(preview: BackgroundBrowsePreview.Result): String {
+        val albumList = preview.availableAlbums.takeIf { it.isNotEmpty() }
+            ?.joinToString("、")
+            ?: "暂无内部分类"
+
+        if (!preview.albumExists) {
+            return """[画匣背景工具结果]
+没有找到背景分类「${preview.requestedAlbum}」。现有内部分类：$albumList。
+接下来由你自己决定：可以调用 [BROWSE_BACKGROUNDS] 查看全部背景，查看其他分类，或自然地完成本轮回复。不要向用户解释后台工具协议。"""
+        }
+
+        if (preview.totalCount == 0) {
+            return """[画匣背景工具结果]
+背景分类「${preview.requestedAlbum}」目前没有图片。现有内部分类：$albumList。
+接下来由你自己决定：可以查看其他分类，继续使用当前背景，或自然地完成本轮回复。不要向用户解释后台工具协议。"""
+        }
+
+        if (!preview.pageInRange) {
+            return """[画匣背景工具结果]
+背景分类「${preview.requestedAlbum}」共有 ${preview.totalPages} 页，你请求的第 ${preview.requestedPage} 页不存在。
+可以调用 [BROWSE_BACKGROUNDS:${preview.requestedAlbum}:有效页码]，也可以自然地完成本轮回复。不要向用户解释后台工具协议。"""
+        }
+
+        if (preview.imageBase64 == null) {
+            return """[画匣背景工具结果]
+「${preview.requestedAlbum}」第 ${preview.page}/${preview.totalPages} 页预览生成失败。
+可以重试、查看其他页，或继续使用当前背景。不要向用户解释后台工具协议。"""
+        }
+
+        val range = "${preview.firstNumber}-${preview.lastNumber}"
+        return """[画匣背景工具结果]
+你正在查看背景「${preview.requestedAlbum}」第 ${preview.page}/${preview.totalPages} 页，本页编号为 $range，共 ${preview.totalCount} 张。
+接下来完全由你决定：
+- 继续查看任意页：[BROWSE_BACKGROUNDS:${preview.requestedAlbum}:页码]
+- 查看全部背景：[BROWSE_BACKGROUNDS]
+- 查看其他内部分类：[BROWSE_BACKGROUNDS:分类名]
+- 选择已经看过的一张作为当前聊天背景：[BACKGROUND_PICK:编号]
+- 恢复默认背景：[CLEAR_BACKGROUND]
+- 不换背景时，直接自然地完成本轮回复。
+不要输出真实图片 ID，也不要向用户解释编号、拼图或后台选择过程。"""
+    }
+
     private fun updateStickerBrowseStatus(message: String) {
         handler.post {
             if (!isFinishing && !isDestroyed) {
@@ -1157,7 +1614,10 @@ class ChatConversationActivity : AppCompatActivity() {
                 val api = ApiHelper(apiUrl, apiKey, apiModel, apiType)
                 val contextWindow = buildContextWindow()
                 val firstResponse = api.sendChat(contextWindow)
-                val response = resolveVisualStickerBrowse(api, contextWindow, firstResponse)
+                val stickerResolved = resolveVisualStickerBrowse(api, contextWindow, firstResponse)
+                val avatarResolved = resolveVisualAvatarBrowse(api, contextWindow, stickerResolved)
+                val avatarFrameResolved = resolveVisualAvatarFrameBrowse(api, contextWindow, avatarResolved)
+                val response = resolveVisualBackgroundBrowse(api, contextWindow, avatarFrameResolved)
                 val replyTime = System.currentTimeMillis()
                 val replyTimeStr = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
                     .format(Date(replyTime))
@@ -1235,6 +1695,9 @@ class ChatConversationActivity : AppCompatActivity() {
                             .edit().putString("status_$friendId", currentAiStatus).apply()
                     }
                     tvFriendName.text = friendName
+                    if (result.chatAppearanceChanged) {
+                        applyChatAppearance(force = true)
+                    }
 
                     // 小字已在后台线程落盘，这里只上屏
                     for (action in result.actions) {

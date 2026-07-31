@@ -15,6 +15,34 @@ import android.widget.TextView
 import java.io.File
 import kotlin.math.roundToInt
 
+
+/**
+ * 用户侧消息的手动微调参数。
+ *
+ * 这些数值集中放在这里，方便实机观察后直接微调：
+ * - ROW_START_INSET_DP：用户消息整体距离屏幕左边的最小安全边距。
+ * - ROW_END_INSET_DP：用户头像框距离屏幕右边的安全边距。
+ * - AVATAR_GAP_DP：用户气泡/图片与用户头像框之间的横向间距。
+ * - TEXT_MAX_WIDTH_FRACTION：普通用户文字气泡最多占屏幕宽度的比例。
+ * - BUBBLE_START_PADDING_DP：文字到气泡起始边缘的内边距。
+ * - BUBBLE_END_PADDING_DP：文字到气泡结束边缘的内边距。
+ * - BUBBLE_TIGHT_WIDTH_EXTRA_DP：多行文字按最长行收紧后额外保留的安全宽度。
+ */
+private object UserBubbleLayoutTuning {
+    const val ROW_START_INSET_DP = 3
+    const val ROW_END_INSET_DP = 1
+    const val AVATAR_GAP_DP = 8
+    const val AVATAR_TOP_MARGIN_DP = 2
+    const val TEXT_MAX_WIDTH_FRACTION = 0.78f
+    const val BUBBLE_START_PADDING_DP = 9
+    const val BUBBLE_END_PADDING_DP = 7
+    const val BUBBLE_TIGHT_WIDTH_EXTRA_DP = 3
+    const val BUBBLE_VERTICAL_PADDING_DP = 8
+    const val TIME_TOP_MARGIN_DP = 2
+    const val TIME_EDGE_PADDING_DP = 4
+    const val MESSAGE_BOTTOM_MARGIN_DP = 8
+}
+
 /**
  * UserBubbleRenderer — 用户侧气泡渲染
  *
@@ -29,9 +57,83 @@ class UserBubbleRenderer(
     /** 长按菜单回调（内容, 作者） */
     var onMessageMenu: ((content: String, author: String) -> Unit)? = null
 
+    var showUserAvatar: Boolean = false
+    var avatarShape: ChatAppearanceStorage.AvatarShape =
+        ChatAppearanceStorage.AvatarShape.CIRCLE
+    var avatarFramePath: String = ""
+    var avatarFrameScalePercent: Int =
+        ChatAppearanceStorage.DEFAULT_AVATAR_FRAME_SCALE_PERCENT
+    var avatarFrameOffsetXPercent: Int =
+        ChatAppearanceStorage.DEFAULT_AVATAR_FRAME_OFFSET_PERCENT
+    var avatarFrameOffsetYPercent: Int =
+        ChatAppearanceStorage.DEFAULT_AVATAR_FRAME_OFFSET_PERCENT
+
     private val c get() = ThemeHelper.getColors(activity)
     private fun dp(v: Int): Int = (v * activity.resources.displayMetrics.density).toInt()
     private val screenWidth get() = activity.resources.displayMetrics.widthPixels
+
+    /** 用户头像舞台会随头像框变大；内容宽度必须主动为它留位。 */
+    private fun userAvatarReservedWidthPx(): Int {
+        if (!showUserAvatar) return 0
+        val avatarSize = dp(30).coerceAtLeast(1)
+        val frameExists = avatarFramePath.isNotEmpty() && File(avatarFramePath).isFile
+        val stageWidth = if (frameExists) {
+            FriendAvatarHelper.calculateStageGeometry(
+                avatarSize,
+                ChatAppearanceStorage.AvatarFrameTransform(
+                    avatarFrameScalePercent,
+                    avatarFrameOffsetXPercent,
+                    avatarFrameOffsetYPercent
+                )
+            ).widthPx
+        } else {
+            avatarSize
+        }
+        return stageWidth + dp(UserBubbleLayoutTuning.AVATAR_GAP_DP)
+    }
+
+    private fun maxUserContentWidth(fraction: Float): Int = minOf(
+        (screenWidth * fraction).toInt(),
+        (
+            screenWidth -
+                userAvatarReservedWidthPx() -
+                dp(UserBubbleLayoutTuning.ROW_START_INSET_DP + UserBubbleLayoutTuning.ROW_END_INSET_DP)
+            ).coerceAtLeast(dp(120))
+    )
+
+    /**
+     * Android 的多行 TextView 在受 maxWidth 约束时，测量宽度可能保留整块可用宽度，
+     * 即使每一行真正使用的文字宽度都更短。首次排版后按最长一行二次收紧，
+     * 让左右可见留白由独立 padding 控制，而不是被未使用的排版宽度放大。
+     */
+    private fun tightenMultilineBubbleWidth(textView: TextView, maxWidthPx: Int) {
+        textView.post {
+            val textLayout = textView.layout ?: return@post
+            if (textLayout.lineCount <= 1 || textView.width <= 0) return@post
+
+            var longestLineWidth = 0f
+            for (lineIndex in 0 until textLayout.lineCount) {
+                longestLineWidth = maxOf(
+                    longestLineWidth,
+                    textLayout.getLineWidth(lineIndex)
+                )
+            }
+
+            val targetWidth = (
+                kotlin.math.ceil(longestLineWidth.toDouble()).toInt() +
+                    textView.paddingStart +
+                    textView.paddingEnd +
+                    dp(UserBubbleLayoutTuning.BUBBLE_TIGHT_WIDTH_EXTRA_DP)
+                )
+                .coerceAtMost(maxWidthPx)
+                .coerceAtLeast(dp(48))
+
+            if (targetWidth < textView.width) {
+                textView.layoutParams = textView.layoutParams.apply { width = targetWidth }
+                textView.requestLayout()
+            }
+        }
+    }
 
     private fun scrollToBottom() {
         scrollView.post { scrollView.fullScroll(View.FOCUS_DOWN) }
@@ -43,12 +145,17 @@ class UserBubbleRenderer(
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { topMargin = dp(2) }
+            ).apply { topMargin = dp(UserBubbleLayoutTuning.TIME_TOP_MARGIN_DP) }
             gravity = align
             text = timeStr
             textSize = 9f
             setTextColor(c.timeText)
-            setPadding(if (isRight) 0 else dp(4), 0, if (isRight) dp(4) else 0, 0)
+            setPadding(
+                if (isRight) 0 else dp(UserBubbleLayoutTuning.TIME_EDGE_PADDING_DP),
+                0,
+                if (isRight) dp(UserBubbleLayoutTuning.TIME_EDGE_PADDING_DP) else 0,
+                0
+            )
         }
     }
 
@@ -106,13 +213,49 @@ class UserBubbleRenderer(
         scrollToBottom()
     }
 
+    private fun createUserAvatar(): View? {
+        if (!showUserAvatar) return null
+        val avatar = FriendAvatarHelper.createUserAvatar(
+            context = activity,
+            sizeDp = 30,
+            framePath = avatarFramePath,
+            frameScalePercent = avatarFrameScalePercent,
+            frameOffsetXPercent = avatarFrameOffsetXPercent,
+            frameOffsetYPercent = avatarFrameOffsetYPercent,
+            avatarShape = avatarShape
+        )
+        val current = avatar.layoutParams
+        avatar.layoutParams = LinearLayout.LayoutParams(
+            current?.width ?: LinearLayout.LayoutParams.WRAP_CONTENT,
+            current?.height ?: LinearLayout.LayoutParams.WRAP_CONTENT
+        ).apply {
+            marginStart = dp(UserBubbleLayoutTuning.AVATAR_GAP_DP)
+            topMargin = dp(UserBubbleLayoutTuning.AVATAR_TOP_MARGIN_DP)
+        }
+        return avatar
+    }
+
+    private fun attachRightAlignedContent(wrapper: LinearLayout, content: View) {
+        wrapper.orientation = LinearLayout.HORIZONTAL
+        wrapper.clipChildren = false
+        wrapper.clipToPadding = false
+        wrapper.setPadding(
+            dp(UserBubbleLayoutTuning.ROW_START_INSET_DP),
+            0,
+            dp(UserBubbleLayoutTuning.ROW_END_INSET_DP),
+            0
+        )
+        wrapper.addView(content)
+        createUserAvatar()?.let(wrapper::addView)
+    }
+
     /** 普通用户文字气泡 */
     fun addUserBubble(msg: String, timeStr: String): View {
         val wrapper = LinearLayout(activity).apply {
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { bottomMargin = dp(8) }
+            ).apply { bottomMargin = dp(UserBubbleLayoutTuning.MESSAGE_BOTTOM_MARGIN_DP) }
             gravity = Gravity.END
         }
         val column = LinearLayout(activity).apply {
@@ -122,24 +265,31 @@ class UserBubbleRenderer(
                 LinearLayout.LayoutParams.WRAP_CONTENT
             )
         }
+        val bubbleMaxWidth = maxUserContentWidth(UserBubbleLayoutTuning.TEXT_MAX_WIDTH_FRACTION)
         val bubble = TextView(activity).apply {
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
             )
-            maxWidth = (screenWidth * 0.82).toInt()
+            maxWidth = bubbleMaxWidth
             text = MarkdownRenderer.render(msg)
             setTextColor(c.textOnAccent)
             textSize = 14f
             setLineSpacing(0f, 1.35f)
-            setPadding(dp(11), dp(8), dp(11), dp(8))
+            setPaddingRelative(
+                dp(UserBubbleLayoutTuning.BUBBLE_START_PADDING_DP),
+                dp(UserBubbleLayoutTuning.BUBBLE_VERTICAL_PADDING_DP),
+                dp(UserBubbleLayoutTuning.BUBBLE_END_PADDING_DP),
+                dp(UserBubbleLayoutTuning.BUBBLE_VERTICAL_PADDING_DP)
+            )
             setBackgroundResource(R.drawable.chat_bubble_user)
             setOnLongClickListener { onMessageMenu?.invoke(msg, "我"); true }
         }
         column.addView(bubble)
         column.addView(makeTimeView(timeStr, Gravity.END))
-        wrapper.addView(column)
+        attachRightAlignedContent(wrapper, column)
         addToConversation(wrapper)
+        tightenMultilineBubbleWidth(bubble, bubbleMaxWidth)
         return wrapper
     }
 
@@ -149,7 +299,7 @@ class UserBubbleRenderer(
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { bottomMargin = dp(8) }
+            ).apply { bottomMargin = dp(UserBubbleLayoutTuning.MESSAGE_BOTTOM_MARGIN_DP) }
             gravity = Gravity.END
         }
         val column = LinearLayout(activity).apply {
@@ -164,8 +314,8 @@ class UserBubbleRenderer(
         val (sourceWidth, sourceHeight) = readImageSize(imagePath) ?: (dp(220) to dp(220))
         val ratio = sourceWidth.toFloat() / sourceHeight.toFloat()
         val maxDisplayWidth = when {
-            ratio > 1.15f -> minOf((screenWidth * 0.72f).toInt(), dp(280))
-            else -> minOf((screenWidth * 0.64f).toInt(), dp(220))
+            ratio > 1.15f -> minOf(maxUserContentWidth(0.72f), dp(280))
+            else -> minOf(maxUserContentWidth(0.64f), dp(220))
         }
         val maxDisplayHeight = when {
             ratio < 0.85f -> dp(320)
@@ -206,7 +356,7 @@ class UserBubbleRenderer(
             })
         }
         column.addView(makeTimeView(timeStr, Gravity.END))
-        wrapper.addView(column)
+        attachRightAlignedContent(wrapper, column)
         addToConversation(wrapper)
     }
 
@@ -216,7 +366,7 @@ class UserBubbleRenderer(
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { bottomMargin = dp(8) }
+            ).apply { bottomMargin = dp(UserBubbleLayoutTuning.MESSAGE_BOTTOM_MARGIN_DP) }
             gravity = Gravity.END
         }
         val column = LinearLayout(activity).apply {
@@ -229,7 +379,7 @@ class UserBubbleRenderer(
         }
 
         val (sourceWidth, sourceHeight) = readImageSize(imagePath) ?: (dp(156) to dp(156))
-        val maxSide = minOf((screenWidth * 0.46f).toInt(), dp(156))
+        val maxSide = minOf(maxUserContentWidth(0.46f), dp(156))
         val (displayWidth, displayHeight) = fitSize(sourceWidth, sourceHeight, maxSide, maxSide)
         val imageView = ImageView(activity).apply {
             layoutParams = LinearLayout.LayoutParams(displayWidth, displayHeight)
@@ -246,7 +396,7 @@ class UserBubbleRenderer(
                     LinearLayout.LayoutParams.WRAP_CONTENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT
                 ).apply { topMargin = dp(4) }
-                maxWidth = minOf((screenWidth * 0.72f).toInt(), dp(260))
+                maxWidth = minOf(maxUserContentWidth(0.72f), dp(260))
                 text = MarkdownRenderer.render(caption)
                 setTextColor(c.textOnAccent)
                 textSize = 13f
@@ -256,7 +406,7 @@ class UserBubbleRenderer(
             })
         }
         column.addView(makeTimeView(timeStr, Gravity.END))
-        wrapper.addView(column)
+        attachRightAlignedContent(wrapper, column)
         addToConversation(wrapper)
     }
 
@@ -270,7 +420,7 @@ class UserBubbleRenderer(
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { bottomMargin = dp(8) }
+            ).apply { bottomMargin = dp(UserBubbleLayoutTuning.MESSAGE_BOTTOM_MARGIN_DP) }
             gravity = Gravity.END
         }
         val column = LinearLayout(activity).apply {
@@ -325,7 +475,7 @@ class UserBubbleRenderer(
             })
         }
         column.addView(makeTimeView(timeStr, Gravity.END))
-        wrapper.addView(column)
+        attachRightAlignedContent(wrapper, column)
         addToConversation(wrapper)
     }
 
@@ -335,7 +485,7 @@ class UserBubbleRenderer(
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { bottomMargin = dp(8) }
+            ).apply { bottomMargin = dp(UserBubbleLayoutTuning.MESSAGE_BOTTOM_MARGIN_DP) }
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.END
         }
@@ -343,10 +493,15 @@ class UserBubbleRenderer(
             text = "[图片]${if (caption.isNotEmpty()) " $caption" else ""}"
             setTextColor(c.textSecondary)
             textSize = 13f
-            setPadding(dp(11), dp(8), dp(11), dp(8))
+            setPaddingRelative(
+                dp(UserBubbleLayoutTuning.BUBBLE_START_PADDING_DP),
+                dp(UserBubbleLayoutTuning.BUBBLE_VERTICAL_PADDING_DP),
+                dp(UserBubbleLayoutTuning.BUBBLE_END_PADDING_DP),
+                dp(UserBubbleLayoutTuning.BUBBLE_VERTICAL_PADDING_DP)
+            )
             setBackgroundResource(R.drawable.chat_bubble_user)
         }
-        wrapper.addView(bubble)
+        attachRightAlignedContent(wrapper, bubble)
         messagesContainer.addView(wrapper, index)
         return wrapper
     }
@@ -357,7 +512,7 @@ class UserBubbleRenderer(
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { bottomMargin = dp(8) }
+            ).apply { bottomMargin = dp(UserBubbleLayoutTuning.MESSAGE_BOTTOM_MARGIN_DP) }
             gravity = Gravity.END
         }
         val column = LinearLayout(activity).apply {
@@ -393,28 +548,36 @@ class UserBubbleRenderer(
             textSize = 11f
             setTextColor(c.textSecondary)
             maxLines = 2
-            maxWidth = (screenWidth * 0.65).toInt()
+            maxWidth = maxUserContentWidth(0.65f)
         })
         quoteBlock.addView(bar)
         quoteBlock.addView(quoteText)
         column.addView(quoteBlock)
-        column.addView(TextView(activity).apply {
+        val messageBubbleMaxWidth = maxUserContentWidth(UserBubbleLayoutTuning.TEXT_MAX_WIDTH_FRACTION)
+        val messageBubble = TextView(activity).apply {
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply { topMargin = dp(3) }
-            maxWidth = (screenWidth * 0.82).toInt()
+            maxWidth = messageBubbleMaxWidth
             text = MarkdownRenderer.render(msg)
             setTextColor(c.textOnAccent)
             textSize = 14f
             setLineSpacing(0f, 1.35f)
-            setPadding(dp(11), dp(8), dp(11), dp(8))
+            setPaddingRelative(
+                dp(UserBubbleLayoutTuning.BUBBLE_START_PADDING_DP),
+                dp(UserBubbleLayoutTuning.BUBBLE_VERTICAL_PADDING_DP),
+                dp(UserBubbleLayoutTuning.BUBBLE_END_PADDING_DP),
+                dp(UserBubbleLayoutTuning.BUBBLE_VERTICAL_PADDING_DP)
+            )
             setBackgroundResource(R.drawable.chat_bubble_user)
             setOnLongClickListener { onMessageMenu?.invoke(msg, "我"); true }
-        })
+        }
+        column.addView(messageBubble)
         column.addView(makeTimeView(timeStr, Gravity.END))
-        wrapper.addView(column)
+        attachRightAlignedContent(wrapper, column)
         addToConversation(wrapper)
+        tightenMultilineBubbleWidth(messageBubble, messageBubbleMaxWidth)
         return wrapper
     }
 }

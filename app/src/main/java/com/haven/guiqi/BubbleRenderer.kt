@@ -57,12 +57,179 @@ class BubbleRenderer(
     var friendName: String = ""
     var friendIcon: String = "🤖"
     var friendAvatarPath: String = ""
+    var friendAvatarFramePath: String = ""
+    var friendAvatarFrameScalePercent: Int =
+        ChatAppearanceStorage.DEFAULT_AVATAR_FRAME_SCALE_PERCENT
+    var friendAvatarFrameOffsetXPercent: Int =
+        ChatAppearanceStorage.DEFAULT_AVATAR_FRAME_OFFSET_PERCENT
+    var friendAvatarFrameOffsetYPercent: Int =
+        ChatAppearanceStorage.DEFAULT_AVATAR_FRAME_OFFSET_PERCENT
+    var userAvatarFramePath: String = ""
+    var userAvatarFrameScalePercent: Int =
+        ChatAppearanceStorage.DEFAULT_AVATAR_FRAME_SCALE_PERCENT
+    var userAvatarFrameOffsetXPercent: Int =
+        ChatAppearanceStorage.DEFAULT_AVATAR_FRAME_OFFSET_PERCENT
+    var userAvatarFrameOffsetYPercent: Int =
+        ChatAppearanceStorage.DEFAULT_AVATAR_FRAME_OFFSET_PERCENT
+    var avatarDisplayMode: ChatAppearanceStorage.AvatarDisplayMode =
+        ChatAppearanceStorage.AvatarDisplayMode.AI_ONLY
+    var friendAvatarShape: ChatAppearanceStorage.AvatarShape =
+        ChatAppearanceStorage.AvatarShape.CIRCLE
+    var userAvatarShape: ChatAppearanceStorage.AvatarShape =
+        ChatAppearanceStorage.AvatarShape.CIRCLE
+    var useCustomChatBackground: Boolean = false
 
-    /** 创建 AI 头像 View（统一入口） */
-    fun createAvatar(): View {
-        val view = FriendAvatarHelper.create(activity, friendAvatarPath, friendIcon, 30)
-        view.layoutParams = LinearLayout.LayoutParams(dp(30), dp(30))
-            .apply { marginEnd = dp(7); topMargin = dp(2) }
+    /**
+     * AI 消息与中间提示的手动微调参数。
+     *
+     * 这里只控制纵向节奏与 AI 头像舞台，不触碰 UserBubbleRenderer 里
+     * 已经由用户实机调好的用户气泡参数。
+     */
+    private object ChatMessageRhythmTuning {
+        const val AI_ROW_BOTTOM_MARGIN_DP = 8
+        const val AI_AVATAR_GAP_DP = 7
+        const val AI_AVATAR_TOP_MARGIN_DP = 2
+
+        // 透明头像框超出头像本体的下半部分，可借用消息行原本的底部间距显示。
+        // 这样短消息不会被整张头像框舞台额外撑高，同时也不会压到下一条消息。
+        const val AI_AVATAR_BOTTOM_OVERHANG_DP = 8
+
+        const val AI_TIME_TOP_MARGIN_DP = 2
+        const val AI_TIME_EDGE_PADDING_DP = 4
+
+        const val SYSTEM_TIP_TOP_MARGIN_DP = 3
+        const val SYSTEM_TIP_BOTTOM_MARGIN_DP = 7
+        const val TIME_LABEL_TOP_MARGIN_DP = 5
+        const val TIME_LABEL_BOTTOM_MARGIN_DP = 8
+        const val GAP_MARKER_TOP_MARGIN_DP = 5
+        const val GAP_MARKER_BOTTOM_MARGIN_DP = 7
+        const val DAY_SEPARATOR_TOP_MARGIN_DP = 10
+        const val DAY_SEPARATOR_BOTTOM_MARGIN_DP = 10
+        const val THINKING_TOP_MARGIN_DP = 2
+        const val THINKING_BOTTOM_MARGIN_DP = 8
+    }
+
+    init {
+        // 允许透明头像框在消息行底部间距中完整绘制。
+        messagesContainer.clipChildren = false
+        messagesContainer.clipToPadding = false
+        scrollView.clipChildren = false
+        scrollView.clipToPadding = false
+    }
+
+    /** 创建住户头像；“仅我”模式下返回 null。 */
+    fun createAvatar(): View? {
+        if (!avatarDisplayMode.showsFriendAvatar) return null
+        val view = FriendAvatarHelper.create(
+            context = activity,
+            avatarPath = friendAvatarPath,
+            icon = friendIcon,
+            sizeDp = 30,
+            framePath = friendAvatarFramePath,
+            frameScalePercent = friendAvatarFrameScalePercent,
+            frameOffsetXPercent = friendAvatarFrameOffsetXPercent,
+            frameOffsetYPercent = friendAvatarFrameOffsetYPercent,
+            avatarShape = friendAvatarShape
+        )
+        val current = view.layoutParams
+        view.layoutParams = LinearLayout.LayoutParams(
+            current?.width ?: LinearLayout.LayoutParams.WRAP_CONTENT,
+            current?.height ?: LinearLayout.LayoutParams.WRAP_CONTENT
+        ).apply {
+            marginEnd = dp(ChatMessageRhythmTuning.AI_AVATAR_GAP_DP)
+            topMargin = dp(ChatMessageRhythmTuning.AI_AVATAR_TOP_MARGIN_DP)
+        }
+        return view
+    }
+
+    /**
+     * AI 文字消息专用头像。
+     *
+     * FriendAvatarHelper 返回的是能完整包住头像框的“舞台”；当消息只有一两行时，
+     * 舞台下沿会把整条消息无意义地撑高。这里仅让头像框的底部装饰借用消息行
+     * 自带的 bottomMargin 显示，头像、头像框的位置和横向占位都不改变。
+     */
+    private fun createCompactAiTextAvatar(): View? {
+        if (!avatarDisplayMode.showsFriendAvatar) return null
+
+        val avatarSize = dp(30).coerceAtLeast(1)
+        val frameFile = friendAvatarFramePath
+            .takeIf { it.isNotEmpty() }
+            ?.let(::File)
+            ?.takeIf { it.isFile }
+
+        val stage = FriendAvatarHelper.create(
+            context = activity,
+            avatarPath = friendAvatarPath,
+            icon = friendIcon,
+            sizeDp = 30,
+            framePath = friendAvatarFramePath,
+            frameScalePercent = friendAvatarFrameScalePercent,
+            frameOffsetXPercent = friendAvatarFrameOffsetXPercent,
+            frameOffsetYPercent = friendAvatarFrameOffsetYPercent,
+            avatarShape = friendAvatarShape
+        )
+
+        if (frameFile == null) {
+            val current = stage.layoutParams
+            stage.layoutParams = LinearLayout.LayoutParams(
+                current?.width ?: avatarSize,
+                current?.height ?: avatarSize
+            ).apply {
+                marginEnd = dp(ChatMessageRhythmTuning.AI_AVATAR_GAP_DP)
+                topMargin = dp(ChatMessageRhythmTuning.AI_AVATAR_TOP_MARGIN_DP)
+            }
+            return stage
+        }
+
+        val geometry = FriendAvatarHelper.calculateStageGeometry(
+            avatarSize,
+            ChatAppearanceStorage.AvatarFrameTransform(
+                friendAvatarFrameScalePercent,
+                friendAvatarFrameOffsetXPercent,
+                friendAvatarFrameOffsetYPercent
+            )
+        )
+        val avatarBottom = geometry.avatarTopPx + avatarSize
+        val bottomDecoration = (geometry.heightPx - avatarBottom).coerceAtLeast(0)
+        val borrowedBottomSpace = minOf(
+            bottomDecoration,
+            dp(ChatMessageRhythmTuning.AI_AVATAR_BOTTOM_OVERHANG_DP)
+        )
+        val measuredHeight = (geometry.heightPx - borrowedBottomSpace)
+            .coerceAtLeast(avatarBottom)
+
+        return FrameLayout(activity).apply {
+            layoutParams = LinearLayout.LayoutParams(geometry.widthPx, measuredHeight).apply {
+                marginEnd = dp(ChatMessageRhythmTuning.AI_AVATAR_GAP_DP)
+                topMargin = dp(ChatMessageRhythmTuning.AI_AVATAR_TOP_MARGIN_DP)
+            }
+            clipChildren = false
+            clipToPadding = false
+            addView(stage, FrameLayout.LayoutParams(geometry.widthPx, geometry.heightPx))
+        }
+    }
+
+    /** 创建用户头像；“仅住户”模式下返回 null。 */
+    private fun createUserAvatar(): View? {
+        if (!avatarDisplayMode.showsUserAvatar) return null
+        val view = FriendAvatarHelper.createUserAvatar(
+            context = activity,
+            sizeDp = 30,
+            framePath = userAvatarFramePath,
+            frameScalePercent = userAvatarFrameScalePercent,
+            frameOffsetXPercent = userAvatarFrameOffsetXPercent,
+            frameOffsetYPercent = userAvatarFrameOffsetYPercent,
+            avatarShape = userAvatarShape
+        )
+        val current = view.layoutParams
+        view.layoutParams = LinearLayout.LayoutParams(
+            current?.width ?: LinearLayout.LayoutParams.WRAP_CONTENT,
+            current?.height ?: LinearLayout.LayoutParams.WRAP_CONTENT
+        ).apply {
+            marginStart = dp(7)
+            topMargin = dp(2)
+        }
         return view
     }
     /** 长按→引用回复 的回调 */
@@ -97,6 +264,78 @@ class BubbleRenderer(
 
     private val screenWidth get() = activity.resources.displayMetrics.widthPixels
 
+    /** 当前住户头像（含移动/缩放后的头像框）在横向布局里实际占用的宽度。 */
+    private fun friendAvatarReservedWidthPx(): Int {
+        if (!avatarDisplayMode.showsFriendAvatar) return 0
+        val avatarSize = dp(30).coerceAtLeast(1)
+        val frameExists = friendAvatarFramePath.isNotEmpty() && File(friendAvatarFramePath).isFile
+        val stageWidth = if (frameExists) {
+            FriendAvatarHelper.calculateStageGeometry(
+                avatarSize,
+                ChatAppearanceStorage.AvatarFrameTransform(
+                    friendAvatarFrameScalePercent,
+                    friendAvatarFrameOffsetXPercent,
+                    friendAvatarFrameOffsetYPercent
+                )
+            ).widthPx
+        } else {
+            avatarSize
+        }
+        return stageWidth + dp(7)
+    }
+
+    private fun maxAiContentWidth(fraction: Float): Int = minOf(
+        (screenWidth * fraction).toInt(),
+        (screenWidth - friendAvatarReservedWidthPx() - dp(16)).coerceAtLeast(dp(120))
+    )
+
+    private data class ThinkingPalette(
+        val header: Int,
+        val panel: Int,
+        val border: Int,
+        val accent: Int,
+        val title: Int,
+        val body: Int,
+        val hint: Int
+    )
+
+    /**
+     * 使用自定义聊天背景时改为半透明中性色，让背景自然透出，
+     * 不再固定成浅色主题的奶白与金棕组合。
+     */
+    private fun thinkingPalette(): ThinkingPalette {
+        if (!useCustomChatBackground) {
+            return ThinkingPalette(
+                header = c.aiBubbleBg,
+                panel = c.backgroundSecondary,
+                border = c.borderMedium,
+                accent = c.accentStrong,
+                title = c.textSecondary,
+                body = c.textSecondary,
+                hint = c.textHint
+            )
+        }
+
+        val dark = ThemeHelper.isDark(activity)
+        val neutralBase = if (dark) c.backgroundSecondary else Color.WHITE
+        return ThinkingPalette(
+            header = withAlpha(neutralBase, if (dark) 196 else 166),
+            panel = withAlpha(neutralBase, if (dark) 220 else 198),
+            border = withAlpha(c.textPrimary, if (dark) 48 else 36),
+            accent = c.textPrimary,
+            title = c.textPrimary,
+            body = c.textSecondary,
+            hint = c.textSecondary
+        )
+    }
+
+    private fun withAlpha(color: Int, alpha: Int): Int = Color.argb(
+        alpha.coerceIn(0, 255),
+        Color.red(color),
+        Color.green(color),
+        Color.blue(color)
+    )
+
     /**
      * 批量渲染时置 true，scrollToBottom() 变成空操作。
      * renderMessages 全跑完后置回 false 再手动调一次 scrollToBottom()。
@@ -116,7 +355,10 @@ class BubbleRenderer(
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { topMargin = dp(4); bottomMargin = dp(10) }
+            ).apply {
+                topMargin = dp(ChatMessageRhythmTuning.SYSTEM_TIP_TOP_MARGIN_DP)
+                bottomMargin = dp(ChatMessageRhythmTuning.SYSTEM_TIP_BOTTOM_MARGIN_DP)
+            }
             gravity = Gravity.CENTER
             text = msg
             textSize = 11f
@@ -149,7 +391,10 @@ class BubbleRenderer(
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { topMargin = dp(6); bottomMargin = dp(10) }
+            ).apply {
+                topMargin = dp(ChatMessageRhythmTuning.TIME_LABEL_TOP_MARGIN_DP)
+                bottomMargin = dp(ChatMessageRhythmTuning.TIME_LABEL_BOTTOM_MARGIN_DP)
+            }
             gravity = Gravity.CENTER
             text = labelText
             textSize = 10f
@@ -163,7 +408,10 @@ class BubbleRenderer(
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { topMargin = dp(6); bottomMargin = dp(8) }
+            ).apply {
+                topMargin = dp(ChatMessageRhythmTuning.GAP_MARKER_TOP_MARGIN_DP)
+                bottomMargin = dp(ChatMessageRhythmTuning.GAP_MARKER_BOTTOM_MARGIN_DP)
+            }
             gravity = Gravity.CENTER
             this.text = text
             textSize = 9f
@@ -180,7 +428,10 @@ class BubbleRenderer(
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { topMargin = dp(12); bottomMargin = dp(12) }
+            ).apply {
+                topMargin = dp(ChatMessageRhythmTuning.DAY_SEPARATOR_TOP_MARGIN_DP)
+                bottomMargin = dp(ChatMessageRhythmTuning.DAY_SEPARATOR_BOTTOM_MARGIN_DP)
+            }
         }
         val lineColor = c.borderMedium
         val leftLine = View(activity).apply {
@@ -287,6 +538,16 @@ class BubbleRenderer(
         it.onMessageMenu = { content, author -> showMessageMenu(content, author) }
     }
 
+    /** 把当前聊天的用户头像设置同步给用户侧气泡渲染器。 */
+    fun syncAvatarAppearance() {
+        userRenderer.showUserAvatar = avatarDisplayMode.showsUserAvatar
+        userRenderer.avatarShape = userAvatarShape
+        userRenderer.avatarFramePath = userAvatarFramePath
+        userRenderer.avatarFrameScalePercent = userAvatarFrameScalePercent
+        userRenderer.avatarFrameOffsetXPercent = userAvatarFrameOffsetXPercent
+        userRenderer.avatarFrameOffsetYPercent = userAvatarFrameOffsetYPercent
+    }
+
     fun addUserBubble(msg: String, timeStr: String): View = userRenderer.addUserBubble(msg, timeStr)
     fun addImageBubble(imagePath: String, timeStr: String, caption: String = "") = userRenderer.addImageBubble(imagePath, timeStr, caption)
     fun addStickerBubble(imagePath: String, timeStr: String, caption: String = "") = userRenderer.addStickerBubble(imagePath, timeStr, caption)
@@ -310,10 +571,13 @@ class BubbleRenderer(
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { bottomMargin = dp(8) }
-            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.START
+            ).apply { bottomMargin = dp(ChatMessageRhythmTuning.AI_ROW_BOTTOM_MARGIN_DP) }
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.START
+            clipChildren = false
+            clipToPadding = false
         }
-        val avatar = createAvatar()
+        val avatar = createCompactAiTextAvatar()
         val column = LinearLayout(activity).apply {
             orientation = LinearLayout.VERTICAL
             layoutParams = LinearLayout.LayoutParams(
@@ -326,7 +590,7 @@ class BubbleRenderer(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
             )
-            maxWidth = (screenWidth * 0.80).toInt()
+            maxWidth = maxAiContentWidth(0.80f)
             text = initialText
             setTextColor(c.textOnAccent); textSize = 14f
             setLineSpacing(0f, 1.35f)
@@ -337,7 +601,7 @@ class BubbleRenderer(
         val time = makeTimeView(timeStr, Gravity.START)
         column.addView(bubble)
         column.addView(time)
-        wrapper.addView(avatar)
+        avatar?.let(wrapper::addView)
         wrapper.addView(column)
         return Triple(wrapper, bubble, time)
     }
@@ -506,7 +770,7 @@ class BubbleRenderer(
 
         column.addView(card)
         column.addView(makeTimeView(timeStr, Gravity.START))
-        wrapper.addView(avatar)
+        avatar?.let(wrapper::addView)
         wrapper.addView(column)
         messagesContainer.addView(wrapper)
         scrollToBottom()
@@ -609,7 +873,7 @@ class BubbleRenderer(
         }
         column.addView(imageView)
         column.addView(makeTimeView(timeStr, Gravity.START))
-        wrapper.addView(avatar)
+        avatar?.let(wrapper::addView)
         wrapper.addView(column)
         messagesContainer.addView(wrapper)
         scrollToBottom()
@@ -645,18 +909,23 @@ class BubbleRenderer(
             .replace(Regex("\n{3,}"), "\n\n")
             .trim()
 
+        val palette = thinkingPalette()
+
         val wrapper = LinearLayout(activity).apply {
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { bottomMargin = dp(6) }
+            ).apply {
+                topMargin = dp(ChatMessageRhythmTuning.THINKING_TOP_MARGIN_DP)
+                bottomMargin = dp(ChatMessageRhythmTuning.THINKING_BOTTOM_MARGIN_DP)
+            }
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.START
         }
 
         // 和 AI 正文左边缘对齐，但不重复显示头像。
         val spacer = View(activity).apply {
-            layoutParams = LinearLayout.LayoutParams(dp(37), dp(1))
+            layoutParams = LinearLayout.LayoutParams(friendAvatarReservedWidthPx(), dp(1))
         }
 
         val thinkingLayout = LinearLayout(activity).apply {
@@ -676,9 +945,9 @@ class BubbleRenderer(
             )
             setPadding(dp(12), 0, dp(8), 0)
             background = GradientDrawable().apply {
-                setColor(c.aiBubbleBg)
+                setColor(palette.header)
                 cornerRadius = dp(13).toFloat()
-                setStroke(dp(1), c.borderMedium)
+                setStroke(dp(1), palette.border)
             }
             isClickable = true
             isFocusable = true
@@ -691,14 +960,14 @@ class BubbleRenderer(
             }
             background = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
-                setColor(c.accentStrong)
+                setColor(palette.accent)
             }
         }
 
         val title = TextView(activity).apply {
             text = "思考过程"
             textSize = 11.5f
-            setTextColor(c.textSecondary)
+            setTextColor(palette.title)
             includeFontPadding = false
         }
 
@@ -709,7 +978,7 @@ class BubbleRenderer(
         val chevron = ImageView(activity).apply {
             layoutParams = LinearLayout.LayoutParams(dp(20), dp(20))
             setImageResource(R.drawable.ic_thinking_chevron)
-            setColorFilter(c.textHint)
+            setColorFilter(palette.hint)
             alpha = 0.85f
             contentDescription = null
         }
@@ -726,9 +995,9 @@ class BubbleRenderer(
                 LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply { topMargin = dp(4) }
             background = GradientDrawable().apply {
-                setColor(c.backgroundSecondary)
+                setColor(palette.panel)
                 cornerRadius = dp(12).toFloat()
-                setStroke(dp(1), c.borderMedium)
+                setStroke(dp(1), palette.border)
             }
             visibility = View.GONE
             clipToOutline = true
@@ -744,14 +1013,14 @@ class BubbleRenderer(
 
         val accentLine = View(activity).apply {
             layoutParams = LinearLayout.LayoutParams(dp(2), LinearLayout.LayoutParams.MATCH_PARENT)
-            setBackgroundColor(c.accentStrong)
+            setBackgroundColor(palette.accent)
         }
 
         val contentView = TextView(activity).apply {
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             typeface = Typeface.create("sans-serif", Typeface.NORMAL)
             text = MarkdownRenderer.render(cleanedThinking)
-            setTextColor(c.textSecondary)
+            setTextColor(palette.body)
             textSize = 12.5f
             setLineSpacing(0f, 1.45f)
             setPadding(dp(12), dp(10), dp(12), dp(10))
@@ -771,7 +1040,7 @@ class BubbleRenderer(
                 marginStart = dp(12)
                 marginEnd = dp(12)
             }
-            setBackgroundColor(c.borderMedium)
+            setBackgroundColor(palette.border)
             alpha = 0.55f
         }
 
@@ -792,7 +1061,7 @@ class BubbleRenderer(
                 marginEnd = dp(4)
             }
             setImageResource(R.drawable.ic_thinking_chevron)
-            setColorFilter(c.textHint)
+            setColorFilter(palette.hint)
             rotation = 180f
             alpha = 0.85f
             contentDescription = null
@@ -801,7 +1070,7 @@ class BubbleRenderer(
         val footerText = TextView(activity).apply {
             text = "收起"
             textSize = 11f
-            setTextColor(c.textHint)
+            setTextColor(palette.hint)
             includeFontPadding = false
         }
 
@@ -885,12 +1154,14 @@ class BubbleRenderer(
         dialog.setCanceledOnTouchOutside(true)
         dialog.setCancelable(true)
 
+        val palette = thinkingPalette()
+
         val card = LinearLayout(activity).apply {
             orientation = LinearLayout.VERTICAL
             background = GradientDrawable().apply {
-                setColor(c.backgroundSecondary)
+                setColor(palette.panel)
                 cornerRadius = dp(18).toFloat()
-                setStroke(dp(1), c.borderMedium)
+                setStroke(dp(1), palette.border)
             }
             setPadding(dp(16), dp(8), dp(16), dp(14))
         }
@@ -910,14 +1181,14 @@ class BubbleRenderer(
             }
             background = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
-                setColor(c.accentStrong)
+                setColor(palette.accent)
             }
         }
 
         val dialogTitle = TextView(activity).apply {
             text = "思考过程"
             textSize = 13f
-            setTextColor(c.textSecondary)
+            setTextColor(palette.title)
             includeFontPadding = false
         }
 
@@ -928,7 +1199,7 @@ class BubbleRenderer(
         val close = TextView(activity).apply {
             text = "关闭"
             textSize = 12f
-            setTextColor(c.accentStrong)
+            setTextColor(palette.accent)
             gravity = Gravity.CENTER
             setPadding(dp(10), dp(8), dp(4), dp(8))
             isClickable = true
@@ -946,7 +1217,7 @@ class BubbleRenderer(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 dp(1)
             )
-            setBackgroundColor(c.borderMedium)
+            setBackgroundColor(palette.border)
             alpha = 0.65f
         }
 
@@ -957,7 +1228,7 @@ class BubbleRenderer(
             )
             typeface = Typeface.create("sans-serif", Typeface.NORMAL)
             text = MarkdownRenderer.render(content)
-            setTextColor(c.textSecondary)
+            setTextColor(palette.body)
             textSize = 13f
             setLineSpacing(0f, 1.5f)
             setPadding(dp(4), dp(14), dp(4), dp(20))
@@ -1045,7 +1316,7 @@ class BubbleRenderer(
             setPadding(dp(11), dp(8), dp(11), dp(8))
             setBackgroundResource(R.drawable.chat_bubble_ai)
         }
-        wrapper.addView(avatar)
+        avatar?.let(wrapper::addView)
         wrapper.addView(bubble)
         typingView = wrapper
         messagesContainer.addView(wrapper)
@@ -1054,7 +1325,9 @@ class BubbleRenderer(
 
     fun updateTypingIndicator(message: String) {
         val wrapper = typingView as? LinearLayout ?: return
-        val bubble = wrapper.getChildAt(1) as? TextView ?: return
+        val bubble = (0 until wrapper.childCount)
+            .mapNotNull { index -> wrapper.getChildAt(index) as? TextView }
+            .firstOrNull() ?: return
         bubble.text = message
         scrollToBottom()
     }
@@ -1070,11 +1343,16 @@ class BubbleRenderer(
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { topMargin = dp(2) }
+            ).apply { topMargin = dp(ChatMessageRhythmTuning.AI_TIME_TOP_MARGIN_DP) }
             gravity = align
             text = timeStr; textSize = 9f
             setTextColor(c.timeText)
-            setPadding(if (isRight) 0 else dp(4), 0, if (isRight) dp(4) else 0, 0)
+            setPadding(
+                if (isRight) 0 else dp(ChatMessageRhythmTuning.AI_TIME_EDGE_PADDING_DP),
+                0,
+                if (isRight) dp(ChatMessageRhythmTuning.AI_TIME_EDGE_PADDING_DP) else 0,
+                0
+            )
         }
     }
 
@@ -1091,7 +1369,7 @@ class BubbleRenderer(
         }
         if (!isUser) {
             val avatar = createAvatar()
-            wrapper.addView(avatar)
+            avatar?.let(wrapper::addView)
         }
         val col = LinearLayout(activity).apply {
             orientation = LinearLayout.VERTICAL
@@ -1102,6 +1380,9 @@ class BubbleRenderer(
         col.addView(card)
         col.addView(makeTimeView(timeStr, if (isUser) Gravity.END else Gravity.START))
         wrapper.addView(col)
+        if (isUser) {
+            createUserAvatar()?.let(wrapper::addView)
+        }
         messagesContainer.addView(wrapper)
         scrollToBottom()
     }

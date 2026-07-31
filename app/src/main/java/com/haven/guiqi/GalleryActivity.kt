@@ -319,6 +319,7 @@ class GalleryActivity : AppCompatActivity() {
         val filters = listOf<Pair<String, GalleryStorage.Category?>>(
             "全部" to null,
             "头像" to GalleryStorage.Category.AVATAR,
+            "头像框" to GalleryStorage.Category.AVATAR_FRAME,
             "背景" to GalleryStorage.Category.BACKGROUND,
             "表情包" to GalleryStorage.Category.STICKER,
             "普通图片" to GalleryStorage.Category.GENERAL

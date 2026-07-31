@@ -156,6 +156,10 @@ class FriendStorage(private val context: Context) {
         deleteFileIfExists("subconscious", "prefs_$friendId")
         ResidentPromptStorage(context).delete(friendId)
         SleepMessageStorage(context).clear(friendId)
+        ChatAppearanceStorage(context).clearForFriend(friendId)
+        File(context.filesDir, "avatars").listFiles()?.forEach { avatar ->
+            if (avatar.nameWithoutExtension == friendId) avatar.delete()
+        }
 
         // 印象存在 SharedPreferences 里
         context.getSharedPreferences("haven_impressions", Context.MODE_PRIVATE)
