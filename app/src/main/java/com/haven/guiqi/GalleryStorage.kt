@@ -30,6 +30,7 @@ class GalleryStorage(private val context: Context) {
 
     enum class Category(val key: String, val label: String) {
         AVATAR("avatar", "头像"),
+        AVATAR_FRAME("avatar_frame", "头像框"),
         BACKGROUND("background", "背景"),
         STICKER("sticker", "表情包"),
         GENERAL("general", "普通图片");

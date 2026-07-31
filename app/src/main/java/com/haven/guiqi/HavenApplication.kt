@@ -7,8 +7,14 @@ import android.os.Bundle
 import androidx.core.view.WindowInsetsControllerCompat
 
 /**
- * 统一处理归栖所有普通页面的系统状态栏与底部导航栏。
- * 避免页面顶部或底部出现与当前主题不协调的纯黑色横条。
+ * 统一同步归栖普通页面的系统栏图标明暗与系统对比遮罩。
+ *
+ * 系统栏“颜色/透明度”必须由各 Activity 自己决定：
+ * - 普通纯色页面可以继续使用主题背景色；
+ * - 聊天、画匣、桌面等沉浸式页面可以自行设置透明并让背景延伸到栏下。
+ *
+ * 这里不能在 Activity 恢复前台时重新写入主题背景色，否则会把页面刚设置好的
+ * 透明状态栏和透明导航栏覆盖掉，浅色模式就会重新出现上下白条。
  */
 class HavenApplication : Application(), Application.ActivityLifecycleCallbacks {
 
@@ -19,16 +25,13 @@ class HavenApplication : Application(), Application.ActivityLifecycleCallbacks {
         registerActivityLifecycleCallbacks(this)
     }
 
-    private fun syncSystemBars(activity: Activity) {
-        // 锁屏、小窝和桌面使用各自的沉浸式/壁纸系统栏，不能被全局颜色覆盖。
+    private fun syncSystemBarAppearance(activity: Activity) {
+        // 锁屏、小窝和桌面使用各自的沉浸式/壁纸系统栏和图标策略。
         if (activity is MainActivity || activity is NestActivity || activity is DesktopActivity) return
 
-        val colors = ThemeHelper.getColors(activity)
         val window = activity.window
 
-        window.statusBarColor = colors.background
-        window.navigationBarColor = colors.background
-
+        // 只关闭系统自动添加的半透明对比遮罩，不修改页面自己选择的系统栏颜色。
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             window.isStatusBarContrastEnforced = false
             window.isNavigationBarContrastEnforced = false
@@ -42,12 +45,12 @@ class HavenApplication : Application(), Application.ActivityLifecycleCallbacks {
     }
 
     override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) {
-        syncSystemBars(activity)
+        syncSystemBarAppearance(activity)
     }
 
     override fun onActivityResumed(activity: Activity) {
-        // 某些页面会在 onCreate 中重新设置系统栏；恢复到前台时再统一一次。
-        syncSystemBars(activity)
+        // 恢复前台时只重新同步图标明暗；绝不覆盖 Activity 自己设置的栏颜色。
+        syncSystemBarAppearance(activity)
     }
 
     override fun onActivityStarted(activity: Activity) = Unit
