@@ -2,6 +2,7 @@ package com.haven.guiqi
 
 import android.content.Context
 import android.content.Intent
+import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.graphics.Rect
 import android.graphics.drawable.ColorDrawable
@@ -11,6 +12,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
@@ -112,10 +114,30 @@ class ChatConversationActivity : AppCompatActivity() {
     private var apiModel = ""
     private var apiType = "openai"
 
+    /** 一轮 AI 回复（含全部工具往返）的可取消会话。 */
+    private class ReplySession(val id: Long) {
+        @Volatile var cancelled: Boolean = false
+        @Volatile var api: ApiHelper? = null
+        @Volatile var searchCoordinator: SearchCoordinator? = null
+        @Volatile var worker: Thread? = null
+        @Volatile var assistantPersisted: Boolean = false
+        @Volatile var replyProcessed: Boolean = false
+        var showTypingRunnable: Runnable? = null
+        var pendingUiRunnable: Runnable? = null
+        var interruptFinalizer: ((String) -> Unit)? = null
+    }
+
+    @Volatile private var activeReplySession: ReplySession? = null
+    private var nextReplySessionId = 0L
+    private var inputLocked = false
+    private var replyInProgress = false
+    private var stopReplyDialogShowing = false
+
     private val chatHistory = mutableListOf<ChatMessage>()
     private var maxContextMessages = 30
     private lateinit var chatStorage: ChatStorage
     private lateinit var bubbleRenderer: BubbleRenderer
+    private val bubbleStyleStorage by lazy { BubbleStyleStorage(this) }
 
     // 图片选择和预览（委托给 ChatImageHandler）
     private lateinit var chatImageHandler: ChatImageHandler
@@ -246,10 +268,17 @@ class ChatConversationActivity : AppCompatActivity() {
         bubbleRenderer.friendName = friendName
         bubbleRenderer.friendIcon = friendIcon
         bubbleRenderer.friendAvatarPath = avatarPath
+        applyBubbleStyles()
         applyChatAppearance()
         chatStorage = ChatStorage(this)
         chatHistoryLoader = ChatHistoryLoader(
-            this, chatStorage, bubbleRenderer, chatHistory, messagesContainer, friendId
+            this,
+            chatStorage,
+            bubbleRenderer,
+            chatHistory,
+            messagesContainer,
+            scrollMessages,
+            friendId
         )
         chatHistoryLoader.onSetStatus = { state -> setStatus(state) }
         // 恢复上次的 AI 状态
@@ -305,11 +334,20 @@ class ChatConversationActivity : AppCompatActivity() {
             this,
             findViewById(R.id.searchPanel),
             findViewById(R.id.searchInput),
+            findViewById(R.id.searchNavigation),
+            findViewById(R.id.searchStatus),
+            findViewById(R.id.btnSearchPrev),
+            findViewById(R.id.btnSearchNext),
             findViewById(R.id.searchResults),
             findViewById(R.id.searchResultsScroll),
             chatStorage,
             friendId,
-            friendName
+            friendName,
+            onSearchOpened = { chatHistoryLoader.beginSearchSession() },
+            onSearchClosed = { chatHistoryLoader.endSearchSession() },
+            onJumpToResult = { messages, index ->
+                chatHistoryLoader.jumpToSearchResult(messages, index)
+            }
         )
         searchManager.setupListeners(
             findViewById(R.id.btnSearch),
@@ -326,15 +364,26 @@ class ChatConversationActivity : AppCompatActivity() {
             intent.putExtra("friend_name", friendName)
             startActivityForResult(intent, 4001)
         }
-        btnSend.setOnClickListener { sendMessage() }
-        btnSend.setOnLongClickListener {
-            if (dreamStorage.isSleeping(friendId) &&
-                !batchModeManager.isBatchMode &&
-                (inputMessage.text.isNotBlank() || chatImageHandler.pendingPaths.isNotEmpty())) {
-                showEmergencyWakeDialog { sendMessage(emergencyWake = true) }
-                true
+        btnSend.setOnClickListener {
+            if (replyInProgress) {
+                Toast.makeText(this, "长按停止键，再在确认面板里停止本轮回复", Toast.LENGTH_SHORT).show()
             } else {
-                false
+                sendMessage()
+            }
+        }
+        btnSend.setOnLongClickListener {
+            when {
+                replyInProgress -> {
+                    showStopReplyDialog()
+                    true
+                }
+                dreamStorage.isSleeping(friendId) &&
+                    !batchModeManager.isBatchMode &&
+                    (inputMessage.text.isNotBlank() || chatImageHandler.pendingPaths.isNotEmpty()) -> {
+                    showEmergencyWakeDialog { sendMessage(emergencyWake = true) }
+                    true
+                }
+                else -> false
             }
         }
 
@@ -438,14 +487,29 @@ class ChatConversationActivity : AppCompatActivity() {
             bubbleRenderer.friendAvatarPath = latestFriend.avatarPath
         }
         applyChatAppearance()
+        val bubbleStyleChanged = applyBubbleStyles()
 
         val pausedRevision = pausedChatRevision
-        if (pausedRevision != null && chatStorage.getFileRevision(friendId) != pausedRevision) {
+        val chatFileChanged = pausedRevision != null &&
+            chatStorage.getFileRevision(friendId) != pausedRevision
+        if (bubbleStyleChanged || chatFileChanged) {
             messagesContainer.removeAllViews()
             chatHistory.clear()
             initChat()
         }
         pausedChatRevision = null
+    }
+
+    /**
+     * 读取当前住户的双方普通文字气泡样式。
+     * 从设置页返回时若样式变了，onResume 会重绘现有历史消息，使修改立即生效。
+     */
+    private fun applyBubbleStyles(): Boolean {
+        if (friendId.isBlank() || !::bubbleRenderer.isInitialized) return false
+        return bubbleRenderer.updateBubbleStyles(
+            bubbleStyleStorage.getStyle(friendId, BubbleStyleStorage.Target.FRIEND),
+            bubbleStyleStorage.getStyle(friendId, BubbleStyleStorage.Target.USER)
+        )
     }
 
     override fun onPause() {
@@ -459,6 +523,7 @@ class ChatConversationActivity : AppCompatActivity() {
         if (::chatBackgroundHost.isInitialized) {
             appearanceStorage.releaseBackground(chatBackgroundHost)
         }
+        if (::searchManager.isInitialized) searchManager.destroy()
         networkMonitor.stop()
         super.onDestroy()
     }
@@ -471,6 +536,10 @@ class ChatConversationActivity : AppCompatActivity() {
         val generation = ++appearanceGeneration
         val customBackgroundFile = appearanceStorage.getBackgroundFile(friendId)
         val hasCustomBackground = customBackgroundFile != null
+        val themeIsDark = ThemeHelper.isDark(this)
+        if (!hasCustomBackground) {
+            bubbleRenderer.chatBackgroundIsDark = themeIsDark
+        }
         bubbleRenderer.friendAvatarFramePath = appearanceStorage.getAvatarFrameFile(
             friendId,
             ChatAppearanceStorage.AvatarTarget.FRIEND
@@ -506,6 +575,7 @@ class ChatConversationActivity : AppCompatActivity() {
             ChatAppearanceStorage.AvatarTarget.USER
         )
         bubbleRenderer.syncAvatarAppearance()
+        bubbleRenderer.traceDividerStyle = appearanceStorage.getTraceDividerStyle(friendId)
         bubbleRenderer.useCustomChatBackground = hasCustomBackground
         applyCollapsedComposerAppearance(hasCustomBackground)
 
@@ -514,6 +584,14 @@ class ChatConversationActivity : AppCompatActivity() {
         val targetHeight = chatBackgroundHost.height.takeIf { it > 0 }
             ?: resources.displayMetrics.heightPixels
         appearanceExecutor.execute {
+            val effects = appearanceStorage.getBackgroundEffects(friendId)
+            val sampledBackgroundIsDark = customBackgroundFile?.let { file ->
+                estimateChatBackgroundIsDark(
+                    file = file,
+                    overlayPercent = effects.overlayPercent,
+                    themeIsDark = themeIsDark
+                )
+            } ?: themeIsDark
             val drawable = appearanceStorage.loadBackgroundDrawable(
                 friendId,
                 targetWidth,
@@ -523,6 +601,7 @@ class ChatConversationActivity : AppCompatActivity() {
                 if (!isFinishing && !isDestroyed &&
                     generation == appearanceGeneration &&
                     appliedAppearanceRevision == revision) {
+                    bubbleRenderer.chatBackgroundIsDark = sampledBackgroundIsDark
                     appearanceStorage.applyBackground(chatBackgroundHost, drawable)
                 } else {
                     appearanceStorage.releaseDrawable(drawable)
@@ -561,6 +640,72 @@ class ChatConversationActivity : AppCompatActivity() {
         Color.green(color),
         Color.blue(color)
     )
+
+    /**
+     * 用很小的缩略图估算聊天背景的实际明暗，只服务于“浮在线上的标题”黑白切换。
+     * 不解码原图尺寸，也不在主线程做像素遍历。
+     */
+    private fun estimateChatBackgroundIsDark(
+        file: File,
+        overlayPercent: Int,
+        themeIsDark: Boolean
+    ): Boolean {
+        return runCatching {
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeFile(file.absolutePath, bounds)
+            if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return@runCatching themeIsDark
+
+            var sample = 1
+            while (bounds.outWidth / sample > 96 || bounds.outHeight / sample > 96) {
+                sample *= 2
+            }
+            val options = BitmapFactory.Options().apply {
+                inSampleSize = sample
+                inPreferredConfig = android.graphics.Bitmap.Config.ARGB_8888
+            }
+            val bitmap = BitmapFactory.decodeFile(file.absolutePath, options)
+                ?: return@runCatching themeIsDark
+            try {
+                // 取中央 80%，比整图平均更接近 centerCrop 后真正落在聊天区里的画面。
+                val left = (bitmap.width * 0.10f).toInt().coerceIn(0, bitmap.width - 1)
+                val top = (bitmap.height * 0.10f).toInt().coerceIn(0, bitmap.height - 1)
+                val right = (bitmap.width * 0.90f).toInt().coerceIn(left + 1, bitmap.width)
+                val bottom = (bitmap.height * 0.90f).toInt().coerceIn(top + 1, bitmap.height)
+                val stepX = ((right - left) / 28).coerceAtLeast(1)
+                val stepY = ((bottom - top) / 28).coerceAtLeast(1)
+
+                var luminanceSum = 0.0
+                var weightSum = 0.0
+                var y = top
+                while (y < bottom) {
+                    var x = left
+                    while (x < right) {
+                        val pixel = bitmap.getPixel(x, y)
+                        val alpha = Color.alpha(pixel) / 255.0
+                        if (alpha > 0.05) {
+                            val r = Color.red(pixel) / 255.0
+                            val g = Color.green(pixel) / 255.0
+                            val b = Color.blue(pixel) / 255.0
+                            luminanceSum += (0.2126 * r + 0.7152 * g + 0.0722 * b) * alpha
+                            weightSum += alpha
+                        }
+                        x += stepX
+                    }
+                    y += stepY
+                }
+                if (weightSum <= 0.0) return@runCatching themeIsDark
+
+                val imageLuminance = luminanceSum / weightSum
+                val overlay = overlayPercent.coerceIn(0, 100) / 100.0
+                val overlayLuminance = if (themeIsDark) 0.0 else 1.0
+                val effectiveLuminance =
+                    imageLuminance * (1.0 - overlay) + overlayLuminance * overlay
+                effectiveLuminance < 0.53
+            } finally {
+                bitmap.recycle()
+            }
+        }.getOrDefault(themeIsDark)
+    }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
@@ -652,13 +797,89 @@ class ChatConversationActivity : AppCompatActivity() {
     }
 
     // ===== 锁定/解锁输入区 =====
-    // 等 AI 回复期间锁住发送，防止连发导致多个 API 请求同时在跑、上下文乱套
+    // 等 AI 回复期间仍保留同一个按钮，但切成停止键；只有确认面板的第二次点击才会真正停止。
     private fun setInputLocked(locked: Boolean) {
-        btnSend.isEnabled = !locked
-        inputMessage.isEnabled = !locked
-        btnSend.alpha = if (locked) 0.4f else 1f
-        findViewById<TextView>(R.id.btnSendAll)?.isEnabled = !locked
-        findViewById<TextView>(R.id.btnExpandSend)?.isEnabled = !locked
+        inputLocked = locked
+        refreshComposerEnabledState()
+    }
+
+    private fun setReplyInProgress(running: Boolean) {
+        replyInProgress = running
+        refreshComposerEnabledState()
+    }
+
+    private fun refreshComposerEnabledState() {
+        if (!::btnSend.isInitialized) return
+        btnSend.text = if (replyInProgress) "■" else "➤"
+        btnSend.contentDescription = if (replyInProgress) "长按并确认，停止本轮回复" else "发送"
+        btnSend.isEnabled = replyInProgress || !inputLocked
+        btnSend.alpha = if (replyInProgress || !inputLocked) 1f else 0.4f
+        inputMessage.isEnabled = !inputLocked
+        findViewById<TextView>(R.id.btnSendAll)?.isEnabled = !inputLocked
+        findViewById<TextView>(R.id.btnExpandSend)?.isEnabled = !inputLocked
+    }
+
+    private fun showStopReplyDialog() {
+        val session = activeReplySession ?: return
+        if (session.cancelled || stopReplyDialogShowing) return
+        val dialog = android.app.AlertDialog.Builder(this)
+            .setTitle("停止本轮回复？")
+            .setMessage("已经显示出来的内容会保留；尚未生成的内容，以及正在进行的思考、搜索和工具调用会停止。")
+            .setNegativeButton("继续等待", null)
+            .setPositiveButton("停止本轮") { _, _ -> stopReplySession(session) }
+            .create()
+        stopReplyDialogShowing = true
+        dialog.setOnDismissListener { stopReplyDialogShowing = false }
+        dialog.show()
+    }
+
+    private fun stopReplySession(session: ReplySession) {
+        if (activeReplySession !== session || session.cancelled) return
+        session.cancelled = true
+        session.showTypingRunnable?.let(handler::removeCallbacks)
+        session.pendingUiRunnable?.let(handler::removeCallbacks)
+        session.api?.cancel()
+        session.searchCoordinator?.cancel()
+        session.worker?.interrupt()
+
+        val visibleText = if (::bubbleRenderer.isInitialized) {
+            bubbleRenderer.cancelAiBubbleStreaming()
+        } else {
+            ""
+        }
+        if (visibleText.isNotBlank()) {
+            session.interruptFinalizer?.invoke(visibleText)
+        }
+        session.interruptFinalizer = null
+
+        if (::bubbleRenderer.isInitialized) bubbleRenderer.removeTypingIndicator()
+        if (!isFinishing && !isDestroyed) {
+            setStatus("online")
+            if (currentAiStatus.isNotEmpty()) {
+                tvStatus.text = currentAiStatus
+                tvStatus.setTextColor(c.accent)
+            }
+            Toast.makeText(this, "已停止本轮回复", Toast.LENGTH_SHORT).show()
+        }
+        finishReplySession(session)
+    }
+
+    private fun finishReplySession(session: ReplySession) {
+        if (activeReplySession !== session) return
+        session.showTypingRunnable?.let(handler::removeCallbacks)
+        session.pendingUiRunnable?.let(handler::removeCallbacks)
+        session.interruptFinalizer = null
+        activeReplySession = null
+        if (!isFinishing && !isDestroyed) {
+            setReplyInProgress(false)
+            setInputLocked(false)
+        }
+    }
+
+    private fun ensureReplySessionActive(session: ReplySession) {
+        if (activeReplySession !== session || session.cancelled || Thread.currentThread().isInterrupted) {
+            throw ApiRequestCancelledException()
+        }
     }
 
     // ===== 展开/收起输入框 =====
@@ -810,7 +1031,14 @@ class ChatConversationActivity : AppCompatActivity() {
     }
 
     override fun dispatchTouchEvent(event: MotionEvent): Boolean {
-        if (event.action == MotionEvent.ACTION_DOWN) {
+        if (event.actionMasked == MotionEvent.ACTION_DOWN) {
+            if (::bubbleRenderer.isInitialized) {
+                bubbleRenderer.hideRevealedTraceTitlesOutside(
+                    event.rawX.toInt(),
+                    event.rawY.toInt()
+                )
+            }
+
             if (isComposerExpanded && expandedInputPanel.visibility != View.VISIBLE) {
                 val insideComposer = isTouchInside(composerDock, event)
                 val insidePlusPanel = isTouchInside(findViewById(R.id.plusPanel), event)
@@ -1039,7 +1267,10 @@ class ChatConversationActivity : AppCompatActivity() {
 
     private fun buildContextWindow(): List<ChatMessage> {
         // 用 SystemPromptBuilder 构建四层 prompt
-        val systemPrompt = SystemPromptBuilder(this).build(friendId)
+        val systemPrompt = SystemPromptBuilder(this).build(
+            friendId = friendId,
+            includeSearchTools = true
+        )
         val freshSystemMsg = ChatMessage("system", systemPrompt)
 
         val nonSystemMsgs = chatHistory.filter { it.role != "system" }
@@ -1068,7 +1299,7 @@ class ChatConversationActivity : AppCompatActivity() {
         }
     }
 
-    /** 分条发送 —— 逐条显示（间隔300ms），最后统一调 API */
+    /** 分条发送 —— 使用安静版 260ms 节奏逐条显示，最后统一调 API */
     private fun sendExpandedInput(emergencyWake: Boolean = false) {
         val text = expandedInput.text.toString().trim()
         if (text.isEmpty()) return
@@ -1101,17 +1332,33 @@ class ChatConversationActivity : AppCompatActivity() {
         if (sleepingAtSend) {
             val messages = mutableListOf<Pair<String, Long>>()
             val baseTime = System.currentTimeMillis()
+            var visualReplyNotBeforeUptimeMs = 0L
             for ((index, part) in parts.withIndex()) {
                 val now = baseTime + index
                 val timeStr = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date(now))
                 checkDateSeparator(now)
+                val startDelayMs = index * bubbleRenderer.quietUserMessageStaggerMs
+                bubbleRenderer.prepareNextUserMessageAnimation(
+                    startDelayMs = startDelayMs,
+                    showAvatar = true
+                )
+                visualReplyNotBeforeUptimeMs = maxOf(
+                    visualReplyNotBeforeUptimeMs,
+                    SystemClock.uptimeMillis() +
+                        startDelayMs +
+                        bubbleRenderer.quietUserMessageVisualTailMs() +
+                        24L
+                )
                 bubbleRenderer.addUserBubble(part, timeStr)
                 chatStorage.appendMessage(friendId, StoredMessage("user", part, now))
                 chatHistory.add(ChatMessage("user", "[$timeStr] $part"))
                 messages.add(part to now)
             }
             handleSleepingDelivery(messages, emergencyWake) {
-                callApiForReply(clearSleepInboxOnSuccess = true)
+                callApiForReply(
+                    clearSleepInboxOnSuccess = true,
+                    visualReplyNotBeforeUptimeMs = visualReplyNotBeforeUptimeMs
+                )
             }
             return
         }
@@ -1130,11 +1377,17 @@ class ChatConversationActivity : AppCompatActivity() {
                 val now = System.currentTimeMillis()
                 val timeStr = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date(now))
                 checkDateSeparator(now)
+                bubbleRenderer.prepareNextUserMessageAnimation(showAvatar = true)
                 bubbleRenderer.addUserBubble(part, timeStr)
                 chatStorage.appendMessage(friendId, StoredMessage("user", part, now))
                 chatHistory.add(ChatMessage("user", "[$timeStr] $part"))
                 index++
-                handler.postDelayed(this, 300L)
+                val nextDelayMs = if (index >= parts.size) {
+                    bubbleRenderer.quietUserMessageVisualTailMs() + 24L
+                } else {
+                    bubbleRenderer.quietUserMessageStaggerMs
+                }
+                handler.postDelayed(this, nextDelayMs)
             }
         }
         handler.post(sendNext)
@@ -1604,89 +1857,312 @@ class ChatConversationActivity : AppCompatActivity() {
     private fun callApiForReply(
         rollbackView: View? = null,
         rollbackText: String? = null,
-        clearSleepInboxOnSuccess: Boolean = false
+        clearSleepInboxOnSuccess: Boolean = false,
+        visualReplyNotBeforeUptimeMs: Long = 0L
     ) {
+        if (activeReplySession != null) return
+
+        val session = ReplySession(++nextReplySessionId)
+        activeReplySession = session
+        setReplyInProgress(true)
         setStatus("sending")
         setInputLocked(true)
-        bubbleRenderer.showTypingIndicator()
-        Thread {
+
+        val visualDeadlineUptimeMs = maxOf(
+            visualReplyNotBeforeUptimeMs,
+            SystemClock.uptimeMillis()
+        )
+        val showTypingRunnable = Runnable {
+            if (activeReplySession === session && !session.cancelled && !isFinishing && !isDestroyed) {
+                bubbleRenderer.showTypingIndicator()
+            }
+        }
+        session.showTypingRunnable = showTypingRunnable
+        val typingDelayMs = (visualDeadlineUptimeMs - SystemClock.uptimeMillis()).coerceAtLeast(0L)
+        if (typingDelayMs == 0L) {
+            showTypingRunnable.run()
+        } else {
+            handler.postDelayed(showTypingRunnable, typingDelayMs)
+        }
+
+        fun postUiAfterVisualSequence(block: () -> Unit) {
+            handler.removeCallbacks(showTypingRunnable)
+            val runnable = Runnable {
+                session.pendingUiRunnable = null
+                if (activeReplySession === session && !session.cancelled) block()
+            }
+            session.pendingUiRunnable = runnable
+            val remainingMs =
+                (visualDeadlineUptimeMs - SystemClock.uptimeMillis()).coerceAtLeast(0L)
+            if (remainingMs == 0L) handler.post(runnable)
+            else handler.postDelayed(runnable, remainingMs)
+        }
+
+        val worker = Thread {
             try {
+                ensureReplySessionActive(session)
                 val api = ApiHelper(apiUrl, apiKey, apiModel, apiType)
+                session.api = api
+                ensureReplySessionActive(session)
+
                 val contextWindow = buildContextWindow()
-                val firstResponse = api.sendChat(contextWindow)
-                val stickerResolved = resolveVisualStickerBrowse(api, contextWindow, firstResponse)
-                val avatarResolved = resolveVisualAvatarBrowse(api, contextWindow, stickerResolved)
-                val avatarFrameResolved = resolveVisualAvatarFrameBrowse(api, contextWindow, avatarResolved)
-                val response = resolveVisualBackgroundBrowse(api, contextWindow, avatarFrameResolved)
+                val searchCoordinator = SearchCoordinator(applicationContext, friendId)
+                session.searchCoordinator = searchCoordinator
+
+                // 用户本轮直接附上网页链接时，归栖先读取正文并把纯资料接在消息后面。
+                // 不向住户追加使用要求，也不规定住户如何评价或处理网页内容。
+                val directLinkResolution = DirectLinkReadSession.resolve(
+                    friendName = friendName,
+                    baseContext = contextWindow,
+                    coordinator = searchCoordinator,
+                    onStatus = { status ->
+                        ensureReplySessionActive(session)
+                        updateStickerBrowseStatus(status)
+                    }
+                )
+                ensureReplySessionActive(session)
+                val contextWithDirectLinks = contextWindow + directLinkResolution.contextMessages
+                val firstResponse = api.sendChat(contextWithDirectLinks)
+                ensureReplySessionActive(session)
+
+                // 文字型同轮工具允许互相接力：例如先翻看“我眼中的自己”，再决定上网搜索；
+                // 或搜索后发现还需要读取用户自述。最多循环三轮，避免不同工具之间形成死循环。
+                val textToolContinuation = mutableListOf<ChatMessage>()
+                val textToolTraceEvents = mutableListOf<Pair<String, String>>().apply {
+                    directLinkResolution.traceEvents.forEach { event ->
+                        add(event.kind to event.content)
+                    }
+                }
+                var textToolResponse = firstResponse
+
+                var textToolCycle = 0
+                while (textToolCycle < 3) {
+                    textToolCycle++
+                    val beforeCount = textToolContinuation.size
+
+                    val userLifeResolution = UserLifeReadToolSession.resolve(
+                        context = applicationContext,
+                        friendName = friendName,
+                        baseContext = contextWithDirectLinks + textToolContinuation,
+                        firstResponse = textToolResponse,
+                        sendChat = { messages ->
+                            ensureReplySessionActive(session)
+                            api.sendChat(messages).also { ensureReplySessionActive(session) }
+                        },
+                        onReading = {
+                            ensureReplySessionActive(session)
+                            updateStickerBrowseStatus("$friendName 正在翻看「我眼中的自己」…")
+                        }
+                    )
+                    ensureReplySessionActive(session)
+                    textToolResponse = userLifeResolution.response
+                    textToolContinuation += userLifeResolution.continuationMessages
+                    userLifeResolution.traceEvents.forEach { event ->
+                        textToolTraceEvents.add(event.kind to event.content)
+                    }
+
+                    val webResolution = WebSearchToolSession.resolve(
+                        friendName = friendName,
+                        baseContext = contextWithDirectLinks + textToolContinuation,
+                        firstResponse = textToolResponse,
+                        coordinator = searchCoordinator,
+                        sendChat = { messages ->
+                            ensureReplySessionActive(session)
+                            api.sendChat(messages).also { ensureReplySessionActive(session) }
+                        },
+                        onStatus = { status ->
+                            ensureReplySessionActive(session)
+                            updateStickerBrowseStatus(status)
+                        }
+                    )
+                    ensureReplySessionActive(session)
+                    textToolResponse = webResolution.response
+                    textToolContinuation += webResolution.continuationMessages
+                    webResolution.traceEvents.forEach { event ->
+                        textToolTraceEvents.add(event.kind to event.content)
+                    }
+
+                    if (textToolContinuation.size == beforeCount) break
+                }
+
+                val contextAfterTextTools = contextWithDirectLinks + textToolContinuation
+                val stickerResolved = resolveVisualStickerBrowse(
+                    api,
+                    contextAfterTextTools,
+                    textToolResponse
+                )
+                ensureReplySessionActive(session)
+                val avatarResolved = resolveVisualAvatarBrowse(api, contextAfterTextTools, stickerResolved)
+                ensureReplySessionActive(session)
+                val avatarFrameResolved = resolveVisualAvatarFrameBrowse(api, contextAfterTextTools, avatarResolved)
+                ensureReplySessionActive(session)
+                val backgroundResolved = resolveVisualBackgroundBrowse(api, contextAfterTextTools, avatarFrameResolved)
+                ensureReplySessionActive(session)
+
+                val bubbleToolResolution = BubbleStyleToolSession.resolve(
+                    friendName = friendName,
+                    friendId = friendId,
+                    storage = bubbleStyleStorage,
+                    baseContext = contextAfterTextTools,
+                    firstResponse = backgroundResolved,
+                    sendChat = { messages ->
+                        ensureReplySessionActive(session)
+                        api.sendChat(messages).also { ensureReplySessionActive(session) }
+                    }
+                )
+                ensureReplySessionActive(session)
+
+                val response = bubbleToolResolution.response
                 val replyTime = System.currentTimeMillis()
                 val replyTimeStr = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
                     .format(Date(replyTime))
 
                 // ===== 统一指令解析 =====
                 val result = InstructionProcessor(this@ChatConversationActivity).process(friendId, response.text)
+                ensureReplySessionActive(session)
                 val cleanText = result.cleanText
                 val isSeen = result.isSeen
 
                 // 应用状态变更
                 if (result.newStatus != null) currentAiStatus = result.newStatus!!
-                if (result.newName != null) { friendName = result.newName!!; bubbleRenderer.friendName = friendName }
-                if (result.newIcon != null) { friendIcon = result.newIcon!!; bubbleRenderer.friendIcon = friendIcon }
-                bubbleRenderer.friendAvatarPath = FriendStorage(this@ChatConversationActivity).getFriend(friendId)?.avatarPath ?: "" // 刷新图片头像
-                if (result.userBioContext != null) chatHistory.add(ChatMessage("system", result.userBioContext!!))
-                for (recall in result.recallResults) chatHistory.add(ChatMessage("system", "[留声] $recall"))
+                if (result.newName != null) {
+                    friendName = result.newName!!
+                    bubbleRenderer.friendName = friendName
+                }
+                if (result.newIcon != null) {
+                    friendIcon = result.newIcon!!
+                    bubbleRenderer.friendIcon = friendIcon
+                }
+                bubbleRenderer.friendAvatarPath = FriendStorage(this@ChatConversationActivity)
+                    .getFriend(friendId)?.avatarPath ?: ""
+                if (result.userBioContext != null) {
+                    chatHistory.add(ChatMessage("system", result.userBioContext!!))
+                }
+                result.userBioPhotos.forEach { photo ->
+                    ensureReplySessionActive(session)
+                    val file = File(photo.path)
+                    if (file.isFile) {
+                        try {
+                            chatHistory.add(
+                                ChatMessage(
+                                    role = "user",
+                                    content = "[用户在「我眼中的自己」里保存的照片：${photo.label}]",
+                                    imageBase64List = listOf(ImageHelper.toBase64(file))
+                                )
+                            )
+                        } catch (_: Exception) {
+                            // 单张照片读取失败不影响其余自述和生活记录。
+                        }
+                    }
+                }
+                for (recall in result.recallResults) {
+                    chatHistory.add(ChatMessage("system", "[留声] $recall"))
+                }
                 if (result.shouldDream) triggerDream(friendId)
+                ensureReplySessionActive(session)
 
-                // 徽章解锁弹窗
-                if (result.pendingBadge != null) {
-                    handler.post { badgeUnlockDialog.show(result.pendingBadge!!) }
+                // ★ 工具会话按真实顺序保存：可见思考片段 → 工具调用 → 可见思考片段。
+                val combinedToolTraceEvents = buildList {
+                    addAll(textToolTraceEvents)
+                    bubbleToolResolution.traceEvents.forEach { event ->
+                        val kind = when (event.kind) {
+                            BubbleStyleToolSession.TraceKind.THINKING -> "思考"
+                            BubbleStyleToolSession.TraceKind.BUBBLE_TOOL -> "代码气泡"
+                        }
+                        add(kind to event.content)
+                    }
+                    if (
+                        textToolTraceEvents.isNotEmpty() &&
+                        bubbleToolResolution.traceEvents.isEmpty() &&
+                        response.thinking.isNotBlank()
+                    ) {
+                        add("思考" to response.thinking)
+                    }
+                }
+                val toolTraceRecords = combinedToolTraceEvents.mapIndexed { index, event ->
+                    "[工具轨迹·${event.first}·${index + 1}/${combinedToolTraceEvents.size}]\n${event.second.trim()}"
                 }
 
-                // 保存到聊天记录
-                // ★ 先存指令小字，再存 AI 正文，保证磁盘顺序 = 屏幕顺序
-                //   屏幕上：小字在上、正文在下；磁盘里也必须如此，
-                //   否则退出重进后 ChatHistoryLoader 按文件行序渲染会错位。
-                for (action in result.actions) {
-                    chatStorage.appendMessage(friendId,
-                        StoredMessage("system", action, replyTime, type = "tip"))
+                ensureReplySessionActive(session)
+                toolTraceRecords.forEachIndexed { index, record ->
+                    chatStorage.appendMessage(
+                        friendId,
+                        StoredMessage("system", record, replyTime + index, type = "tip")
+                    )
                 }
+                for ((index, action) in result.actions.withIndex()) {
+                    chatStorage.appendMessage(
+                        friendId,
+                        StoredMessage(
+                            "system",
+                            action,
+                            replyTime + toolTraceRecords.size + index,
+                            type = "tip"
+                        )
+                    )
+                }
+
                 val msgType = if (result.weatherCard) "weather" else "text"
                 val msgExtras = if (result.weatherCard) {
                     val ws = WeatherStorage(this@ChatConversationActivity)
-                    val wd = ws.getCachedWeather(); val ct = ws.getCity()
-                    if (wd != null) WeatherStorage.toExtras(wd, ct) else ""
-                } else ""
-                chatStorage.appendMessage(friendId, StoredMessage(
-                    "assistant", cleanText, replyTime, response.thinking, type = msgType, extras = msgExtras
-                ))
-                chatHistory.add(ChatMessage("assistant", cleanText))
+                    val wd = ws.getCachedWeather()
+                    val city = ws.getCity()
+                    if (wd != null) WeatherStorage.toExtras(wd, city) else ""
+                } else {
+                    ""
+                }
+                val assistantTimestamp = replyTime + toolTraceRecords.size + result.actions.size
 
-                // 只有 API 真正成功处理完，才把床边留言标记为已读。
-                // 网络失败时队列会保留，下一次唤醒/发送仍能继续处理。
-                if (clearSleepInboxOnSuccess) {
-                    sleepMessageStorage.clear(friendId)
+                fun markReplyProcessed() {
+                    synchronized(session) {
+                        if (session.replyProcessed) return
+                        session.replyProcessed = true
+                        if (clearSleepInboxOnSuccess) sleepMessageStorage.clear(friendId)
+
+                        val msgCount = chatStorage.getMessageCount(friendId)
+                        if (summaryStorage.shouldTriggerSummary(friendId, msgCount)) {
+                            triggerChatSummary(friendId, msgCount)
+                        }
+                    }
                 }
 
-                // 检查是否该触发聊天总结
-                val msgCount = chatStorage.getMessageCount(friendId)  // 只数行数，不全量解析
-                if (summaryStorage.shouldTriggerSummary(friendId, msgCount)) {
-                    triggerChatSummary(friendId, msgCount)
+                fun persistAssistant(visibleText: String) {
+                    if (visibleText.isNotBlank()) {
+                        synchronized(session) {
+                            if (!session.assistantPersisted) {
+                                session.assistantPersisted = true
+                                chatStorage.appendMessage(
+                                    friendId,
+                                    StoredMessage(
+                                        "assistant",
+                                        visibleText,
+                                        assistantTimestamp,
+                                        response.thinking,
+                                        type = msgType,
+                                        extras = msgExtras
+                                    )
+                                )
+                                chatHistory.add(ChatMessage("assistant", visibleText))
+                            }
+                        }
+                    }
+                    markReplyProcessed()
                 }
 
-                handler.post {
-                    // 页面已经关闭：不碰任何界面（防闪退），但通知照常发出去
-                    // 数据在上面已经存好了，回来还能看到
+                postUiAfterVisualSequence uiResult@ {
                     if (isFinishing || isDestroyed) {
-                        if (!isSeen) {
+                        persistAssistant(cleanText)
+                        if (!isSeen && cleanText.isNotBlank()) {
                             NotificationHelper(applicationContext).sendChatNotification(
                                 friendId, friendName, friendIcon, cleanText
                             )
                         }
-                        return@post
+                        activeReplySession = null
+                        return@uiResult
                     }
 
                     bubbleRenderer.removeTypingIndicator()
                     setStatus("online")
-                    setInputLocked(false)
 
                     if (currentAiStatus.isNotEmpty()) {
                         tvStatus.text = currentAiStatus
@@ -1695,49 +2171,71 @@ class ChatConversationActivity : AppCompatActivity() {
                             .edit().putString("status_$friendId", currentAiStatus).apply()
                     }
                     tvFriendName.text = friendName
-                    if (result.chatAppearanceChanged) {
-                        applyChatAppearance(force = true)
-                    }
+                    if (result.chatAppearanceChanged) applyChatAppearance(force = true)
 
-                    // 小字已在后台线程落盘，这里只上屏
-                    for (action in result.actions) {
-                        bubbleRenderer.addSystemTip(action)
-                    }
+                    for (record in toolTraceRecords) bubbleRenderer.addToolTraceRecord(record)
+                    for (action in result.actions) bubbleRenderer.addSystemTip(action)
+                    result.pendingBadge?.let { badgeUnlockDialog.show(it) }
 
                     if (isSeen) {
+                        markReplyProcessed()
                         bubbleRenderer.addSeenIndicator()
-                    } else {
-                        if (response.thinking.isNotEmpty()) bubbleRenderer.addThinkingBlock(response.thinking)
-                        if (result.weatherCard) {
-                            val ws = WeatherStorage(this@ChatConversationActivity)
-                            val wd = ws.getCachedWeather(); val city = ws.getCity()
-                            if (wd != null && city.isNotEmpty())
-                                bubbleRenderer.addWeatherCard(wd, city, isUser = false, timeStr = replyTimeStr)
+                        result.pendingCovenantDraft?.let { draft ->
+                            showCovenantDraftRequest(draft, result.pendingCovenantAdopt)
                         }
-                        bubbleRenderer.addAiBubbleStreaming(cleanText, replyTimeStr)
-                        NotificationHelper(this@ChatConversationActivity).sendChatNotification(
-                            friendId, friendName, friendIcon, cleanText
-                        )
+                        finishReplySession(session)
+                        return@uiResult
                     }
 
-                    result.pendingCovenantDraft?.let { draft ->
-                        showCovenantDraftRequest(
-                            draft = draft,
-                            adoptAfterSave = result.pendingCovenantAdopt
-                        )
+                    if (toolTraceRecords.isEmpty() && response.thinking.isNotEmpty()) {
+                        bubbleRenderer.addThinkingBlock(response.thinking)
+                    }
+                    if (result.weatherCard) {
+                        val ws = WeatherStorage(this@ChatConversationActivity)
+                        val wd = ws.getCachedWeather()
+                        val city = ws.getCity()
+                        if (wd != null && city.isNotEmpty()) {
+                            bubbleRenderer.addWeatherCard(wd, city, isUser = false, timeStr = replyTimeStr)
+                        }
+                    }
+
+                    session.interruptFinalizer = { partialText ->
+                        persistAssistant(partialText)
+                    }
+                    bubbleRenderer.addAiBubbleStreaming(cleanText, replyTimeStr) { completedText ->
+                        if (activeReplySession !== session || session.cancelled) return@addAiBubbleStreaming
+                        session.interruptFinalizer = null
+                        persistAssistant(completedText)
+                        if (completedText.isNotBlank()) {
+                            NotificationHelper(this@ChatConversationActivity).sendChatNotification(
+                                friendId, friendName, friendIcon, completedText
+                            )
+                        }
+                        result.pendingCovenantDraft?.let { draft ->
+                            showCovenantDraftRequest(draft, result.pendingCovenantAdopt)
+                        }
+                        finishReplySession(session)
                     }
                 }
             } catch (e: Exception) {
+                if (session.cancelled || e is ApiRequestCancelledException) {
+                    handler.post {
+                        if (activeReplySession === session) finishReplySession(session)
+                    }
+                    return@Thread
+                }
+
                 val friendlyMsg = getErrorMessage(e)
-                handler.post {
-                    // 页面已经关闭：什么都不用做，防止操作已销毁的界面导致闪退
-                    if (isFinishing || isDestroyed) return@post
+                postUiAfterVisualSequence uiError@ {
+                    if (isFinishing || isDestroyed) {
+                        activeReplySession = null
+                        return@uiError
+                    }
+                    if (activeReplySession !== session || session.cancelled) return@uiError
 
                     bubbleRenderer.removeTypingIndicator()
-                    setInputLocked(false)
+                    finishReplySession(session)
                     if (rollbackView != null) {
-                        // 单条发送失败：撤回用户消息，恢复输入框
-                        // （发送期间输入已锁定，最后一条一定是这次发的，可以安全删除）
                         messagesContainer.removeView(rollbackView)
                         if (chatHistory.isNotEmpty()) chatHistory.removeAt(chatHistory.size - 1)
                         chatStorage.removeLastMessage(friendId)
@@ -1747,7 +2245,9 @@ class ChatConversationActivity : AppCompatActivity() {
                     bubbleRenderer.addErrorBubble(friendlyMsg) { callApiForReply() }
                 }
             }
-        }.start()
+        }
+        session.worker = worker
+        worker.start()
     }
 
     private fun hasApiConfig(): Boolean {
@@ -1920,6 +2420,7 @@ class ChatConversationActivity : AppCompatActivity() {
         val now = System.currentTimeMillis()
         val timeStr = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date(now))
         checkDateSeparator(now)
+        bubbleRenderer.prepareNextUserMessageAnimation()
 
         var heldContent = msg
 
@@ -2038,8 +2539,8 @@ class ChatConversationActivity : AppCompatActivity() {
      * 发送全部待发消息。
      *
      * v8.2：点击“发送全部”后，先把整批消息完整上屏、落盘并写入上下文，
-     * 再请求回复。这样即使马上离开当前聊天页，也不会因为 300ms 的逐条动画
-     * 尚未执行完而漏发后半段。
+     * 再请求回复。入场动画只延迟视觉出现，不延迟落盘和上下文写入，
+     * 所以即使马上离开当前聊天页，也不会漏发后半段。
      */
     private fun sendAllPending(emergencyWake: Boolean = false) {
         if (batchModeManager.isEmpty()) return
@@ -2053,6 +2554,27 @@ class ChatConversationActivity : AppCompatActivity() {
         setInputLocked(true)
         val items = batchModeManager.getItemsAndClear()
         removeQuotePreview()
+
+        var animatableItemIndex = 0
+        var visualReplyNotBeforeUptimeMs = 0L
+        fun preparePendingItemAnimation(
+            mediaItemCount: Int = 0,
+            hasCaption: Boolean = false
+        ) {
+            val startDelayMs = animatableItemIndex * bubbleRenderer.quietUserMessageStaggerMs
+            bubbleRenderer.prepareNextUserMessageAnimation(
+                startDelayMs = startDelayMs,
+                showAvatar = true
+            )
+            visualReplyNotBeforeUptimeMs = maxOf(
+                visualReplyNotBeforeUptimeMs,
+                SystemClock.uptimeMillis() +
+                    startDelayMs +
+                    bubbleRenderer.quietUserMessageVisualTailMs(mediaItemCount, hasCaption) +
+                    24L
+            )
+            animatableItemIndex++
+        }
 
         val allTextForApi = StringBuilder()
         val heldMessages = mutableListOf<Pair<String, Long>>()
@@ -2072,6 +2594,10 @@ class ChatConversationActivity : AppCompatActivity() {
                 "image" -> {
                     if (item.imagePaths.isEmpty()) continue
                     val displayPaths = item.displayImagePaths.ifEmpty { item.imagePaths }
+                    preparePendingItemAnimation(
+                        mediaItemCount = displayPaths.size,
+                        hasCaption = item.text.isNotEmpty()
+                    )
                     if (item.isSticker && displayPaths.size == 1) {
                         bubbleRenderer.addStickerBubble(displayPaths[0], timeStr, item.text)
                         chatStorage.appendMessage(
@@ -2135,6 +2661,7 @@ class ChatConversationActivity : AppCompatActivity() {
 
                 else -> {
                     if (item.text.isEmpty()) continue
+                    preparePendingItemAnimation()
                     val held = if (item.quoteAuthor != null && item.quoteContent != null) {
                         bubbleRenderer.addQuoteBubble(item.quoteAuthor, item.quoteContent, item.text, timeStr)
                         chatStorage.appendMessage(
@@ -2171,12 +2698,18 @@ class ChatConversationActivity : AppCompatActivity() {
 
         if (sleepingAtSend) {
             handleSleepingDelivery(heldMessages, emergencyWake) {
-                callApiForReply(clearSleepInboxOnSuccess = true)
+                callApiForReply(
+                    clearSleepInboxOnSuccess = true,
+                    visualReplyNotBeforeUptimeMs = visualReplyNotBeforeUptimeMs
+                )
             }
             return
         }
 
-        callApiForReply(clearSleepInboxOnSuccess = sleepMessageStorage.hasPending(friendId))
+        callApiForReply(
+            clearSleepInboxOnSuccess = sleepMessageStorage.hasPending(friendId),
+            visualReplyNotBeforeUptimeMs = visualReplyNotBeforeUptimeMs
+        )
     }
 
     /** 聊天面板导入也直接写入画匣，并允许一次选定内部分类。 */

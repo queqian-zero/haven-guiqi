@@ -21,13 +21,15 @@ import java.io.File
  */
 class ChatAppearanceStorage(context: Context) {
 
-    enum class AvatarDisplayMode(val storageValue: String) {
-        AI_ONLY("ai"),
-        USER_ONLY("user"),
-        BOTH("both");
-
-        val showsFriendAvatar: Boolean get() = this != USER_ONLY
-        val showsUserAvatar: Boolean get() = this != AI_ONLY
+    enum class AvatarDisplayMode(
+        val storageValue: String,
+        val showsFriendAvatar: Boolean,
+        val showsUserAvatar: Boolean
+    ) {
+        AI_ONLY("ai", true, false),
+        USER_ONLY("user", false, true),
+        BOTH("both", true, true),
+        NONE("none", false, false);
 
         companion object {
             fun fromStorage(value: String?): AvatarDisplayMode =
@@ -66,6 +68,67 @@ class ChatAppearanceStorage(context: Context) {
         val offsetXPercent: Int = DEFAULT_AVATAR_FRAME_OFFSET_PERCENT,
         val offsetYPercent: Int = DEFAULT_AVATAR_FRAME_OFFSET_PERCENT
     )
+
+
+    /** 当前住户自己的思考／工具／潜意识分割线样式。 */
+    fun getTraceDividerStyle(friendId: String): TraceDividerStyle = TraceDividerStyle(
+        leftDecoration = prefs.getString(
+            traceLeftDecorationKey(friendId),
+            TraceDividerStyle.DEFAULT_LEFT_DECORATION
+        ).orEmpty(),
+        rightDecoration = prefs.getString(
+            traceRightDecorationKey(friendId),
+            TraceDividerStyle.DEFAULT_RIGHT_DECORATION
+        ).orEmpty(),
+        centerMark = prefs.getString(
+            traceCenterMarkKey(friendId),
+            TraceDividerStyle.DEFAULT_CENTER_MARK
+        ).orEmpty(),
+        lineStyle = TraceDividerLineStyle.fromStorage(
+            prefs.getString(traceLineStyleKey(friendId), null)
+        ),
+        glowPercent = prefs.getInt(
+            traceGlowKey(friendId),
+            TraceDividerStyle.DEFAULT_GLOW_PERCENT
+        ),
+        thicknessDp = prefs.getInt(
+            traceThicknessKey(friendId),
+            TraceDividerStyle.DEFAULT_THICKNESS_DP
+        ),
+        showDecorations = prefs.getBoolean(traceShowDecorationsKey(friendId), true)
+    ).normalized()
+
+    fun hasCustomTraceDividerStyle(friendId: String): Boolean =
+        prefs.getBoolean(traceCustomKey(friendId), false)
+
+    fun setTraceDividerStyle(friendId: String, style: TraceDividerStyle) {
+        val normalized = style.normalized()
+        prefs.edit()
+            .putString(traceLeftDecorationKey(friendId), normalized.leftDecoration)
+            .putString(traceRightDecorationKey(friendId), normalized.rightDecoration)
+            .putString(traceCenterMarkKey(friendId), normalized.centerMark)
+            .putString(traceLineStyleKey(friendId), normalized.lineStyle.storageValue)
+            .putInt(traceGlowKey(friendId), normalized.glowPercent)
+            .putInt(traceThicknessKey(friendId), normalized.thicknessDp)
+            .putBoolean(traceShowDecorationsKey(friendId), normalized.showDecorations)
+            .putBoolean(traceCustomKey(friendId), true)
+            .putLong(revisionKey(friendId), nextRevision(friendId))
+            .apply()
+    }
+
+    fun resetTraceDividerStyle(friendId: String) {
+        prefs.edit()
+            .remove(traceLeftDecorationKey(friendId))
+            .remove(traceRightDecorationKey(friendId))
+            .remove(traceCenterMarkKey(friendId))
+            .remove(traceLineStyleKey(friendId))
+            .remove(traceGlowKey(friendId))
+            .remove(traceThicknessKey(friendId))
+            .remove(traceShowDecorationsKey(friendId))
+            .remove(traceCustomKey(friendId))
+            .putLong(revisionKey(friendId), nextRevision(friendId))
+            .apply()
+    }
 
     private val appContext = context.applicationContext
     private val prefs = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -376,6 +439,14 @@ class ChatAppearanceStorage(context: Context) {
             .remove(avatarShapeKey(friendId, AvatarTarget.USER))
             .remove(blurKey(friendId))
             .remove(overlayKey(friendId))
+            .remove(traceLeftDecorationKey(friendId))
+            .remove(traceRightDecorationKey(friendId))
+            .remove(traceCenterMarkKey(friendId))
+            .remove(traceLineStyleKey(friendId))
+            .remove(traceGlowKey(friendId))
+            .remove(traceThicknessKey(friendId))
+            .remove(traceShowDecorationsKey(friendId))
+            .remove(traceCustomKey(friendId))
             .remove(revisionKey(friendId))
         val prefixes = listOf(
             frameScalePrefix(friendId, AvatarTarget.FRIEND),
@@ -642,7 +713,7 @@ class ChatAppearanceStorage(context: Context) {
     /**
      * v11.6.3.5 将原先“双方共用一张框”的旧键拆成两套。
      * 迁移按当时真实显示模式分配，避免升级后凭空给原本未显示的一方戴框：
-     * 仅住户 → 住户；仅我 → 用户；双方 → 双方。
+     * 仅住户 → 住户；仅我 → 用户；双方 → 双方；都不显示 → 不迁移给任何一方。
      */
     private fun ensureAvatarFrameSplitMigrated(friendId: String) {
         if (prefs.getBoolean(frameMigrationKey(friendId), false)) return
@@ -662,6 +733,7 @@ class ChatAppearanceStorage(context: Context) {
                         editor.putString(frameKey(friendId, AvatarTarget.FRIEND), legacyItemId)
                         editor.putString(frameKey(friendId, AvatarTarget.USER), legacyItemId)
                     }
+                    AvatarDisplayMode.NONE -> Unit
                 }
             }
             editor.remove(legacySharedFrameKey(friendId))
@@ -721,6 +793,14 @@ class ChatAppearanceStorage(context: Context) {
     private fun backgroundOffsetYKey(friendId: String, itemId: String) = backgroundOffsetYPrefix(friendId) + itemId
     private fun blurKey(friendId: String) = "background_blur_$friendId"
     private fun overlayKey(friendId: String) = "background_overlay_$friendId"
+    private fun traceLeftDecorationKey(friendId: String) = "trace_divider_left_$friendId"
+    private fun traceRightDecorationKey(friendId: String) = "trace_divider_right_$friendId"
+    private fun traceCenterMarkKey(friendId: String) = "trace_divider_center_$friendId"
+    private fun traceLineStyleKey(friendId: String) = "trace_divider_line_style_$friendId"
+    private fun traceGlowKey(friendId: String) = "trace_divider_glow_$friendId"
+    private fun traceThicknessKey(friendId: String) = "trace_divider_thickness_$friendId"
+    private fun traceShowDecorationsKey(friendId: String) = "trace_divider_show_decorations_$friendId"
+    private fun traceCustomKey(friendId: String) = "trace_divider_custom_$friendId"
     private fun revisionKey(friendId: String) = "revision_$friendId"
 
     companion object {

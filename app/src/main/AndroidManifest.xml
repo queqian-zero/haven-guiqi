@@ -56,6 +56,8 @@
         <activity android:name=".ChatConversationActivity"
             android:windowSoftInputMode="adjustResize" />
         <activity android:name=".ChatSettingsActivity" />
+        <activity android:name=".SearchGroupActivity" />
+        <activity android:name=".BubbleStyleEditorActivity" />
         <activity android:name=".ArchiveActivity" />
         <activity android:name=".CollectionRoomActivity" />
         <activity android:name=".GalleryActivity" />
@@ -65,6 +67,8 @@
         <activity android:name=".DreamArchiveActivity" />
         <activity android:name=".BookReaderActivity" />
         <activity android:name=".FriendDetailActivity" />
+        <activity android:name=".MySelfActivity" />
+        <activity android:name=".CompanionEditActivity" />
         <activity android:name=".ClockActivity" />
         <activity android:name=".ClockHistoryActivity" />
         <activity android:name=".WeatherActivity" />

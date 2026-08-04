@@ -7,6 +7,7 @@ import android.graphics.Outline
 import android.view.Gravity
 import android.view.View
 import android.view.ViewOutlineProvider
+import android.view.animation.PathInterpolator
 import android.widget.GridLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
@@ -33,6 +34,9 @@ private object UserBubbleLayoutTuning {
     const val ROW_END_INSET_DP = 1
     const val AVATAR_GAP_DP = 8
     const val AVATAR_TOP_MARGIN_DP = 2
+    const val IMAGE_THUMB_MAX_SIZE_DP = 84
+    const val IMAGE_THUMB_GAP_DP = 4
+    const val IMAGE_CAPTION_TOP_MARGIN_DP = 4
     const val TEXT_MAX_WIDTH_FRACTION = 0.78f
     const val BUBBLE_START_PADDING_DP = 9
     const val BUBBLE_END_PADDING_DP = 7
@@ -47,13 +51,100 @@ private object UserBubbleLayoutTuning {
  * UserBubbleRenderer — 用户侧气泡渲染
  *
  * 负责：纯文字气泡、单图、表情包、多图网格、引用回复、历史占位。
- * 表情包与普通单图分开渲染：表情包不套气泡，普通图片按原比例显示为圆角卡片。
+ * 表情包与普通图片分开渲染：表情包保持原比例，普通图片在聊天流中显示为可放大的方形附件缩略图。
  */
 class UserBubbleRenderer(
     private val activity: Activity,
     private val messagesContainer: LinearLayout,
     private val scrollView: ScrollView
 ) {
+    companion object {
+        /** 已确认的“安静版”连续消息间隔。 */
+        const val QUIET_MULTI_SEND_STAGGER_MS = 260L
+    }
+
+    private object QuietSendAnimationTuning {
+        const val MESSAGE_DURATION_MS = 230L
+        const val MESSAGE_START_OFFSET_DP = 10
+        const val MESSAGE_START_SCALE = 0.96f
+        const val AVATAR_START_SCALE = 0.90f
+        const val AVATAR_DURATION_MS = 207L
+        const val TIME_DELAY_MS = 125L
+        const val TIME_DURATION_MS = 150L
+        const val TIME_START_OFFSET_DP = 3
+
+        const val MEDIA_DURATION_MS = 300L
+        const val MEDIA_START_OFFSET_DP = 18
+        const val MEDIA_START_SCALE = 0.72f
+        const val MEDIA_ITEM_STAGGER_MS = 38L
+        const val CAPTION_DELAY_MS = 90L
+        const val PURE_MEDIA_AVATAR_DELAY_MS = 20L
+    }
+
+    private data class PendingNewMessageAnimation(
+        val startDelayMs: Long,
+        val showAvatar: Boolean
+    )
+
+    private var pendingNewMessageAnimation: PendingNewMessageAnimation? = null
+    private val quietInterpolator = PathInterpolator(0.20f, 0.78f, 0.20f, 1.00f)
+    /**
+     * 只给下一条“刚发送”的用户消息安排入场动画。
+     * 历史加载不会调用它，因此旧消息不会在进入聊天时重新晃一遍。
+     */
+    fun prepareNextMessageAnimation(
+        startDelayMs: Long = 0L,
+        showAvatar: Boolean = true
+    ) {
+        pendingNewMessageAnimation = PendingNewMessageAnimation(
+            startDelayMs = startDelayMs.coerceAtLeast(0L),
+            showAvatar = showAvatar
+        )
+    }
+
+    private fun consumePendingMessageAnimation(): PendingNewMessageAnimation? =
+        pendingNewMessageAnimation.also { pendingNewMessageAnimation = null }
+
+    /**
+     * 估算一条“安静版”用户消息从开始动画到最后一个可见元素落稳所需的时间。
+     * Activity 用它把“对方正在输入中”排在整批用户消息之后，而不是抢在动画中间出现。
+     */
+    fun estimateQuietMessageVisualTailMs(
+        mediaItemCount: Int = 0,
+        hasCaption: Boolean = false
+    ): Long {
+        if (mediaItemCount <= 0) {
+            return maxOf(
+                QuietSendAnimationTuning.MESSAGE_DURATION_MS,
+                QuietSendAnimationTuning.AVATAR_DURATION_MS,
+                QuietSendAnimationTuning.TIME_DELAY_MS + QuietSendAnimationTuning.TIME_DURATION_MS
+            )
+        }
+
+        val mediaTailDelay =
+            (mediaItemCount - 1).coerceAtLeast(0) * QuietSendAnimationTuning.MEDIA_ITEM_STAGGER_MS
+        val mediaEnd = mediaTailDelay + QuietSendAnimationTuning.MEDIA_DURATION_MS
+        val textAndTimeEnd = if (hasCaption) {
+            mediaTailDelay +
+                QuietSendAnimationTuning.CAPTION_DELAY_MS +
+                QuietSendAnimationTuning.TIME_DELAY_MS +
+                QuietSendAnimationTuning.TIME_DURATION_MS
+        } else {
+            mediaTailDelay +
+                QuietSendAnimationTuning.TIME_DELAY_MS +
+                QuietSendAnimationTuning.TIME_DURATION_MS
+        }
+        val avatarEnd = if (hasCaption) {
+            mediaTailDelay +
+                QuietSendAnimationTuning.CAPTION_DELAY_MS +
+                QuietSendAnimationTuning.AVATAR_DURATION_MS
+        } else {
+            QuietSendAnimationTuning.PURE_MEDIA_AVATAR_DELAY_MS +
+                QuietSendAnimationTuning.AVATAR_DURATION_MS
+        }
+        return maxOf(mediaEnd, textAndTimeEnd, avatarEnd)
+    }
+
     /** 长按菜单回调（内容, 作者） */
     var onMessageMenu: ((content: String, author: String) -> Unit)? = null
 
@@ -67,6 +158,9 @@ class UserBubbleRenderer(
         ChatAppearanceStorage.DEFAULT_AVATAR_FRAME_OFFSET_PERCENT
     var avatarFrameOffsetYPercent: Int =
         ChatAppearanceStorage.DEFAULT_AVATAR_FRAME_OFFSET_PERCENT
+
+    var bubbleStyle: BubbleStyleStorage.BubbleStyle =
+        BubbleStyleStorage(activity).defaultStyle(BubbleStyleStorage.Target.USER)
 
     private val c get() = ThemeHelper.getColors(activity)
     private fun dp(v: Int): Int = (v * activity.resources.displayMetrics.density).toInt()
@@ -92,14 +186,69 @@ class UserBubbleRenderer(
         return stageWidth + dp(UserBubbleLayoutTuning.AVATAR_GAP_DP)
     }
 
-    private fun maxUserContentWidth(fraction: Float): Int = minOf(
-        (screenWidth * fraction).toInt(),
-        (
+    private fun maxUserContentWidth(
+        fraction: Float,
+        includeBubbleOffset: Boolean = false
+    ): Int {
+        val outwardOffset = if (includeBubbleOffset &&
+            bubbleStyle.fillMode.usesImage
+        ) {
+            dp(bubbleStyle.imageAvatarOffsetDp.coerceAtLeast(0))
+        } else {
+            0
+        }
+        return minOf(
+            (screenWidth * fraction).toInt(),
+            (
+                screenWidth -
+                    userAvatarReservedWidthPx() -
+                    dp(UserBubbleLayoutTuning.ROW_START_INSET_DP + UserBubbleLayoutTuning.ROW_END_INSET_DP) -
+                    outwardOffset
+                ).coerceAtLeast(dp(120))
+        )
+    }
+
+    /**
+     * 聊天流里的图片只作为可点击附件预览：目标边长 84dp，窄屏时自动缩小。
+     * 这里计算的是 UI 缩略图尺寸，不改动原图文件，也不影响发送给住户的图片数据。
+     */
+    private fun imageThumbnailSizePx(columns: Int): Int {
+        val safeColumns = columns.coerceIn(1, 3)
+        val gap = dp(UserBubbleLayoutTuning.IMAGE_THUMB_GAP_DP)
+        val available = (
             screenWidth -
                 userAvatarReservedWidthPx() -
-                dp(UserBubbleLayoutTuning.ROW_START_INSET_DP + UserBubbleLayoutTuning.ROW_END_INSET_DP)
-            ).coerceAtLeast(dp(120))
-    )
+                dp(UserBubbleLayoutTuning.ROW_START_INSET_DP + UserBubbleLayoutTuning.ROW_END_INSET_DP) -
+                gap * (safeColumns - 1)
+            ).coerceAtLeast(safeColumns)
+        return minOf(
+            dp(UserBubbleLayoutTuning.IMAGE_THUMB_MAX_SIZE_DP),
+            available / safeColumns
+        ).coerceAtLeast(1)
+    }
+
+    private fun imageGridHeightPx(itemCount: Int, columns: Int, thumbSize: Int): Int {
+        if (itemCount <= 0) return 0
+        val rows = (itemCount + columns - 1) / columns
+        return rows * thumbSize +
+            (rows - 1).coerceAtLeast(0) * dp(UserBubbleLayoutTuning.IMAGE_THUMB_GAP_DP)
+    }
+
+    /** 用户头像位于右侧，因此“远离头像”的正值需要向左移动。 */
+    private fun applyUserImageBubbleOffset(column: View) {
+        val style = bubbleStyle
+        val params = column.layoutParams as? LinearLayout.LayoutParams ?: return
+        if (style.fillMode.usesImage) {
+            // 用户头像位于右侧，正值通过 marginEnd 真正把整列向左推远。
+            params.marginEnd = dp(style.imageAvatarOffsetDp)
+            column.translationY = dp(style.imageVerticalOffsetDp).toFloat()
+        } else {
+            params.marginEnd = 0
+            column.translationY = 0f
+        }
+        column.translationX = 0f
+        column.layoutParams = params
+    }
 
     /**
      * Android 的多行 TextView 在受 maxWidth 约束时，测量宽度可能保留整块可用宽度，
@@ -138,6 +287,25 @@ class UserBubbleRenderer(
     private fun scrollToBottom() {
         scrollView.post { scrollView.fullScroll(View.FOCUS_DOWN) }
     }
+
+    /**
+     * 图片说明使用普通文字气泡自己的宽度上限，不继承同组图片／网格的宽度。
+     * 这样横图再宽，也不会把一小句说明强行拉成同样宽的气泡。
+     */
+    private fun createImageCaption(caption: String, maxWidthPx: Int): TextView =
+        TextView(activity).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { topMargin = dp(UserBubbleLayoutTuning.IMAGE_CAPTION_TOP_MARGIN_DP) }
+            maxWidth = maxWidthPx
+            text = MarkdownRenderer.render(caption)
+            setTextColor(c.textOnAccent)
+            textSize = 13f
+            setLineSpacing(0f, 1.3f)
+            setPadding(dp(10), dp(6), dp(10), dp(6))
+            setBackgroundResource(R.drawable.chat_bubble_user)
+        }
 
     private fun makeTimeView(timeStr: String, align: Int): TextView {
         val isRight = align == Gravity.END
@@ -213,7 +381,7 @@ class UserBubbleRenderer(
         scrollToBottom()
     }
 
-    private fun createUserAvatar(): View? {
+    private fun createUserAvatar(topMarginPx: Int = dp(UserBubbleLayoutTuning.AVATAR_TOP_MARGIN_DP)): View? {
         if (!showUserAvatar) return null
         val avatar = FriendAvatarHelper.createUserAvatar(
             context = activity,
@@ -230,12 +398,17 @@ class UserBubbleRenderer(
             current?.height ?: LinearLayout.LayoutParams.WRAP_CONTENT
         ).apply {
             marginStart = dp(UserBubbleLayoutTuning.AVATAR_GAP_DP)
-            topMargin = dp(UserBubbleLayoutTuning.AVATAR_TOP_MARGIN_DP)
+            topMargin = topMarginPx.coerceAtLeast(0)
         }
         return avatar
     }
 
-    private fun attachRightAlignedContent(wrapper: LinearLayout, content: View) {
+    private fun attachRightAlignedContent(
+        wrapper: LinearLayout,
+        content: View,
+        avatarTopMarginPx: Int = dp(UserBubbleLayoutTuning.AVATAR_TOP_MARGIN_DP),
+        includeAvatar: Boolean = true
+    ): View? {
         wrapper.orientation = LinearLayout.HORIZONTAL
         wrapper.clipChildren = false
         wrapper.clipToPadding = false
@@ -246,11 +419,104 @@ class UserBubbleRenderer(
             0
         )
         wrapper.addView(content)
-        createUserAvatar()?.let(wrapper::addView)
+
+        if (!showUserAvatar) return null
+        if (includeAvatar) {
+            return createUserAvatar(avatarTopMarginPx)?.also { wrapper.addView(it) }
+        }
+
+        // 连续发送时只让最后一条显示头像，但前面的消息仍保留同样的头像槽位，
+        // 避免气泡忽左忽右。
+        wrapper.addView(View(activity).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                userAvatarReservedWidthPx().coerceAtLeast(1),
+                1
+            )
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+        })
+        return null
+    }
+
+    private fun animateQuietEntry(
+        view: View,
+        startDelayMs: Long,
+        startOffsetDp: Int = QuietSendAnimationTuning.MESSAGE_START_OFFSET_DP,
+        startScale: Float = QuietSendAnimationTuning.MESSAGE_START_SCALE,
+        durationMs: Long = QuietSendAnimationTuning.MESSAGE_DURATION_MS
+    ) {
+        view.animate().cancel()
+        view.alpha = 0f
+        view.translationY = dp(startOffsetDp).toFloat()
+        view.scaleX = startScale
+        view.scaleY = startScale
+        view.post {
+            if (!view.isAttachedToWindow) {
+                view.alpha = 1f
+                view.translationY = 0f
+                view.scaleX = 1f
+                view.scaleY = 1f
+                return@post
+            }
+            view.pivotX = view.width.toFloat()
+            view.pivotY = view.height.toFloat()
+            view.animate()
+                .alpha(1f)
+                .translationY(0f)
+                .scaleX(1f)
+                .scaleY(1f)
+                .setStartDelay(startDelayMs.coerceAtLeast(0L))
+                .setDuration(durationMs)
+                .setInterpolator(quietInterpolator)
+                .withLayer()
+                .start()
+        }
+    }
+
+    private fun animateQuietAvatar(view: View?, startDelayMs: Long) {
+        if (view == null) return
+        animateQuietEntry(
+            view = view,
+            startDelayMs = startDelayMs,
+            startOffsetDp = 0,
+            startScale = QuietSendAnimationTuning.AVATAR_START_SCALE,
+            durationMs = QuietSendAnimationTuning.AVATAR_DURATION_MS
+        )
+    }
+
+    private fun animateQuietTime(view: View, startDelayMs: Long) {
+        view.animate().cancel()
+        view.alpha = 0f
+        view.translationY = dp(QuietSendAnimationTuning.TIME_START_OFFSET_DP).toFloat()
+        view.post {
+            if (!view.isAttachedToWindow) {
+                view.alpha = 1f
+                view.translationY = 0f
+                return@post
+            }
+            view.animate()
+                .alpha(1f)
+                .translationY(0f)
+                .setStartDelay(startDelayMs.coerceAtLeast(0L))
+                .setDuration(QuietSendAnimationTuning.TIME_DURATION_MS)
+                .setInterpolator(quietInterpolator)
+                .withLayer()
+                .start()
+        }
+    }
+
+    private fun animateQuietMedia(view: View, startDelayMs: Long) {
+        animateQuietEntry(
+            view = view,
+            startDelayMs = startDelayMs,
+            startOffsetDp = QuietSendAnimationTuning.MEDIA_START_OFFSET_DP,
+            startScale = QuietSendAnimationTuning.MEDIA_START_SCALE,
+            durationMs = QuietSendAnimationTuning.MEDIA_DURATION_MS
+        )
     }
 
     /** 普通用户文字气泡 */
     fun addUserBubble(msg: String, timeStr: String): View {
+        val animation = consumePendingMessageAnimation()
         val wrapper = LinearLayout(activity).apply {
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
@@ -265,7 +531,11 @@ class UserBubbleRenderer(
                 LinearLayout.LayoutParams.WRAP_CONTENT
             )
         }
-        val bubbleMaxWidth = maxUserContentWidth(UserBubbleLayoutTuning.TEXT_MAX_WIDTH_FRACTION)
+        applyUserImageBubbleOffset(column)
+        val bubbleMaxWidth = maxUserContentWidth(
+            UserBubbleLayoutTuning.TEXT_MAX_WIDTH_FRACTION,
+            includeBubbleOffset = true
+        )
         val bubble = TextView(activity).apply {
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -273,7 +543,6 @@ class UserBubbleRenderer(
             )
             maxWidth = bubbleMaxWidth
             text = MarkdownRenderer.render(msg)
-            setTextColor(c.textOnAccent)
             textSize = 14f
             setLineSpacing(0f, 1.35f)
             setPaddingRelative(
@@ -282,19 +551,40 @@ class UserBubbleRenderer(
                 dp(UserBubbleLayoutTuning.BUBBLE_END_PADDING_DP),
                 dp(UserBubbleLayoutTuning.BUBBLE_VERTICAL_PADDING_DP)
             )
-            setBackgroundResource(R.drawable.chat_bubble_user)
+            BubbleStyleApplier.apply(
+                this,
+                bubbleStyle,
+                BubbleStyleStorage.Target.USER
+            )
             setOnLongClickListener { onMessageMenu?.invoke(msg, "我"); true }
         }
+        val timeView = makeTimeView(timeStr, Gravity.END)
         column.addView(bubble)
-        column.addView(makeTimeView(timeStr, Gravity.END))
-        attachRightAlignedContent(wrapper, column)
+        column.addView(timeView)
+        val avatar = attachRightAlignedContent(
+            wrapper,
+            column,
+            includeAvatar = animation?.showAvatar ?: true
+        )
         addToConversation(wrapper)
+        animation?.let { spec ->
+            animateQuietEntry(bubble, spec.startDelayMs)
+            animateQuietTime(
+                timeView,
+                spec.startDelayMs + QuietSendAnimationTuning.TIME_DELAY_MS
+            )
+            animateQuietAvatar(avatar, spec.startDelayMs)
+        }
         tightenMultilineBubbleWidth(bubble, bubbleMaxWidth)
         return wrapper
     }
 
-    /** 用户普通单张图片：不套彩色气泡，按原比例显示为圆角图片卡片。 */
+    /**
+     * 用户单图附件：聊天流中固定为不超过 84dp 的正方形缩略图，点击仍查看原图。
+     * 有说明文字时头像回到文字气泡顶部；纯图片时头像保持在附件顶部。
+     */
     fun addImageBubble(imagePath: String, timeStr: String, caption: String = "") {
+        val animation = consumePendingMessageAnimation()
         val wrapper = LinearLayout(activity).apply {
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
@@ -311,57 +601,69 @@ class UserBubbleRenderer(
             )
         }
 
-        val (sourceWidth, sourceHeight) = readImageSize(imagePath) ?: (dp(220) to dp(220))
-        val ratio = sourceWidth.toFloat() / sourceHeight.toFloat()
-        val maxDisplayWidth = when {
-            ratio > 1.15f -> minOf(maxUserContentWidth(0.72f), dp(280))
-            else -> minOf(maxUserContentWidth(0.64f), dp(220))
-        }
-        val maxDisplayHeight = when {
-            ratio < 0.85f -> dp(320)
-            ratio > 1.15f -> dp(220)
-            else -> dp(220)
-        }
-        val (displayWidth, displayHeight) = fitSize(
-            sourceWidth,
-            sourceHeight,
-            maxDisplayWidth,
-            maxDisplayHeight
-        )
-
+        val thumbSize = imageThumbnailSizePx(columns = 1)
         val imageView = ImageView(activity).apply {
-            layoutParams = LinearLayout.LayoutParams(displayWidth, displayHeight)
-            scaleType = ImageView.ScaleType.FIT_CENTER
+            layoutParams = LinearLayout.LayoutParams(thumbSize, thumbSize)
+            scaleType = ImageView.ScaleType.CENTER_CROP
             if (File(imagePath).isFile) {
-                decodeSampled(imagePath, displayWidth, displayHeight)?.let(::setImageBitmap)
+                decodeSampled(imagePath, thumbSize, thumbSize)?.let(::setImageBitmap)
             }
             roundCorners(this, 10)
+            contentDescription = "查看原图"
             setOnClickListener { ImageHelper.showFullImage(activity, imagePath) }
         }
         column.addView(imageView)
 
-        if (caption.isNotEmpty()) {
-            column.addView(TextView(activity).apply {
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
-                ).apply { topMargin = dp(4) }
-                maxWidth = displayWidth.coerceAtLeast(dp(140))
-                text = MarkdownRenderer.render(caption)
-                setTextColor(c.textOnAccent)
-                textSize = 13f
-                setLineSpacing(0f, 1.3f)
-                setPadding(dp(10), dp(6), dp(10), dp(6))
-                setBackgroundResource(R.drawable.chat_bubble_user)
-            })
+        val captionMaxWidth = maxUserContentWidth(UserBubbleLayoutTuning.TEXT_MAX_WIDTH_FRACTION)
+        val captionView = caption.takeIf { it.isNotEmpty() }?.let {
+            createImageCaption(it, captionMaxWidth).also { view -> column.addView(view) }
         }
-        column.addView(makeTimeView(timeStr, Gravity.END))
-        attachRightAlignedContent(wrapper, column)
+        val timeView = makeTimeView(timeStr, Gravity.END)
+        column.addView(timeView)
+
+        val avatarTop = if (captionView != null) {
+            thumbSize +
+                dp(UserBubbleLayoutTuning.IMAGE_CAPTION_TOP_MARGIN_DP) +
+                dp(UserBubbleLayoutTuning.AVATAR_TOP_MARGIN_DP)
+        } else {
+            dp(UserBubbleLayoutTuning.AVATAR_TOP_MARGIN_DP)
+        }
+        val avatar = attachRightAlignedContent(
+            wrapper,
+            column,
+            avatarTopMarginPx = avatarTop,
+            includeAvatar = animation?.showAvatar ?: true
+        )
         addToConversation(wrapper)
+        animation?.let { spec ->
+            animateQuietMedia(imageView, spec.startDelayMs)
+            val captionDelay = if (captionView != null) {
+                QuietSendAnimationTuning.CAPTION_DELAY_MS
+            } else {
+                0L
+            }
+            captionView?.let {
+                animateQuietEntry(it, spec.startDelayMs + captionDelay)
+            }
+            animateQuietTime(
+                timeView,
+                spec.startDelayMs + captionDelay + QuietSendAnimationTuning.TIME_DELAY_MS
+            )
+            animateQuietAvatar(
+                avatar,
+                spec.startDelayMs + if (captionView != null) {
+                    QuietSendAnimationTuning.CAPTION_DELAY_MS
+                } else {
+                    QuietSendAnimationTuning.PURE_MEDIA_AVATAR_DELAY_MS
+                }
+            )
+        }
+        captionView?.let { tightenMultilineBubbleWidth(it, captionMaxWidth) }
     }
 
     /** 用户表情包：保留透明通道，不套气泡、不加白底。 */
     fun addStickerBubble(imagePath: String, timeStr: String, caption: String = "") {
+        val animation = consumePendingMessageAnimation()
         val wrapper = LinearLayout(activity).apply {
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
@@ -390,31 +692,52 @@ class UserBubbleRenderer(
             setOnClickListener { ImageHelper.showFullImage(activity, imagePath) }
         }
         column.addView(imageView)
-        if (caption.isNotEmpty()) {
-            column.addView(TextView(activity).apply {
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
-                ).apply { topMargin = dp(4) }
-                maxWidth = minOf(maxUserContentWidth(0.72f), dp(260))
-                text = MarkdownRenderer.render(caption)
-                setTextColor(c.textOnAccent)
-                textSize = 13f
-                setLineSpacing(0f, 1.3f)
-                setPadding(dp(10), dp(6), dp(10), dp(6))
-                setBackgroundResource(R.drawable.chat_bubble_user)
-            })
+        val captionMaxWidth = maxUserContentWidth(UserBubbleLayoutTuning.TEXT_MAX_WIDTH_FRACTION)
+        val captionView = caption.takeIf { it.isNotEmpty() }?.let {
+            createImageCaption(it, captionMaxWidth).also { view -> column.addView(view) }
         }
-        column.addView(makeTimeView(timeStr, Gravity.END))
-        attachRightAlignedContent(wrapper, column)
+        val timeView = makeTimeView(timeStr, Gravity.END)
+        column.addView(timeView)
+        val avatar = attachRightAlignedContent(
+            wrapper,
+            column,
+            includeAvatar = animation?.showAvatar ?: true
+        )
         addToConversation(wrapper)
+        animation?.let { spec ->
+            animateQuietMedia(imageView, spec.startDelayMs)
+            val captionDelay = if (captionView != null) {
+                QuietSendAnimationTuning.CAPTION_DELAY_MS
+            } else {
+                0L
+            }
+            captionView?.let { animateQuietEntry(it, spec.startDelayMs + captionDelay) }
+            animateQuietTime(
+                timeView,
+                spec.startDelayMs + captionDelay + QuietSendAnimationTuning.TIME_DELAY_MS
+            )
+            animateQuietAvatar(
+                avatar,
+                spec.startDelayMs + if (captionView != null) {
+                    QuietSendAnimationTuning.CAPTION_DELAY_MS
+                } else {
+                    QuietSendAnimationTuning.PURE_MEDIA_AVATAR_DELAY_MS
+                }
+            )
+        }
+        captionView?.let { tightenMultilineBubbleWidth(it, captionMaxWidth) }
     }
 
-    /** 用户多图网格气泡 */
+    /**
+     * 用户多图附件：每行最多三张，所有缩略图同尺寸，最大 84dp；窄屏自动缩小。
+     * 有说明文字时头像只与文字气泡对齐，纯图片时仍与附件网格顶部对齐。
+     */
     fun addMultiImageBubble(imagePaths: List<String>, timeStr: String, caption: String = "") {
-        val thumbSize = dp(90)
-        val gap = dp(4)
-        val columns = if (imagePaths.size == 2) 2 else 3
+        if (imagePaths.isEmpty()) return
+        val animation = consumePendingMessageAnimation()
+        val columns = minOf(imagePaths.size, 3)
+        val thumbSize = imageThumbnailSizePx(columns)
+        val gap = dp(UserBubbleLayoutTuning.IMAGE_THUMB_GAP_DP)
 
         val wrapper = LinearLayout(activity).apply {
             layoutParams = LinearLayout.LayoutParams(
@@ -425,6 +748,7 @@ class UserBubbleRenderer(
         }
         val column = LinearLayout(activity).apply {
             orientation = LinearLayout.VERTICAL
+            gravity = Gravity.END
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
@@ -437,6 +761,7 @@ class UserBubbleRenderer(
                 LinearLayout.LayoutParams.WRAP_CONTENT
             )
         }
+        val imageViews = mutableListOf<ImageView>()
         for ((index, path) in imagePaths.withIndex()) {
             val iv = ImageView(activity).apply {
                 layoutParams = GridLayout.LayoutParams().apply {
@@ -450,33 +775,68 @@ class UserBubbleRenderer(
                     )
                 }
                 scaleType = ImageView.ScaleType.CENTER_CROP
-                if (File(path).exists()) {
+                if (File(path).isFile) {
                     decodeSampled(path, thumbSize, thumbSize)?.let(::setImageBitmap)
                 }
-                roundCorners(this, 6)
+                roundCorners(this, 10)
+                contentDescription = "查看第 ${index + 1} 张原图"
                 setOnClickListener { ImageHelper.showFullImage(activity, path) }
             }
+            imageViews.add(iv)
             grid.addView(iv)
         }
         column.addView(grid)
-        if (caption.isNotEmpty()) {
-            column.addView(TextView(activity).apply {
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
-                ).apply { topMargin = dp(4) }
-                maxWidth = columns * thumbSize + (columns - 1) * gap
-                text = MarkdownRenderer.render(caption)
-                setTextColor(c.textOnAccent)
-                textSize = 13f
-                setLineSpacing(0f, 1.3f)
-                setPadding(dp(10), dp(6), dp(10), dp(6))
-                setBackgroundResource(R.drawable.chat_bubble_user)
-            })
+
+        val captionMaxWidth = maxUserContentWidth(UserBubbleLayoutTuning.TEXT_MAX_WIDTH_FRACTION)
+        val captionView = caption.takeIf { it.isNotEmpty() }?.let {
+            createImageCaption(it, captionMaxWidth).also { view -> column.addView(view) }
         }
-        column.addView(makeTimeView(timeStr, Gravity.END))
-        attachRightAlignedContent(wrapper, column)
+        val timeView = makeTimeView(timeStr, Gravity.END)
+        column.addView(timeView)
+
+        val avatarTop = if (captionView != null) {
+            imageGridHeightPx(imagePaths.size, columns, thumbSize) +
+                dp(UserBubbleLayoutTuning.IMAGE_CAPTION_TOP_MARGIN_DP) +
+                dp(UserBubbleLayoutTuning.AVATAR_TOP_MARGIN_DP)
+        } else {
+            dp(UserBubbleLayoutTuning.AVATAR_TOP_MARGIN_DP)
+        }
+        val avatar = attachRightAlignedContent(
+            wrapper,
+            column,
+            avatarTopMarginPx = avatarTop,
+            includeAvatar = animation?.showAvatar ?: true
+        )
         addToConversation(wrapper)
+        animation?.let { spec ->
+            imageViews.forEachIndexed { index, view ->
+                animateQuietMedia(
+                    view,
+                    spec.startDelayMs + index * QuietSendAnimationTuning.MEDIA_ITEM_STAGGER_MS
+                )
+            }
+            val mediaTailDelay =
+                (imageViews.size - 1).coerceAtLeast(0) * QuietSendAnimationTuning.MEDIA_ITEM_STAGGER_MS
+            val captionDelay = if (captionView != null) {
+                mediaTailDelay + QuietSendAnimationTuning.CAPTION_DELAY_MS
+            } else {
+                mediaTailDelay
+            }
+            captionView?.let { animateQuietEntry(it, spec.startDelayMs + captionDelay) }
+            animateQuietTime(
+                timeView,
+                spec.startDelayMs + captionDelay + QuietSendAnimationTuning.TIME_DELAY_MS
+            )
+            animateQuietAvatar(
+                avatar,
+                spec.startDelayMs + if (captionView != null) {
+                    captionDelay
+                } else {
+                    QuietSendAnimationTuning.PURE_MEDIA_AVATAR_DELAY_MS
+                }
+            )
+        }
+        captionView?.let { tightenMultilineBubbleWidth(it, captionMaxWidth) }
     }
 
     /** 历史加载时在指定位置插入图片占位气泡 */
@@ -508,6 +868,7 @@ class UserBubbleRenderer(
 
     /** 带引用的用户气泡 */
     fun addQuoteBubble(quoteAuthor: String, quoteContent: String, msg: String, timeStr: String): View {
+        val animation = consumePendingMessageAnimation()
         val wrapper = LinearLayout(activity).apply {
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
@@ -573,10 +934,24 @@ class UserBubbleRenderer(
             setBackgroundResource(R.drawable.chat_bubble_user)
             setOnLongClickListener { onMessageMenu?.invoke(msg, "我"); true }
         }
+        val timeView = makeTimeView(timeStr, Gravity.END)
         column.addView(messageBubble)
-        column.addView(makeTimeView(timeStr, Gravity.END))
-        attachRightAlignedContent(wrapper, column)
+        column.addView(timeView)
+        val avatar = attachRightAlignedContent(
+            wrapper,
+            column,
+            includeAvatar = animation?.showAvatar ?: true
+        )
         addToConversation(wrapper)
+        animation?.let { spec ->
+            animateQuietEntry(quoteBlock, spec.startDelayMs)
+            animateQuietEntry(messageBubble, spec.startDelayMs + 24L)
+            animateQuietTime(
+                timeView,
+                spec.startDelayMs + QuietSendAnimationTuning.TIME_DELAY_MS
+            )
+            animateQuietAvatar(avatar, spec.startDelayMs)
+        }
         tightenMultilineBubbleWidth(messageBubble, messageBubbleMaxWidth)
         return wrapper
     }

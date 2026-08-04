@@ -154,6 +154,7 @@ class FriendStorage(private val context: Context) {
         deleteFileIfExists("summaries", friendId)
         deleteFileIfExists("echo", friendId)
         deleteFileIfExists("subconscious", "prefs_$friendId")
+        deleteFileIfExists("subconscious", "review_$friendId")
         ResidentPromptStorage(context).delete(friendId)
         SleepMessageStorage(context).clear(friendId)
         ChatAppearanceStorage(context).clearForFriend(friendId)

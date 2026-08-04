@@ -1,11 +1,8 @@
 package com.haven.guiqi
 
 import android.content.Context
-import android.graphics.Outline
-import android.net.Uri
 import android.view.Gravity
 import android.view.View
-import android.view.ViewOutlineProvider
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
@@ -201,23 +198,13 @@ object FriendAvatarHelper {
         avatarShape: ChatAppearanceStorage.AvatarShape
     ): View {
         val colors = ThemeHelper.getColors(context)
-        val shapeProvider = object : ViewOutlineProvider() {
-            override fun getOutline(view: View, outline: Outline) {
-                when (avatarShape) {
-                    ChatAppearanceStorage.AvatarShape.CIRCLE ->
-                        outline.setOval(0, 0, view.width, view.height)
-                    ChatAppearanceStorage.AvatarShape.SQUARE ->
-                        outline.setRect(0, 0, view.width, view.height)
-                }
-            }
-        }
+        val sizePx = (sizeDp * context.resources.displayMetrics.density).toInt().coerceAtLeast(1)
 
         return if (avatarPath.isNotEmpty() && File(avatarPath).isFile) {
-            ImageView(context).apply {
-                scaleType = ImageView.ScaleType.CENTER_CROP
-                setImageURI(Uri.fromFile(File(avatarPath)))
-                clipToOutline = true
-                outlineProvider = shapeProvider
+            SampledAvatarImageView(context).apply {
+                minimumWidth = sizePx
+                minimumHeight = sizePx
+                setAvatarFile(File(avatarPath), sizePx, avatarShape)
             }
         } else {
             TextView(context).apply {
@@ -237,8 +224,6 @@ object FriendAvatarHelper {
                         ContextCompat.getColor(context, R.color.haven_desktop_icon_circle_border)
                     )
                 }
-                clipToOutline = true
-                outlineProvider = shapeProvider
             }
         }
     }

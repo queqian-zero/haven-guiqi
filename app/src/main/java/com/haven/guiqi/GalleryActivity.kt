@@ -7,19 +7,22 @@ import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
+import android.media.ThumbnailUtils
 import android.os.Build
 import android.os.Bundle
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
+import android.util.LruCache
+import android.widget.AbsListView
+import android.widget.BaseAdapter
 import android.widget.EditText
 import android.widget.FrameLayout
-import android.widget.GridLayout
+import android.widget.GridView
 import android.widget.HorizontalScrollView
 import android.widget.ImageView
 import android.widget.LinearLayout
-import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
@@ -42,8 +45,8 @@ class GalleryActivity : AppCompatActivity() {
     private lateinit var filterBar: LinearLayout
     private lateinit var albumBar: LinearLayout
     private lateinit var albumScroll: HorizontalScrollView
-    private lateinit var scrollView: ScrollView
-    private lateinit var grid: GridLayout
+    private lateinit var grid: GridView
+    private lateinit var galleryAdapter: GalleryAdapter
     private lateinit var emptyView: LinearLayout
     private lateinit var emptyTitle: TextView
     private lateinit var emptyHint: TextView
@@ -59,7 +62,17 @@ class GalleryActivity : AppCompatActivity() {
     private var pendingImportCategory = GalleryStorage.Category.GENERAL
     private var pendingImportAlbumId: String? = null
     private var skipInitialResumeRefresh = true
+    private var galleryTotalCount = 0
+    private var galleryRenderVersion = 0
+    private val metadataExecutor = Executors.newSingleThreadExecutor()
     private val imageExecutor = Executors.newFixedThreadPool(2)
+    private val thumbnailCache = object : LruCache<String, Bitmap>(
+        (Runtime.getRuntime().maxMemory() / 1024L / 16L)
+            .toInt()
+            .coerceIn(8 * 1024, 32 * 1024)
+    ) {
+        override fun sizeOf(key: String, value: Bitmap): Int = value.byteCount / 1024
+    }
 
     private val imagePicker = registerForActivityResult(
         ActivityResultContracts.OpenMultipleDocuments()
@@ -125,6 +138,10 @@ class GalleryActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        galleryRenderVersion++
+        if (::grid.isInitialized) grid.adapter = null
+        thumbnailCache.evictAll()
+        metadataExecutor.shutdownNow()
         imageExecutor.shutdownNow()
         super.onDestroy()
     }
@@ -267,21 +284,19 @@ class GalleryActivity : AppCompatActivity() {
             1f
         ))
 
-        grid = GridLayout(this).apply {
-            columnCount = 3
-            alignmentMode = GridLayout.ALIGN_BOUNDS
-            useDefaultMargins = false
+        galleryAdapter = GalleryAdapter()
+        grid = GridView(this).apply {
+            numColumns = 3
+            horizontalSpacing = dp(8)
+            verticalSpacing = dp(8)
+            stretchMode = GridView.STRETCH_COLUMN_WIDTH
             setPadding(dp(14), dp(4), dp(14), dp(28))
-        }
-        scrollView = ScrollView(this).apply {
-            isFillViewport = true
             clipToPadding = false
-            addView(grid, FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT,
-                FrameLayout.LayoutParams.WRAP_CONTENT
-            ))
+            isVerticalScrollBarEnabled = false
+            selector = ColorDrawable(Color.TRANSPARENT)
+            adapter = galleryAdapter
         }
-        contentFrame.addView(scrollView, FrameLayout.LayoutParams(
+        contentFrame.addView(grid, FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT,
             FrameLayout.LayoutParams.MATCH_PARENT
         ))
@@ -470,7 +485,7 @@ class GalleryActivity : AppCompatActivity() {
     private fun toggleSelection(itemId: String) {
         if (!selectedItemIds.add(itemId)) selectedItemIds.remove(itemId)
         updateSelectionBar()
-        renderGallery()
+        if (::galleryAdapter.isInitialized) galleryAdapter.notifyDataSetChanged()
     }
 
     private fun clearSelection(refreshGallery: Boolean = true) {
@@ -480,7 +495,7 @@ class GalleryActivity : AppCompatActivity() {
         }
         selectedItemIds.clear()
         updateSelectionBar()
-        if (refreshGallery && ::grid.isInitialized) renderGallery()
+        if (refreshGallery && ::galleryAdapter.isInitialized) galleryAdapter.notifyDataSetChanged()
     }
 
     private fun moveSelectedItems() {
@@ -524,97 +539,54 @@ class GalleryActivity : AppCompatActivity() {
     }
 
     private fun renderGallery() {
-        val allItems = storage.listAll()
-        selectedItemIds.retainAll(allItems.map { it.id }.toSet())
-        updateSelectionBar()
-
-        val items = storage.listByCategory(
-            category = currentCategory,
-            albumId = currentAlbumId,
-            unclassifiedOnly = showUnclassifiedOnly
-        )
-        val total = allItems.size
-        countText.text = if (total == 0) "全屋共用 · 还没有图片" else "全屋共用 · $total 张图片"
-        grid.removeAllViews()
-
-        val isEmpty = items.isEmpty()
-        emptyView.visibility = if (isEmpty) View.VISIBLE else View.GONE
-        scrollView.visibility = if (isEmpty) View.GONE else View.VISIBLE
-        if (isEmpty) {
-            updateEmptyCopy()
-            return
+        val version = ++galleryRenderVersion
+        val category = currentCategory
+        val albumId = currentAlbumId
+        val unclassifiedOnly = showUnclassifiedOnly
+        if (::countText.isInitialized && galleryTotalCount == 0) {
+            countText.text = "全屋共用 · 整理中…"
         }
 
-        val side = ((resources.displayMetrics.widthPixels - dp(28) - dp(16)) / 3f).toInt()
-        items.forEachIndexed { index, item ->
-            val selected = item.id in selectedItemIds
-            val cell = FrameLayout(this).apply {
-                contentDescription = item.displayName
-                setOnClickListener {
-                    if (selectedItemIds.isNotEmpty()) toggleSelection(item.id) else showPreview(item)
-                }
-                setOnLongClickListener {
-                    toggleSelection(item.id)
-                    true
-                }
+        metadataExecutor.execute {
+            val allItems = storage.listAll()
+            val categoryItems = if (category == null) {
+                allItems
+            } else {
+                allItems.filter { it.category == category }
             }
-            val image = ImageView(this).apply {
-                scaleType = ImageView.ScaleType.CENTER_CROP
-                background = rounded(c.card, 12, if (selected) c.accentStrong else c.border)
-                clipToOutline = true
-                alpha = if (selected) 0.68f else 1f
-            }
-            cell.addView(image, FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT,
-                FrameLayout.LayoutParams.MATCH_PARENT
-            ))
-
-            if (selected) {
-                cell.addView(View(this).apply {
-                    background = rounded(
-                        Color.argb(
-                            42,
-                            Color.red(c.accentStrong),
-                            Color.green(c.accentStrong),
-                            Color.blue(c.accentStrong)
-                        ),
-                        12
-                    )
-                }, FrameLayout.LayoutParams(
-                    FrameLayout.LayoutParams.MATCH_PARENT,
-                    FrameLayout.LayoutParams.MATCH_PARENT
-                ))
-                cell.addView(TextView(this).apply {
-                    text = "✓"
-                    textSize = 13f
-                    gravity = Gravity.CENTER
-                    setTextColor(c.textOnAccent)
-                    background = rounded(c.accentStrong, 12)
-                }, FrameLayout.LayoutParams(dp(24), dp(24), Gravity.TOP or Gravity.END).apply {
-                    topMargin = dp(7)
-                    marginEnd = dp(7)
-                })
+            val items = when {
+                category == null -> categoryItems
+                unclassifiedOnly -> categoryItems.filter { it.albumId == null }
+                albumId != null -> categoryItems.filter { it.albumId == albumId }
+                else -> categoryItems
             }
 
-            val params = GridLayout.LayoutParams().apply {
-                width = side
-                height = side
-                val column = index % 3
-                setMargins(
-                    if (column == 0) 0 else dp(4),
-                    dp(4),
-                    if (column == 2) 0 else dp(4),
-                    dp(4)
-                )
+            runOnUiThread {
+                if (isFinishing || isDestroyed || version != galleryRenderVersion) {
+                    return@runOnUiThread
+                }
+
+                galleryTotalCount = allItems.size
+                selectedItemIds.retainAll(allItems.map { it.id }.toHashSet())
+                updateSelectionBar()
+                countText.text = if (galleryTotalCount == 0) {
+                    "全屋共用 · 还没有图片"
+                } else {
+                    "全屋共用 · $galleryTotalCount 张图片"
+                }
+
+                val isEmpty = items.isEmpty()
+                emptyView.visibility = if (isEmpty) View.VISIBLE else View.GONE
+                grid.visibility = if (isEmpty) View.GONE else View.VISIBLE
+                galleryAdapter.submit(items)
+                if (isEmpty) updateEmptyCopy()
             }
-            grid.addView(cell, params)
-            loadSampled(storage.fileFor(item), side * 2, image)
         }
     }
 
     private fun updateEmptyCopy() {
         when {
-            storage.count() == 0 -> {
+            galleryTotalCount == 0 -> {
                 emptyTitle.text = "画匣还是空的"
                 emptyHint.text = "点右上角，把图片放进全屋共用的画匣。"
             }
@@ -846,17 +818,39 @@ class GalleryActivity : AppCompatActivity() {
         }
         dialog.setOnShowListener {
             dialog.window?.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
-            loadSampled(storage.fileFor(item), 1800, image)
+            loadPreview(storage.fileFor(item), 1800, image)
         }
         dialog.show()
     }
 
-    private fun loadSampled(file: File, targetPx: Int, imageView: ImageView) {
-        imageView.tag = file.absolutePath
+    private fun loadThumbnail(file: File, targetPx: Int, imageView: ImageView, key: String) {
+        imageView.tag = key
+        val cached = thumbnailCache.get(key)
+        if (cached != null && !cached.isRecycled) {
+            imageView.setImageBitmap(cached)
+            return
+        }
+
+        imageView.setImageDrawable(null)
         imageExecutor.execute {
-            val bitmap = decodeSampled(file, targetPx)
+            if (Thread.currentThread().isInterrupted) return@execute
+            val bitmap = decodeSquareThumbnail(file, targetPx)
+            if (bitmap != null) thumbnailCache.put(key, bitmap)
             runOnUiThread {
-                if (!isFinishing && imageView.tag == file.absolutePath) {
+                if (!isFinishing && !isDestroyed && imageView.tag == key) {
+                    if (bitmap != null && !bitmap.isRecycled) imageView.setImageBitmap(bitmap)
+                }
+            }
+        }
+    }
+
+    private fun loadPreview(file: File, targetPx: Int, imageView: ImageView) {
+        val key = "preview:${file.absolutePath}:${file.lastModified()}"
+        imageView.tag = key
+        imageExecutor.execute {
+            val bitmap = decodeSampledForPreview(file, targetPx)
+            runOnUiThread {
+                if (!isFinishing && !isDestroyed && imageView.tag == key) {
                     if (bitmap != null) imageView.setImageBitmap(bitmap)
                 } else {
                     bitmap?.recycle()
@@ -865,19 +859,139 @@ class GalleryActivity : AppCompatActivity() {
         }
     }
 
-    private fun decodeSampled(file: File, targetPx: Int): Bitmap? {
+    private fun decodeSquareThumbnail(file: File, targetPx: Int): Bitmap? {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(file.absolutePath, bounds)
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+
+        var sample = 1
+        val shortSide = minOf(bounds.outWidth, bounds.outHeight)
+        while (shortSide / (sample * 2) >= targetPx) sample *= 2
+
+        val decoded = BitmapFactory.decodeFile(file.absolutePath, BitmapFactory.Options().apply {
+            inSampleSize = sample
+            inPreferredConfig = Bitmap.Config.ARGB_8888
+        }) ?: return null
+
+        return try {
+            ThumbnailUtils.extractThumbnail(
+                decoded,
+                targetPx,
+                targetPx,
+                ThumbnailUtils.OPTIONS_RECYCLE_INPUT
+            )
+        } catch (_: Exception) {
+            if (!decoded.isRecycled) decoded.recycle()
+            null
+        }
+    }
+
+    private fun decodeSampledForPreview(file: File, targetPx: Int): Bitmap? {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeFile(file.absolutePath, bounds)
         if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
         var sample = 1
-        while (bounds.outWidth / (sample * 2) >= targetPx && bounds.outHeight / (sample * 2) >= targetPx) {
-            sample *= 2
-        }
+        val longSide = maxOf(bounds.outWidth, bounds.outHeight)
+        while (longSide / (sample * 2) >= targetPx) sample *= 2
         return BitmapFactory.decodeFile(file.absolutePath, BitmapFactory.Options().apply {
             inSampleSize = sample
             inPreferredConfig = Bitmap.Config.ARGB_8888
         })
     }
+
+    private inner class GalleryAdapter : BaseAdapter() {
+        private var items: List<GalleryStorage.Item> = emptyList()
+        private val sidePx: Int
+            get() = ((resources.displayMetrics.widthPixels - dp(28) - dp(16)) / 3f).toInt()
+
+        fun submit(newItems: List<GalleryStorage.Item>) {
+            items = newItems
+            notifyDataSetChanged()
+        }
+
+        override fun getCount(): Int = items.size
+        override fun getItem(position: Int): GalleryStorage.Item = items[position]
+        override fun getItemId(position: Int): Long = items[position].id.hashCode().toLong()
+
+        override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
+            val holder: GalleryCellHolder
+            val cell: FrameLayout
+            if (convertView is FrameLayout && convertView.tag is GalleryCellHolder) {
+                cell = convertView
+                holder = convertView.tag as GalleryCellHolder
+            } else {
+                val image = ImageView(this@GalleryActivity).apply {
+                    scaleType = ImageView.ScaleType.CENTER_CROP
+                    clipToOutline = true
+                }
+                val tint = View(this@GalleryActivity).apply {
+                    visibility = View.GONE
+                }
+                val check = TextView(this@GalleryActivity).apply {
+                    text = "✓"
+                    textSize = 13f
+                    gravity = Gravity.CENTER
+                    setTextColor(c.textOnAccent)
+                    background = rounded(c.accentStrong, 12)
+                    visibility = View.GONE
+                }
+                cell = FrameLayout(this@GalleryActivity).apply {
+                    addView(image, FrameLayout.LayoutParams(
+                        FrameLayout.LayoutParams.MATCH_PARENT,
+                        FrameLayout.LayoutParams.MATCH_PARENT
+                    ))
+                    addView(tint, FrameLayout.LayoutParams(
+                        FrameLayout.LayoutParams.MATCH_PARENT,
+                        FrameLayout.LayoutParams.MATCH_PARENT
+                    ))
+                    addView(check, FrameLayout.LayoutParams(dp(24), dp(24), Gravity.TOP or Gravity.END).apply {
+                        topMargin = dp(7)
+                        marginEnd = dp(7)
+                    })
+                }
+                holder = GalleryCellHolder(image, tint, check)
+                cell.tag = holder
+            }
+
+            val side = sidePx
+            cell.layoutParams = AbsListView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, side)
+            val item = getItem(position)
+            val selected = item.id in selectedItemIds
+            cell.contentDescription = item.displayName
+            cell.setOnClickListener {
+                if (selectedItemIds.isNotEmpty()) toggleSelection(item.id) else showPreview(item)
+            }
+            cell.setOnLongClickListener {
+                toggleSelection(item.id)
+                true
+            }
+
+            holder.image.alpha = if (selected) 0.68f else 1f
+            holder.image.background = rounded(c.card, 12, if (selected) c.accentStrong else c.border)
+            holder.tint.visibility = if (selected) View.VISIBLE else View.GONE
+            holder.tint.background = rounded(
+                Color.argb(
+                    42,
+                    Color.red(c.accentStrong),
+                    Color.green(c.accentStrong),
+                    Color.blue(c.accentStrong)
+                ),
+                12
+            )
+            holder.check.visibility = if (selected) View.VISIBLE else View.GONE
+
+            val file = storage.fileFor(item)
+            val key = "${file.absolutePath}:${file.lastModified()}:$side"
+            loadThumbnail(file, side, holder.image, key)
+            return cell
+        }
+    }
+
+    private class GalleryCellHolder(
+        val image: ImageView,
+        val tint: View,
+        val check: TextView
+    )
 
     private fun rounded(fill: Int, radiusDp: Int, stroke: Int? = null): GradientDrawable {
         return GradientDrawable().apply {

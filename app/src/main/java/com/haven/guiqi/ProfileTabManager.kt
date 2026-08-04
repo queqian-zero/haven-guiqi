@@ -1,7 +1,6 @@
 package com.haven.guiqi
 
 import android.app.AlertDialog
-import android.text.InputType
 import android.view.Gravity
 import android.widget.EditText
 import android.widget.LinearLayout
@@ -150,9 +149,18 @@ class ProfileTabManager(
 
         val userBioPrefs = activity.getSharedPreferences("haven_user", AppCompatActivity.MODE_PRIVATE)
         val myBio = userBioPrefs.getString("my_bio", "") ?: ""
+        val lifeCount = UserLifeStorage(activity).loadAll().size
+        val lifeSummary = when {
+            myBio.isNotEmpty() && lifeCount > 0 -> "已写自述 · $lifeCount 条生活记录"
+            myBio.isNotEmpty() -> myBio.take(20) + (if (myBio.length > 20) "..." else "")
+            lifeCount > 0 -> "$lifeCount 条生活记录"
+            else -> "还没有写"
+        }
         addItem("我眼中的自己",
-            if (myBio.isNotEmpty()) myBio.take(20) + (if (myBio.length > 20) "..." else "") else "还没有写",
-            "你的自我描述，AI 好奇时可以翻看（不会主动塞给 AI）") { showEditMyBioDialog() }
+            lifeSummary,
+            "你的自我描述、动物与植物记录；住户需要时才会翻看") {
+            activity.startActivity(android.content.Intent(activity, MySelfActivity::class.java))
+        }
 
         addSectionTitle("数据管理")
         addItem("导出聊天 JSON", "", "只备份好友、聊天和住户提示词；不含画匣等文件") { onExport() }
@@ -254,34 +262,6 @@ class ProfileTabManager(
         }
     }
 
-    private fun showEditMyBioDialog() {
-        val prefs = activity.getSharedPreferences("haven_user", AppCompatActivity.MODE_PRIVATE)
-        val currentBio = prefs.getString("my_bio", "") ?: ""
-
-        val input = EditText(activity).apply {
-            setText(currentBio)
-            hint = "写写你眼中的自己吧...\n\nAI 不会每次都看到这些，只有它好奇的时候才会主动翻看"
-            setPadding(dp(16), dp(12), dp(16), dp(12))
-            textSize = 14f
-            minLines = 5
-            gravity = Gravity.TOP
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
-        }
-
-        AlertDialog.Builder(activity)
-            .setTitle("我眼中的自己")
-            .setView(input)
-            .setPositiveButton("保存") { _, _ ->
-                val bio = input.text.toString().trim()
-                prefs.edit().putString("my_bio", bio).apply()
-                refresh()
-                if (bio.isNotEmpty()) {
-                    Toast.makeText(activity, "已保存 ♡", Toast.LENGTH_SHORT).show()
-                }
-            }
-            .setNegativeButton("取消", null)
-            .show()
-    }
 
     private fun addSectionTitle(title: String) {
         val tv = TextView(activity).apply {

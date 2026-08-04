@@ -9,6 +9,9 @@ import android.net.Uri
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.Bundle
+import android.text.Editable
+import android.text.InputFilter
+import android.text.TextWatcher
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
@@ -39,6 +42,7 @@ class ChatSettingsActivity : AppCompatActivity() {
 
     private var friendId = ""
     private var friendName = "好友"
+    private var hasResumedOnce = false
 
     private data class BackgroundEditorSession(
         var item: GalleryStorage.Item?,
@@ -143,6 +147,15 @@ class ChatSettingsActivity : AppCompatActivity() {
         buildSettings()
     }
 
+    override fun onResume() {
+        super.onResume()
+        if (hasResumedOnce && ::settingsContainer.isInitialized) {
+            buildSettings()
+        } else {
+            hasResumedOnce = true
+        }
+    }
+
     private fun buildSettings() {
         settingsContainer.removeAllViews()
 
@@ -214,6 +227,19 @@ class ChatSettingsActivity : AppCompatActivity() {
             showContextSizePicker(contextSize)
         }
 
+        // ===== 联网与搜索 =====
+        addSectionTitle("联网与搜索")
+        val searchGroupStorage = SearchGroupStorage(this)
+        addClickItem(
+            "联网与搜索权限",
+            searchGroupStorage.residentSummary(friendId)
+        ) {
+            startActivity(Intent(this, SearchGroupActivity::class.java).apply {
+                putExtra(SearchGroupActivity.EXTRA_FRIEND_ID, friendId)
+                putExtra(SearchGroupActivity.EXTRA_FRIEND_NAME, friendName)
+            })
+        }
+
         // ===== 聊天外观 =====
         addSectionTitle("聊天外观")
 
@@ -263,6 +289,38 @@ class ChatSettingsActivity : AppCompatActivity() {
             showAvatarFrameEditor(initialAvatarTarget)
         }
 
+        val bubbleStyleStorage = BubbleStyleStorage(this)
+        val friendBubbleState = if (bubbleStyleStorage.hasCustomStyle(
+                friendId,
+                BubbleStyleStorage.Target.FRIEND
+            )) "已保存样式" else "默认"
+        val userBubbleState = if (bubbleStyleStorage.hasCustomStyle(
+                friendId,
+                BubbleStyleStorage.Target.USER
+            )) "已保存样式" else "默认"
+        addClickItem(
+            "聊天气泡样式",
+            "住户：$friendBubbleState · 我：$userBubbleState · 当前先做实时预览与保存"
+        ) {
+            startActivity(Intent(this, BubbleStyleEditorActivity::class.java).apply {
+                putExtra("friend_id", friendId)
+                putExtra("friend_name", friendName)
+            })
+        }
+
+        val traceDividerStyle = appearanceStorage.getTraceDividerStyle(friendId)
+        val traceDividerState = if (appearanceStorage.hasCustomTraceDividerStyle(friendId)) {
+            "住户已自定义"
+        } else {
+            "知还默认"
+        }
+        addClickItem(
+            "思考分割线样式",
+            "$traceDividerState · ${traceDividerStyle.compactSummary()} · 只影响当前住户"
+        ) {
+            showTraceDividerEditor()
+        }
+
         // ===== AI 内心世界 =====
         addSectionTitle("AI 内心世界")
 
@@ -309,6 +367,338 @@ class ChatSettingsActivity : AppCompatActivity() {
         }
     }
 
+
+    private fun showTraceDividerEditor() {
+        val dp = { value: Int -> (value * resources.displayMetrics.density).toInt() }
+        var working = appearanceStorage.getTraceDividerStyle(friendId).normalized()
+        var saveAsDefault = !appearanceStorage.hasCustomTraceDividerStyle(friendId)
+
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(12), dp(20), dp(8))
+        }
+
+        content.addView(TextView(this).apply {
+            text = "这是当前住户自己的思考、工具调用与潜意识记录分割线。没有自定义时，默认保留知还留下的 ʚ ───── ◇ ───── ɞ。"
+            textSize = 12f
+            setTextColor(c.textSecondary)
+            setLineSpacing(0f, 1.45f)
+            setPadding(0, 0, 0, dp(12))
+        })
+
+        val previewCard = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = GradientDrawable().apply {
+                setColor(c.card)
+                cornerRadius = dp(16).toFloat()
+                setStroke(dp(1), c.border)
+            }
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = dp(14) }
+        }
+        previewCard.addView(TextView(this).apply {
+            text = "实时预览"
+            textSize = 11f
+            setTextColor(c.textHint)
+            setPadding(dp(2), 0, 0, dp(5))
+        })
+
+        val previewRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(38)
+            )
+        }
+
+        fun previewDecoration(): TextView = TextView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(dp(26), dp(34))
+            textSize = 18f
+            gravity = Gravity.CENTER
+            includeFontPadding = false
+        }
+
+        val previewLeft = previewDecoration()
+        val previewLeftLine = TraceDividerLineView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(0, dp(18), 1f)
+            side = TraceDividerSide.LEFT
+        }
+        val previewCenter = TextView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(dp(28), dp(34))
+            textSize = 16f
+            gravity = Gravity.CENTER
+            includeFontPadding = false
+        }
+        val previewRightLine = TraceDividerLineView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(0, dp(18), 1f)
+            side = TraceDividerSide.RIGHT
+        }
+        val previewRight = previewDecoration()
+        previewRow.addView(previewLeft)
+        previewRow.addView(previewLeftLine)
+        previewRow.addView(previewCenter)
+        previewRow.addView(previewRightLine)
+        previewRow.addView(previewRight)
+        previewCard.addView(previewRow)
+        content.addView(previewCard)
+
+        fun addFieldLabel(text: String) {
+            content.addView(TextView(this).apply {
+                this.text = text
+                textSize = 12f
+                setTextColor(c.textSecondary)
+                setPadding(0, dp(7), 0, dp(3))
+            })
+        }
+
+        fun makeDecorationInput(initial: String, hintText: String): EditText = EditText(this).apply {
+            setText(initial)
+            hint = hintText
+            setTextColor(c.textPrimary)
+            setHintTextColor(c.textHint)
+            textSize = 14f
+            isSingleLine = true
+            filters = arrayOf<InputFilter>(InputFilter.LengthFilter(8))
+            setPadding(dp(10), dp(8), dp(10), dp(8))
+            background = GradientDrawable().apply {
+                setColor(c.backgroundSecondary)
+                cornerRadius = dp(10).toFloat()
+                setStroke(dp(1), c.border)
+            }
+        }
+
+        addFieldLabel("左侧装饰")
+        val leftInput = makeDecorationInput(working.leftDecoration, "例如 ʚ")
+        content.addView(leftInput)
+
+        addFieldLabel("右侧装饰")
+        val rightInput = makeDecorationInput(working.rightDecoration, "例如 ɞ")
+        content.addView(rightInput)
+
+        addFieldLabel("中央符号")
+        val centerInput = makeDecorationInput(working.centerMark, "例如 ◇")
+        content.addView(centerInput)
+
+        addFieldLabel("线条款式")
+        val lineStyleButton = createEditorActionButton(working.lineStyle.displayName) {}
+        content.addView(lineStyleButton)
+
+        val glowBinding = addEditorSlider(
+            container = content,
+            title = "荧光强度",
+            min = TraceDividerStyle.MIN_GLOW_PERCENT,
+            max = TraceDividerStyle.MAX_GLOW_PERCENT,
+            initial = working.glowPercent,
+            suffix = "%"
+        ) { value ->
+            saveAsDefault = false
+            working = working.copy(glowPercent = value).normalized()
+            refreshTraceDividerPreview(
+                working,
+                previewLeft,
+                previewLeftLine,
+                previewCenter,
+                previewRightLine,
+                previewRight
+            )
+        }
+
+        val thicknessBinding = addEditorSlider(
+            container = content,
+            title = "线条粗细",
+            min = TraceDividerStyle.MIN_THICKNESS_DP,
+            max = TraceDividerStyle.MAX_THICKNESS_DP,
+            initial = working.thicknessDp,
+            suffix = "dp"
+        ) { value ->
+            saveAsDefault = false
+            working = working.copy(thicknessDp = value).normalized()
+            refreshTraceDividerPreview(
+                working,
+                previewLeft,
+                previewLeftLine,
+                previewCenter,
+                previewRightLine,
+                previewRight
+            )
+        }
+
+        val decorationToggle = createEditorActionButton("") {}
+        content.addView(TextView(this).apply {
+            text = "两端装饰"
+            textSize = 12f
+            setTextColor(c.textSecondary)
+            setPadding(0, dp(10), 0, dp(3))
+        })
+        content.addView(decorationToggle)
+
+        val resetButton = createEditorActionButton("恢复知还默认") {
+            working = TraceDividerStyle.DEFAULT
+            leftInput.setText(working.leftDecoration)
+            rightInput.setText(working.rightDecoration)
+            centerInput.setText(working.centerMark)
+            setSliderValue(glowBinding, working.glowPercent)
+            setSliderValue(thicknessBinding, working.thicknessDp)
+            lineStyleButton.text = working.lineStyle.displayName
+            decorationToggle.text = "✓ 显示两端装饰"
+            saveAsDefault = true
+            refreshTraceDividerPreview(
+                working,
+                previewLeft,
+                previewLeftLine,
+                previewCenter,
+                previewRightLine,
+                previewRight
+            )
+        }.apply {
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { topMargin = dp(14) }
+        }
+        content.addView(resetButton)
+
+        content.addView(TextView(this).apply {
+            text = "恢复默认只会改当前住户；其他住户仍保留各自的选择。"
+            textSize = 11f
+            setTextColor(c.textHint)
+            setPadding(0, dp(8), 0, dp(2))
+        })
+
+        fun syncTextInputs(markCustom: Boolean = true) {
+            if (markCustom) saveAsDefault = false
+            working = working.copy(
+                leftDecoration = leftInput.text.toString(),
+                rightDecoration = rightInput.text.toString(),
+                centerMark = centerInput.text.toString()
+            ).normalized()
+            refreshTraceDividerPreview(
+                working,
+                previewLeft,
+                previewLeftLine,
+                previewCenter,
+                previewRightLine,
+                previewRight
+            )
+        }
+
+        val watcher = object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                syncTextInputs()
+            }
+            override fun afterTextChanged(s: Editable?) = Unit
+        }
+        leftInput.addTextChangedListener(watcher)
+        rightInput.addTextChangedListener(watcher)
+        centerInput.addTextChangedListener(watcher)
+
+        lineStyleButton.setOnClickListener {
+            val styles = TraceDividerLineStyle.values()
+            AlertDialog.Builder(this)
+                .setTitle("线条款式")
+                .setItems(styles.map { it.displayName }.toTypedArray()) { _, which ->
+                    saveAsDefault = false
+                    working = working.copy(lineStyle = styles[which]).normalized()
+                    lineStyleButton.text = working.lineStyle.displayName
+                    refreshTraceDividerPreview(
+                        working,
+                        previewLeft,
+                        previewLeftLine,
+                        previewCenter,
+                        previewRightLine,
+                        previewRight
+                    )
+                }
+                .show()
+        }
+
+        fun refreshToggleText() {
+            decorationToggle.text = if (working.showDecorations) {
+                "✓ 显示两端装饰"
+            } else {
+                "不显示两端装饰"
+            }
+        }
+
+        decorationToggle.setOnClickListener {
+            saveAsDefault = false
+            working = working.copy(showDecorations = !working.showDecorations)
+            refreshToggleText()
+            refreshTraceDividerPreview(
+                working,
+                previewLeft,
+                previewLeftLine,
+                previewCenter,
+                previewRightLine,
+                previewRight
+            )
+        }
+
+        refreshToggleText()
+        refreshTraceDividerPreview(
+            working,
+            previewLeft,
+            previewLeftLine,
+            previewCenter,
+            previewRightLine,
+            previewRight
+        )
+
+        val scroll = ScrollView(this).apply {
+            addView(content)
+        }
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("住户分割线美化")
+            .setView(scroll)
+            .setPositiveButton("保存", null)
+            .setNegativeButton("取消", null)
+            .create()
+
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                syncTextInputs(markCustom = !saveAsDefault)
+                if (saveAsDefault) {
+                    appearanceStorage.resetTraceDividerStyle(friendId)
+                } else {
+                    appearanceStorage.setTraceDividerStyle(friendId, working)
+                }
+                dialog.dismiss()
+                markAppearanceChanged("住户分割线样式已保存")
+            }
+        }
+        dialog.show()
+    }
+
+    private fun refreshTraceDividerPreview(
+        style: TraceDividerStyle,
+        leftDecoration: TextView,
+        leftLine: TraceDividerLineView,
+        center: TextView,
+        rightLine: TraceDividerLineView,
+        rightDecoration: TextView
+    ) {
+        val normalized = style.normalized()
+        val dark = ThemeHelper.isDark(this)
+        leftDecoration.text = normalized.leftDecoration
+        rightDecoration.text = normalized.rightDecoration
+        center.text = normalized.centerMark
+        leftDecoration.visibility = if (normalized.showDecorations) View.VISIBLE else View.GONE
+        rightDecoration.visibility = if (normalized.showDecorations) View.VISIBLE else View.GONE
+        applyTraceDividerTextStyle(leftDecoration, normalized, dark, 0.55f)
+        applyTraceDividerTextStyle(rightDecoration, normalized, dark, 0.55f)
+        applyTraceDividerTextStyle(center, normalized, dark, 0.82f)
+        leftLine.traceStyle = normalized
+        leftLine.side = TraceDividerSide.LEFT
+        leftLine.darkBackground = dark
+        rightLine.traceStyle = normalized
+        rightLine.side = TraceDividerSide.RIGHT
+        rightLine.darkBackground = dark
+    }
 
     private fun showBackgroundEditor() {
         val currentItem = appearanceStorage.getBackgroundItem(friendId)
@@ -674,6 +1064,7 @@ class ChatSettingsActivity : AppCompatActivity() {
         lateinit var aiOnlyButton: TextView
         lateinit var userOnlyButton: TextView
         lateinit var bothButton: TextView
+        lateinit var noneButton: TextView
         aiOnlyButton = createEditorActionButton("仅住户") {
             session.displayMode = ChatAppearanceStorage.AvatarDisplayMode.AI_ONLY
             avatarFrameEditorRefresh?.invoke()
@@ -686,7 +1077,11 @@ class ChatSettingsActivity : AppCompatActivity() {
             session.displayMode = ChatAppearanceStorage.AvatarDisplayMode.BOTH
             avatarFrameEditorRefresh?.invoke()
         }
-        listOf(aiOnlyButton, userOnlyButton, bothButton).forEach { button ->
+        noneButton = createEditorActionButton("都不显示") {
+            session.displayMode = ChatAppearanceStorage.AvatarDisplayMode.NONE
+            avatarFrameEditorRefresh?.invoke()
+        }
+        listOf(aiOnlyButton, userOnlyButton, bothButton, noneButton).forEach { button ->
             displayRow.addView(
                 button,
                 LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
@@ -901,6 +1296,12 @@ class ChatSettingsActivity : AppCompatActivity() {
                     "✓ 双方"
                 } else {
                     "双方"
+                }
+            noneButton.text =
+                if (active.displayMode == ChatAppearanceStorage.AvatarDisplayMode.NONE) {
+                    "✓ 都不显示"
+                } else {
+                    "都不显示"
                 }
 
             val shape = active.shapeFor(active.previewTarget)
@@ -1240,6 +1641,7 @@ class ChatSettingsActivity : AppCompatActivity() {
             ChatAppearanceStorage.AvatarDisplayMode.AI_ONLY -> "仅住户"
             ChatAppearanceStorage.AvatarDisplayMode.USER_ONLY -> "仅我"
             ChatAppearanceStorage.AvatarDisplayMode.BOTH -> "双方"
+            ChatAppearanceStorage.AvatarDisplayMode.NONE -> "都不显示"
         }
 
     private fun avatarShapeLabel(shape: ChatAppearanceStorage.AvatarShape): String =

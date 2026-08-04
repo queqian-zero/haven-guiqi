@@ -31,6 +31,7 @@ class InstructionProcessor(private val context: Context) {
         val isSeen: Boolean,
         val shouldDream: Boolean,
         val userBioContext: String?,
+        val userBioPhotos: List<UserLifeStorage.PhotoRef> = emptyList(),
         val stickerPaths: List<String> = emptyList(),
         val recallResults: List<String> = emptyList(),
         val weatherCard: Boolean = false,
@@ -49,10 +50,37 @@ class InstructionProcessor(private val context: Context) {
         var newCode: String? = null
         var shouldDream = false
         var userBioContext: String? = null
+        val userBioPhotos = mutableListOf<UserLifeStorage.PhotoRef>()
         val recallResults = mutableListOf<String>()
         var pendingCovenantDraft: String? = null
         var pendingCovenantAdopt = false
         var chatAppearanceChanged = false
+
+        // 遗忘记忆闪回的内部确认指令。先从正文中拿掉，等所有其他指令清理完成后，
+        // 只有仍有可见回复时才消费令牌并增强对应总结。
+        val surfacedClaimRegex = Regex(
+            "\\[CLAIM_SURFACED_MEMORY:([^]]+)]",
+            RegexOption.IGNORE_CASE
+        )
+        val surfacedClaimTokens = surfacedClaimRegex.findAll(text)
+            .map { it.groupValues[1].trim() }
+            .filter { it.isNotEmpty() }
+            .distinct()
+            .toList()
+        text = surfacedClaimRegex.replace(text, "").trim()
+
+        // 留声检索后的内部确认指令。和随机闪回一样，先从正文隐藏；
+        // 只有住户留下可见回复并确实使用了对应 R 组记录时，才会消费令牌。
+        val recalledClaimRegex = Regex(
+            "\\[CLAIM_RECALLED_MEMORY:([^]]+)]",
+            RegexOption.IGNORE_CASE
+        )
+        val recalledClaimTokens = recalledClaimRegex.findAll(text)
+            .map { it.groupValues[1].trim() }
+            .filter { it.isNotEmpty() }
+            .distinct()
+            .toList()
+        text = recalledClaimRegex.replace(text, "").trim()
 
         val friendStorage = FriendStorage(context)
         var currentFriend = friendStorage.getFriend(friendId)
@@ -247,6 +275,9 @@ class InstructionProcessor(private val context: Context) {
             text = text.replace(match.value, "")
         }
 
+        // 代码气泡工具由 ChatConversationActivity 的同轮工具循环处理。
+        // 这里不再延迟返回规则或吞掉失败代码，避免住户必须等用户下一次发言才知道结果。
+
         // ===== [BIO:xxx] =====
         val bioPattern = Regex("\\[BIO:(.+?)]", RegexOption.DOT_MATCHES_ALL)
         bioPattern.find(text)?.let { match ->
@@ -407,19 +438,8 @@ $history
             )
         }
 
-        // ===== [READ_MY_BIO] =====
-        val readBioPattern = Regex("\\[READ_MY_BIO]")
-        readBioPattern.find(text)?.let { match ->
-            val userBioPrefs = context.getSharedPreferences("haven_user", Context.MODE_PRIVATE)
-            val userBio = userBioPrefs.getString("my_bio", "") ?: ""
-            if (userBio.isNotEmpty()) {
-                userBioContext = "[用户的自我描述]\n$userBio"
-                actions.add("\uD83D\uDCD6 翻看了你的自我描述")
-            } else {
-                actions.add("\uD83D\uDCD6 想看你的自我描述，但你还没写过")
-            }
-            text = text.replace(match.value, "")
-        }
+        // [READ_MY_BIO] 是同轮工具，由 UserLifeReadToolSession 在进入普通指令解析前完成。
+        // 这里故意不再读取或延迟注入，避免住户必须等到用户下一次发言才能看到结果。
 
         // ===== [DO_NOT_DISTURB] / [ALLOW_WAKE] =====
         // 睡眠与免打扰是两个独立状态：普通睡眠仍可能被消息叫醒，
@@ -624,12 +644,12 @@ $history
                     val timeRange = raw.substring(timeSep + 1).trim()
                     val parts = timeRange.split("~", "～", "-")
                     if (parts.size == 2 && content.isNotEmpty()) {
-                        subconsciousStorage.addItem(friendId, cat.lowercase(), content, parts[0].trim(), parts[1].trim())
+                        subconsciousStorage.addItemChecked(friendId, cat.lowercase(), content, parts[0].trim(), parts[1].trim())
                     } else if (content.isNotEmpty()) {
-                        subconsciousStorage.addItem(friendId, cat.lowercase(), content)
+                        subconsciousStorage.addItemChecked(friendId, cat.lowercase(), content)
                     }
                 } else if (raw.isNotEmpty()) {
-                    subconsciousStorage.addItem(friendId, cat.lowercase(), raw)
+                    subconsciousStorage.addItemChecked(friendId, cat.lowercase(), raw)
                 }
             }
             prefCleanText = regex.replace(prefCleanText, "").trim()
@@ -670,11 +690,34 @@ $history
         for (match in recallRegex.findAll(prefCleanText)) {
             val query = match.groupValues[1].trim()
             if (query.isNotEmpty()) {
-                val result = EchoStorage(context).buildRecallPrompt(friendId, query)
+                val echoStorage = EchoStorage(context)
+                val matchedMessages = echoStorage.searchForRecall(friendId, query)
+                val summaryStorage = ChatSummaryStorage(context)
+
+                // 原始消息先按真实聊天序号映射到总结范围，再按命中顺序分成 R1、R2……
+                val summaryByEchoId = summaryStorage.matchEchoMessagesToSummaries(friendId, matchedMessages)
+                val orderedSummaryIds = matchedMessages.mapNotNull { summaryByEchoId[it.id] }.distinct()
+                val tokensBySummaryId = summaryStorage.registerRecallCandidates(friendId, orderedSummaryIds)
+                val groupBySummaryId = orderedSummaryIds.mapIndexed { index, summaryId ->
+                    summaryId to "R${index + 1}"
+                }.toMap()
+                val groupLabelsByMessageId = summaryByEchoId.mapValues { (_, summaryId) ->
+                    groupBySummaryId.getValue(summaryId)
+                }
+                val claimTokensByGroup = orderedSummaryIds.mapNotNull { summaryId ->
+                    val group = groupBySummaryId[summaryId]
+                    val token = tokensBySummaryId[summaryId]
+                    if (group != null && token != null) group to token else null
+                }.toMap()
+
+                val result = echoStorage.formatRecallPrompt(
+                    query = query,
+                    results = matchedMessages,
+                    groupLabelsByMessageId = groupLabelsByMessageId,
+                    claimTokensByGroup = claimTokensByGroup
+                )
                 recallResults.add(result)
                 actions.add("🔍 翻了翻留声")
-                // ★ 回忆回升：搜留声时顺便加固相关的聊天总结
-                ChatSummaryStorage(context).reinforceByKeyword(friendId, query)
             }
         }
         prefCleanText = recallRegex.replace(prefCleanText, "").trim()
@@ -813,16 +856,24 @@ $history
         }
 
         // ===== [BULLETIN:内容] — 留言板 =====
-        val bulletinPattern = Regex("\\[BULLETIN:(.+?)]")
-        bulletinPattern.find(stickerCleanText)?.let { match ->
-            val content = match.groupValues[1].trim()
-            if (content.isNotEmpty()) {
-                val bs = BulletinStorage(context)
-                val friendName = FriendStorage(context).getFriend(friendId)?.name ?: "AI"
-                bs.addMessage(friendId, friendName, content)
-                actions.add("📌 在留言板写了一条")
+        // 内容允许跨行；旧写法里的 `.` 默认无法匹配换行，会导致多行留言原样漏进聊天。
+        // 同一条回复里出现多条 BULLETIN 时也逐条处理。
+        val bulletinPattern = Regex(
+            "\\[BULLETIN\\s*:\\s*([\\s\\S]*?)]",
+            RegexOption.IGNORE_CASE
+        )
+        val bulletinMatches = bulletinPattern.findAll(stickerCleanText).toList()
+        if (bulletinMatches.isNotEmpty()) {
+            val bs = BulletinStorage(context)
+            val friendName = FriendStorage(context).getFriend(friendId)?.name ?: "AI"
+            for (match in bulletinMatches) {
+                val content = match.groupValues[1].trim()
+                if (content.isNotEmpty()) {
+                    bs.addMessage(friendId, friendName, content)
+                    actions.add("📌 在留言板写了一条")
+                }
             }
-            stickerCleanText = stickerCleanText.replace(match.value, "")
+            stickerCleanText = bulletinPattern.replace(stickerCleanText, "")
         }
 
         // ===== [CAPSULE:日期:内容] — 时间胶囊 =====
@@ -919,10 +970,22 @@ $history
             actions.add("🧱 翻看了施工日志墙")
         }
 
-        // ===== [SEEN] =====
+        // ===== 遗忘记忆闪回确认 =====
+        // “系统展示过”本身不算回忆。只有住户留下了可见正文，并主动附上本轮令牌，
+        // 才把那一段总结标记为真正想起。纯指令、空回复和 [SEEN] 都不会增强。
         val trimmed = stickerCleanText.trim()
         val isSeen = (trimmed == "[SEEN]" || trimmed == "[seen]" || trimmed == "[ SEEN ]")
+        if (trimmed.isNotEmpty() && !isSeen) {
+            val summaryStorage = ChatSummaryStorage(context)
+            surfacedClaimTokens.forEach { token ->
+                summaryStorage.confirmSurfacedCandidate(friendId, token)
+            }
+            recalledClaimTokens.forEach { token ->
+                summaryStorage.confirmRecallCandidate(friendId, token)
+            }
+        }
 
+        // ===== [SEEN] =====
         return Result(
             cleanText = stickerCleanText,
             newStatus = newStatus,
@@ -933,6 +996,7 @@ $history
             isSeen = isSeen,
             shouldDream = shouldDream,
             userBioContext = userBioContext,
+            userBioPhotos = userBioPhotos,
             stickerPaths = stickerPaths,
             recallResults = recallResults,
             weatherCard = hasWeatherCard,
@@ -942,6 +1006,13 @@ $history
             chatAppearanceChanged = chatAppearanceChanged
         )
     }
+
+    private fun appendPrivateContext(current: String?, addition: String): String {
+        val clean = addition.trim()
+        if (clean.isEmpty()) return current.orEmpty()
+        return if (current.isNullOrBlank()) clean else current.trimEnd() + "\n\n" + clean
+    }
+
     private fun deleteResidentAvatarFiles(friendId: String) {
         val avatarDir = java.io.File(context.filesDir, "avatars")
         avatarDir.listFiles()?.forEach { file ->

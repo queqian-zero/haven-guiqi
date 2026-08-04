@@ -121,7 +121,7 @@ object AvatarBrowsePreview {
             paint.style = Paint.Style.FILL
             paint.color = Color.rgb(244, 244, 244)
             canvas.drawRoundRect(tileRect, 18f, 18f, paint)
-            val decoded = drawImageCenterInside(canvas, storage.fileFor(item), tileRect)
+            val decoded = drawImageCenterCrop(canvas, storage.fileFor(item), tileRect)
             if (!decoded) {
                 paint.color = Color.rgb(140, 140, 140)
                 paint.textSize = 18f
@@ -153,7 +153,7 @@ object AvatarBrowsePreview {
         }
     }
 
-    private fun drawImageCenterInside(canvas: Canvas, file: File, target: RectF): Boolean {
+    private fun drawImageCenterCrop(canvas: Canvas, file: File, target: RectF): Boolean {
         val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeFile(file.absolutePath, options)
         if (options.outWidth <= 0 || options.outHeight <= 0) return false
@@ -166,16 +166,23 @@ object AvatarBrowsePreview {
         }) ?: return false
         try {
             val available = RectF(target.left + 8f, target.top + 8f, target.right - 8f, target.bottom - 8f)
-            val scale = minOf(available.width() / bitmap.width, available.height() / bitmap.height)
-            val drawWidth = bitmap.width * scale
-            val drawHeight = bitmap.height * scale
-            val destination = RectF(
-                available.centerX() - drawWidth / 2f,
-                available.centerY() - drawHeight / 2f,
-                available.centerX() + drawWidth / 2f,
-                available.centerY() + drawHeight / 2f
+            val sourceRatio = bitmap.width.toFloat() / bitmap.height
+            val targetRatio = available.width() / available.height()
+            val source = if (sourceRatio > targetRatio) {
+                val cropWidth = (bitmap.height * targetRatio).toInt().coerceAtLeast(1)
+                val left = ((bitmap.width - cropWidth) / 2).coerceAtLeast(0)
+                Rect(left, 0, (left + cropWidth).coerceAtMost(bitmap.width), bitmap.height)
+            } else {
+                val cropHeight = (bitmap.width / targetRatio).toInt().coerceAtLeast(1)
+                val top = ((bitmap.height - cropHeight) / 2).coerceAtLeast(0)
+                Rect(0, top, bitmap.width, (top + cropHeight).coerceAtMost(bitmap.height))
+            }
+            canvas.drawBitmap(
+                bitmap,
+                source,
+                available,
+                Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
             )
-            canvas.drawBitmap(bitmap, null as Rect?, destination, Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG))
             return true
         } finally {
             bitmap.recycle()

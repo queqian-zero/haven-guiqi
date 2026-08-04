@@ -102,6 +102,11 @@ class GalleryStorage(private val context: Context) {
 
     fun count(): Int = listAll().size
 
+    /** 馆藏主页只显示数量时使用，不逐张检查文件，也不做排序。 */
+    fun countIndexedItems(): Int = synchronized(GLOBAL_LOCK) {
+        loadIndexLocked().size
+    }
+
     fun fileFor(item: Item): File = File(imagesDir, item.fileName)
 
     fun listAlbums(category: Category): List<Album> = synchronized(GLOBAL_LOCK) {

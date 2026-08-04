@@ -40,6 +40,35 @@ import java.util.*
  */
 class ChatSummaryStorage(private val context: Context) {
 
+    companion object {
+        private val SURFACE_LOCK = Any()
+        private const val SURFACE_TOKEN_TTL_MS = 30 * 60 * 1000L
+        private const val RECALL_TOKEN_TTL_MS = 30 * 60 * 1000L
+        private const val MAX_PENDING_SURFACES = 8
+        private const val MAX_PENDING_RECALLS = 12
+        private val SUMMARY_RANGE_REGEX = Regex(
+            "第\\s*(\\d+)\\s*条\\s*[~～至—－-]+\\s*第?\\s*(\\d+)\\s*条"
+        )
+    }
+
+    private data class PendingSurface(
+        val token: String,
+        val summaryId: String,
+        val shownAt: Long
+    )
+
+    private data class PendingRecall(
+        val token: String,
+        val summaryId: String,
+        val shownAt: Long
+    )
+
+    private data class SummaryRange(
+        val summary: ChatSummary,
+        val start: Int,
+        val end: Int
+    )
+
     private val summaryDir: File
         get() {
             val dir = File(context.filesDir, "summaries")
@@ -243,8 +272,10 @@ class ChatSummaryStorage(private val context: Context) {
     }
 
     /**
-     * 回忆回升：AI 用 [RECALL] 搜到了相关内容时调用
-     * 根据搜索关键词匹配总结的 keywords，命中的总结获得回升
+     * 旧版按关键词回升的兼容入口。
+     *
+     * 新的 [RECALL] 流程不再调用它：搜索词可能很宽泛，也可能与总结关键词写法不同，
+     * 仅凭关键词无法判断住户实际翻到了哪一段原始聊天。
      */
     fun reinforceByKeyword(friendId: String, query: String) {
         val list = loadSummariesRaw(friendId).toMutableList()
@@ -252,7 +283,6 @@ class ChatSummaryStorage(private val context: Context) {
         var changed = false
 
         for ((idx, s) in list.withIndex()) {
-            // 关键词匹配：总结的 keywords 里有任何一个词跟查询相关
             val keywords = s.keywords.split(",").map { it.trim().lowercase() }
             val matches = keywords.any { it.isNotEmpty() && (queryLower.contains(it) || it.contains(queryLower)) }
             if (matches) {
@@ -267,9 +297,192 @@ class ChatSummaryStorage(private val context: Context) {
     }
 
     /**
-     * 从遗忘区随机捞一条浮上来
-     * 用于潜意识系统：偶尔一条被遗忘的记忆重新浮现
-     * @return 浮上来的总结内容（包含日期和关键词），没有则返回 null
+     * 把留声里搜到的原始聊天，精确映射到它们所属的聊天总结。
+     *
+     * 聊天总结保存的是“第 x 条~第 y 条”；留声保存的是原始消息时间戳与正文。
+     * 这里先在 ChatStorage 中找回原消息的真实序号（包含系统小字，因此与总结范围口径一致），
+     * 再判断该序号落在哪一段总结里。导入留声、尚未被总结的近期消息不会被强行匹配。
+     *
+     * @return EchoMessage.id -> ChatSummary.id
+     */
+    fun matchEchoMessagesToSummaries(
+        friendId: String,
+        echoMessages: List<EchoStorage.EchoMessage>
+    ): Map<String, String> {
+        if (echoMessages.isEmpty()) return emptyMap()
+
+        val chatMessages = ChatStorage(context).loadMessages(friendId)
+        if (chatMessages.isEmpty()) return emptyMap()
+
+        val ranges = loadSummariesRaw(friendId).mapNotNull { summary ->
+            parseSummaryRange(summary)?.let { (start, end) ->
+                SummaryRange(summary, start, end)
+            }
+        }
+        if (ranges.isEmpty()) return emptyMap()
+
+        val result = linkedMapOf<String, String>()
+        echoMessages.forEach { echo ->
+            if (!echo.source.equals("chat", ignoreCase = true) || echo.timestamp <= 0L) {
+                return@forEach
+            }
+
+            val position = findChatMessagePosition(chatMessages, echo) ?: return@forEach
+            val matchedRange = ranges
+                .filter { position in it.start..it.end }
+                .minWithOrNull(
+                    compareBy<SummaryRange> { it.end - it.start }
+                        .thenByDescending { it.summary.createdAt }
+                )
+                ?: return@forEach
+
+            result[echo.id] = matchedRange.summary.id
+        }
+        return result
+    }
+
+    /**
+     * 为留声检索命中的总结登记一次性确认令牌。
+     * 同一总结如果再次被检索，会替换旧的未确认令牌，避免一句回复重复增强同一段记忆。
+     */
+    fun registerRecallCandidates(friendId: String, summaryIds: List<String>): Map<String, String> {
+        val existingSummaryIds = loadSummariesRaw(friendId).map { it.id }.toSet()
+        val validIds = summaryIds.distinct().filter { it in existingSummaryIds }
+        if (validIds.isEmpty()) return emptyMap()
+
+        val now = System.currentTimeMillis()
+        val tokens = linkedMapOf<String, String>()
+        synchronized(SURFACE_LOCK) {
+            val records = loadPendingRecalls(friendId, now)
+            records.removeAll { it.summaryId in validIds }
+
+            validIds.forEach { summaryId ->
+                val token = UUID.randomUUID().toString()
+                records.add(PendingRecall(token, summaryId, now))
+                tokens[summaryId] = token
+            }
+            savePendingRecalls(friendId, records.takeLast(MAX_PENDING_RECALLS))
+        }
+        return tokens
+    }
+
+    /**
+     * 住户在可见回复中确实使用了某组留声结果后，确认并精准回升那一段总结。
+     * 令牌只属于当前住户、30 分钟后失效，并且只能消费一次。
+     */
+    fun confirmRecallCandidate(friendId: String, token: String): Boolean {
+        if (token.isBlank()) return false
+        val now = System.currentTimeMillis()
+
+        synchronized(SURFACE_LOCK) {
+            val records = loadPendingRecalls(friendId, now)
+            val normalizedToken = token.trim()
+            val recordIndex = records.indexOfFirst {
+                it.token.equals(normalizedToken, ignoreCase = true)
+            }
+            if (recordIndex < 0) {
+                savePendingRecalls(friendId, records)
+                return false
+            }
+
+            val record = records.removeAt(recordIndex)
+            savePendingRecalls(friendId, records)
+
+            val list = loadSummariesRaw(friendId).toMutableList()
+            val summaryIndex = list.indexOfFirst { it.id == record.summaryId }
+            if (summaryIndex < 0) return false
+
+            val summary = list[summaryIndex]
+            list[summaryIndex] = summary.copy(
+                lastRecalledAt = now,
+                recallCount = summary.recallCount + 1
+            )
+            save(friendId, list)
+            return true
+        }
+    }
+
+    private fun findChatMessagePosition(
+        chatMessages: List<StoredMessage>,
+        echo: EchoStorage.EchoMessage
+    ): Int? {
+        fun matches(index: Int, requireContent: Boolean, requireRole: Boolean): Boolean {
+            val message = chatMessages[index]
+            if (message.type == "tip" || message.timestamp != echo.timestamp) return false
+            if (requireRole && !message.role.equals(echo.role, ignoreCase = true)) return false
+            if (requireContent && message.content != echo.content) return false
+            return true
+        }
+
+        val exact = chatMessages.indices.firstOrNull { matches(it, requireContent = true, requireRole = true) }
+        if (exact != null) return exact + 1
+
+        val sameRole = chatMessages.indices.firstOrNull { matches(it, requireContent = false, requireRole = true) }
+        if (sameRole != null) return sameRole + 1
+
+        val sameContent = chatMessages.indices.firstOrNull { matches(it, requireContent = true, requireRole = false) }
+        if (sameContent != null) return sameContent + 1
+
+        val sameTimestamp = chatMessages.indices.firstOrNull { matches(it, requireContent = false, requireRole = false) }
+        return sameTimestamp?.plus(1)
+    }
+
+    private fun parseSummaryRange(summary: ChatSummary): Pair<Int, Int>? {
+        val match = SUMMARY_RANGE_REGEX.find(summary.messageRange) ?: return null
+        val first = match.groupValues[1].toIntOrNull() ?: return null
+        val second = match.groupValues[2].toIntOrNull() ?: return null
+        return minOf(first, second) to maxOf(first, second)
+    }
+
+    private fun loadPendingRecalls(friendId: String, now: Long): MutableList<PendingRecall> {
+        val raw = recallPrefs.getString(pendingRecallKey(friendId), null) ?: return mutableListOf()
+        return try {
+            val array = JSONArray(raw)
+            val records = mutableListOf<PendingRecall>()
+            for (i in 0 until array.length()) {
+                val obj = array.optJSONObject(i) ?: continue
+                val token = obj.optString("token", "")
+                val summaryId = obj.optString("summaryId", "")
+                val shownAt = obj.optLong("shownAt", 0L)
+                val age = now - shownAt
+                if (token.isNotBlank() && summaryId.isNotBlank() &&
+                    shownAt > 0L && age in 0..RECALL_TOKEN_TTL_MS
+                ) {
+                    records.add(PendingRecall(token, summaryId, shownAt))
+                }
+            }
+            records
+        } catch (_: Exception) {
+            mutableListOf()
+        }
+    }
+
+    private fun savePendingRecalls(friendId: String, records: List<PendingRecall>) {
+        val key = pendingRecallKey(friendId)
+        if (records.isEmpty()) {
+            recallPrefs.edit().remove(key).apply()
+            return
+        }
+
+        val array = JSONArray()
+        records.forEach { record ->
+            array.put(JSONObject().apply {
+                put("token", record.token)
+                put("summaryId", record.summaryId)
+                put("shownAt", record.shownAt)
+            })
+        }
+        recallPrefs.edit().putString(key, array.toString()).apply()
+    }
+
+    private val recallPrefs
+        get() = context.getSharedPreferences("haven_summary_recall", Context.MODE_PRIVATE)
+
+    private fun pendingRecallKey(friendId: String): String = "pending_$friendId"
+
+    /**
+     * 从遗忘区随机捞一条浮上来。
+     * 这里只挑选候选，不会因为系统把它放进 prompt 就自动增强。
      */
     fun getRandomForgotten(friendId: String): ChatSummary? {
         val summaries = loadSummaries(friendId)
@@ -279,25 +492,178 @@ class ChatSummaryStorage(private val context: Context) {
     }
 
     /**
-     * 标记一条遗忘区的总结被"浮上来"了（回升它的强度）
+     * 为一次“遗忘记忆闪回”登记临时确认令牌。
+     *
+     * 同一位住户可能同时被聊天页、自然醒或提醒服务调用，因此令牌和总结 ID 分开保存；
+     * 这样不同请求不会仅凭一个全局 pendingId 互相覆盖。令牌最多保留 30 分钟。
      */
-    fun markSurfaced(friendId: String, summaryId: String) {
-        val list = loadSummariesRaw(friendId).toMutableList()
-        val idx = list.indexOfFirst { it.id == summaryId }
-        if (idx >= 0) {
-            list[idx] = list[idx].copy(
-                lastRecalledAt = System.currentTimeMillis(),
-                recallCount = list[idx].recallCount + 1
+    fun registerSurfacedCandidate(friendId: String, summaryId: String): String {
+        val token = UUID.randomUUID().toString()
+        val now = System.currentTimeMillis()
+
+        synchronized(SURFACE_LOCK) {
+            val records = loadPendingSurfaces(friendId, now)
+            records.add(PendingSurface(token, summaryId, now))
+            savePendingSurfaces(friendId, records.takeLast(MAX_PENDING_SURFACES))
+        }
+        return token
+    }
+
+    /**
+     * 住户在可见正文中确实认领/引用闪回后，由隐藏指令确认。
+     * 只有仍在有效期内且属于当前住户的令牌才能让对应总结回升；令牌只能使用一次。
+     */
+    fun confirmSurfacedCandidate(friendId: String, token: String): Boolean {
+        if (token.isBlank()) return false
+        val now = System.currentTimeMillis()
+
+        synchronized(SURFACE_LOCK) {
+            val records = loadPendingSurfaces(friendId, now)
+            val normalizedToken = token.trim()
+            val recordIndex = records.indexOfFirst {
+                it.token.equals(normalizedToken, ignoreCase = true)
+            }
+            if (recordIndex < 0) {
+                savePendingSurfaces(friendId, records)
+                return false
+            }
+
+            val record = records.removeAt(recordIndex)
+            // 无论总结是否还存在，令牌都只允许消费一次。
+            savePendingSurfaces(friendId, records)
+
+            val list = loadSummariesRaw(friendId).toMutableList()
+            val summaryIndex = list.indexOfFirst { it.id == record.summaryId }
+            if (summaryIndex < 0) return false
+
+            val summary = list[summaryIndex]
+            list[summaryIndex] = summary.copy(
+                lastRecalledAt = now,
+                recallCount = summary.recallCount + 1
             )
             save(friendId, list)
+            return true
         }
     }
+
+    private fun loadPendingSurfaces(friendId: String, now: Long): MutableList<PendingSurface> {
+        val raw = surfacePrefs.getString(pendingSurfaceKey(friendId), null) ?: return mutableListOf()
+        return try {
+            val array = JSONArray(raw)
+            val records = mutableListOf<PendingSurface>()
+            for (i in 0 until array.length()) {
+                val obj = array.optJSONObject(i) ?: continue
+                val token = obj.optString("token", "")
+                val summaryId = obj.optString("summaryId", "")
+                val shownAt = obj.optLong("shownAt", 0L)
+                val age = now - shownAt
+                if (token.isNotBlank() && summaryId.isNotBlank() &&
+                    shownAt > 0L && age in 0..SURFACE_TOKEN_TTL_MS
+                ) {
+                    records.add(PendingSurface(token, summaryId, shownAt))
+                }
+            }
+            records
+        } catch (_: Exception) {
+            mutableListOf()
+        }
+    }
+
+    private fun savePendingSurfaces(friendId: String, records: List<PendingSurface>) {
+        val key = pendingSurfaceKey(friendId)
+        if (records.isEmpty()) {
+            surfacePrefs.edit().remove(key).apply()
+            return
+        }
+
+        val array = JSONArray()
+        records.forEach { record ->
+            array.put(JSONObject().apply {
+                put("token", record.token)
+                put("summaryId", record.summaryId)
+                put("shownAt", record.shownAt)
+            })
+        }
+        surfacePrefs.edit().putString(key, array.toString()).apply()
+    }
+
+    private val surfacePrefs
+        get() = context.getSharedPreferences("haven_summary_surface", Context.MODE_PRIVATE)
+
+    private fun pendingSurfaceKey(friendId: String): String = "pending_$friendId"
 
     /**
      * 获取遗忘区的所有总结（给馆藏 UI 用）
      */
     fun loadForgottenSummaries(friendId: String): List<ChatSummary> {
         return loadSummaries(friendId).filter { it.strength < 0.2 }
+    }
+
+    /**
+     * 根据当前强度判断一条聊天总结处在哪个记忆层级。
+     */
+    fun getMemoryState(summary: ChatSummary): SummaryMemoryState = getMemoryState(summary.strength)
+
+    fun getMemoryState(strength: Double): SummaryMemoryState {
+        return when {
+            strength >= 0.5 -> SummaryMemoryState.CLEAR
+            strength >= 0.2 -> SummaryMemoryState.FUZZY
+            else -> SummaryMemoryState.FORGOTTEN
+        }
+    }
+
+    /**
+     * 按记忆层级读取聊天总结。
+     * 数据本身不会被删掉；这里只决定它当前显示在哪个区域。
+     */
+    fun loadSummariesByState(friendId: String, state: SummaryMemoryState): List<ChatSummary> {
+        return loadSummaries(friendId).filter { getMemoryState(it) == state }
+    }
+
+    /**
+     * 聊天总结分类抽屉使用的数量统计。
+     */
+    fun countByState(friendId: String): SummaryMemoryCounts {
+        val summaries = loadSummaries(friendId)
+        var clear = 0
+        var fuzzy = 0
+        var forgotten = 0
+        summaries.forEach { summary ->
+            when (getMemoryState(summary)) {
+                SummaryMemoryState.CLEAR -> clear++
+                SummaryMemoryState.FUZZY -> fuzzy++
+                SummaryMemoryState.FORGOTTEN -> forgotten++
+            }
+        }
+        return SummaryMemoryCounts(clear = clear, fuzzy = fuzzy, forgotten = forgotten)
+    }
+
+    /**
+     * 由用户手动把一条总结重新唤醒。
+     * 更新回忆锚点后，它会立刻恢复为清晰状态，并在之后衰减得更慢。
+     */
+    fun reinforceById(friendId: String, summaryId: String): Boolean {
+        val list = loadSummariesRaw(friendId).toMutableList()
+        val index = list.indexOfFirst { it.id == summaryId }
+        if (index < 0) return false
+
+        val summary = list[index]
+        list[index] = summary.copy(
+            lastRecalledAt = System.currentTimeMillis(),
+            recallCount = summary.recallCount + 1
+        )
+        save(friendId, list)
+        return true
+    }
+
+    /**
+     * 永久删除一条聊天总结。原始聊天仍保留在“留声”中。
+     */
+    fun deleteSummary(friendId: String, summaryId: String): Boolean {
+        val list = loadSummariesRaw(friendId).toMutableList()
+        val removed = list.removeAll { it.id == summaryId }
+        if (removed) save(friendId, list)
+        return removed
     }
 
     fun count(friendId: String): Int = loadSummariesRaw(friendId).size
@@ -386,6 +752,22 @@ data class ChatSummary(
     val messageRange: String,  // 消息范围（"第201条~第220条"）
     val strength: Double,      // 记忆强度（0.0~1.0，随时间衰减）
     val createdAt: Long,
-    val lastRecalledAt: Long = 0L,  // 上次被回忆起的时间（RECALL 或浮上来时更新）
-    val recallCount: Int = 0        // 被回忆的次数（每次回忆衰减变慢）
+    val lastRecalledAt: Long = 0L,  // 上次真正被回忆的时间（RECALL、人工恢复或确认闪回）
+    val recallCount: Int = 0        // 真正回忆的次数（每次回忆衰减变慢）
 )
+
+/** 聊天总结当前所处的记忆层级。 */
+enum class SummaryMemoryState {
+    CLEAR,
+    FUZZY,
+    FORGOTTEN
+}
+
+/** 聊天总结分类抽屉使用的记忆数量。 */
+data class SummaryMemoryCounts(
+    val clear: Int,
+    val fuzzy: Int,
+    val forgotten: Int
+) {
+    val total: Int get() = clear + fuzzy + forgotten
+}

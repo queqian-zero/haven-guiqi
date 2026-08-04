@@ -298,13 +298,40 @@ class EchoStorage(context: Context) {
 
     // ===== 构建 prompt 片段（给 RECALL 用） =====
 
-    fun buildRecallPrompt(friendId: String, query: String): String {
-        // 先尝试按关键词搜
+    /**
+     * 执行一次留声检索并返回原始命中项。
+     *
+     * 结果对象会继续交给 ChatSummaryStorage，用聊天消息的位置判断它们分别属于哪段总结；
+     * 因此这里不能只返回拼好的字符串。
+     */
+    fun searchForRecall(friendId: String, query: String): List<EchoMessage> {
         var results = searchByKeyword(friendId, query)
-        // 没找到就试日期
         if (results.isEmpty()) {
             results = searchByDate(friendId, query)
         }
+        return results
+    }
+
+    /**
+     * 兼容旧调用：只需要普通检索文本时仍可直接使用。
+     */
+    fun buildRecallPrompt(friendId: String, query: String): String {
+        return formatRecallPrompt(query, searchForRecall(friendId, query))
+    }
+
+    /**
+     * 把留声检索结果拼成下一轮要交给住户的系统消息。
+     *
+     * groupLabelsByMessageId 会把同一段聊天总结里的原文标成同一个 R 编号；
+     * claimTokensByGroup 则让住户只在可见回复确实使用某一组时确认对应记忆。
+     * 这些编号和令牌只存在于系统消息，不会写入留声原文。
+     */
+    fun formatRecallPrompt(
+        query: String,
+        results: List<EchoMessage>,
+        groupLabelsByMessageId: Map<String, String> = emptyMap(),
+        claimTokensByGroup: Map<String, String> = emptyMap()
+    ): String {
         if (results.isEmpty()) return "没有找到关于「$query」的记录。"
 
         val sb = StringBuilder("找到 ${results.size} 条相关记录：\n\n")
@@ -313,8 +340,23 @@ class EchoStorage(context: Context) {
                 SimpleDateFormat("yyyy/MM/dd HH:mm", Locale.getDefault()).format(Date(msg.timestamp))
             } else "（时间未知）"
             val who = if (msg.role == "user") "用户" else "我"
-            sb.appendLine("[$timeStr] $who: ${msg.content.take(200)}")
+            val groupLabel = groupLabelsByMessageId[msg.id]
+            val groupPrefix = if (groupLabel != null) "[$groupLabel] " else ""
+            sb.appendLine("$groupPrefix[$timeStr] $who: ${msg.content.take(200)}")
         }
+
+        if (claimTokensByGroup.isNotEmpty()) {
+            sb.appendLine()
+            sb.appendLine("[留声检索后的记忆确认]")
+            sb.appendLine("R 编号表示这些原文分别落在哪一段聊天总结中；没有 R 编号的记录当前没有可对应的总结。")
+            sb.appendLine("检索到只代表翻到了档案，不等于已经重新想起。")
+            sb.appendLine("只有当你在下一次可见回复中确实引用、提到，或据此回应了某一组记录时，才在回复末尾附上它对应的隐藏确认指令：")
+            claimTokensByGroup.forEach { (group, token) ->
+                sb.appendLine("- $group → [CLAIM_RECALLED_MEMORY:$token]")
+            }
+            sb.append("没有在正文中使用的组不要确认。确认指令会被系统隐藏，不要向用户解释。")
+        }
+
         return sb.toString()
     }
 

@@ -17,6 +17,7 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import java.util.concurrent.Executors
 
 /**
  * 书阁独立页面。
@@ -28,6 +29,8 @@ class BookRoomActivity : AppCompatActivity() {
 
     private lateinit var libraryPage: LinearLayout
     private var skipInitialResumeRefresh = true
+    private var shelfLoadVersion = 0
+    private val shelfExecutor = Executors.newSingleThreadExecutor()
 
     private val c get() = ThemeHelper.getColors(this)
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
@@ -133,6 +136,12 @@ class BookRoomActivity : AppCompatActivity() {
         if (::libraryPage.isInitialized) loadBookShelf()
     }
 
+    override fun onDestroy() {
+        shelfLoadVersion++
+        shelfExecutor.shutdownNow()
+        super.onDestroy()
+    }
+
     private fun mergeImport(uris: List<Uri>) {
         val input = android.widget.EditText(this).apply {
             hint = "输入书名"
@@ -179,6 +188,7 @@ class BookRoomActivity : AppCompatActivity() {
     }
 
     private fun loadBookShelf() {
+        val version = ++shelfLoadVersion
         libraryPage.removeAllViews()
         libraryPage.gravity = Gravity.CENTER
 
@@ -190,12 +200,14 @@ class BookRoomActivity : AppCompatActivity() {
         }
         libraryPage.addView(loadingText)
 
-        Thread {
-            val books = BookStorage(this).loadBooksMeta()
+        shelfExecutor.execute {
+            val books = BookStorage(applicationContext).loadBooksMeta()
             runOnUiThread {
-                if (!isFinishing && !isDestroyed) buildShelfUI(books)
+                if (!isFinishing && !isDestroyed && version == shelfLoadVersion) {
+                    buildShelfUI(books)
+                }
             }
-        }.start()
+        }
     }
 
     private fun buildShelfUI(books: List<BookStorage.Book>) {

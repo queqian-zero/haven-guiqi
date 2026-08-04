@@ -150,6 +150,11 @@ class SettingsActivity : AppCompatActivity() {
                 .show()
         }
 
+        // ===== 搜索组 =====
+        findViewById<TextView>(R.id.btnSearchGroup).setOnClickListener {
+            startActivity(android.content.Intent(this, SearchGroupActivity::class.java))
+        }
+
         // ===== 小助手 API =====
         findViewById<TextView>(R.id.btnHelperApi).setOnClickListener {
             showHelperApiDialog()

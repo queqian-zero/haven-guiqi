@@ -46,6 +46,12 @@ object InstructionRegistry {
         Ability("[BACKGROUND_PICK:编号]", "从已经看过的画匣背景里选择当前聊天背景", setOf(Scene.CHAT)),
         Ability("[CLEAR_BACKGROUND]", "恢复当前聊天的默认背景", setOf(Scene.CHAT)),
         Ability("[MYCODE:新编码]", "换编码", setOf(Scene.CHAT)),
+        Ability("[MY_BUBBLE_STYLE]", "查看自己的代码气泡档案与完整语法", setOf(Scene.CHAT)),
+        Ability(
+            "[BUBBLE_STYLE_DRAFT]代码[/BUBBLE_STYLE_DRAFT]",
+            "提交一份自己的代码气泡候选草稿（只校验保存，不会直接应用）",
+            setOf(Scene.CHAT)
+        ),
         Ability("[BIO:内容]", "写自我认识", setOf(Scene.CHAT)),
 
         // ── 住户公约 ──
@@ -81,7 +87,7 @@ object InstructionRegistry {
         Ability("[FORGET:记忆ID]", "忘掉一条记忆", setOf(Scene.CHAT)),
         Ability("[EDIT_MEMORY:记忆ID:新内容]", "修改一条记忆", setOf(Scene.CHAT)),
         Ability("[SET_SUMMARY_INTERVAL:N]", "修改聊天总结间隔", setOf(Scene.CHAT)),
-        Ability("[READ_MY_BIO]", "查看用户自述", setOf(Scene.CHAT)),
+        Ability("[READ_MY_BIO]", "调用工具查看用户在「我眼中的自己」里写下的内容；结果会在同一轮返回", setOf(Scene.CHAT)),
 
         // ── 潜意识 ──
         Ability("[LIKE:内容]", "记住喜欢的东西", setOf(Scene.CHAT)),

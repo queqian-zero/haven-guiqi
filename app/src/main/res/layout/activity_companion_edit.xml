@@ -1,0 +1,250 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/chat_bg"
+    android:orientation="vertical">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingHorizontal="14dp"
+        android:paddingTop="10dp"
+        android:paddingBottom="10dp">
+
+        <TextView
+            android:id="@+id/btnBack"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:gravity="center"
+            android:text="←"
+            android:textColor="@color/haven_settings_back"
+            android:textSize="18sp" />
+
+        <TextView
+            android:id="@+id/pageTitle"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:text="伙伴记录"
+            android:textColor="@color/haven_text_primary"
+            android:textSize="15sp" />
+
+        <TextView
+            android:id="@+id/btnSave"
+            android:layout_width="48dp"
+            android:layout_height="36dp"
+            android:gravity="center"
+            android:text="保存"
+            android:textColor="@color/haven_accent_strong"
+            android:textSize="13sp" />
+    </LinearLayout>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="0.5dp"
+        android:background="@color/haven_divider" />
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:fillViewport="true"
+        android:scrollbars="none">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingHorizontal="16dp"
+            android:paddingTop="18dp"
+            android:paddingBottom="44dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <com.haven.guiqi.SampledAvatarImageView
+                    android:id="@+id/photoPreview"
+                    android:layout_width="88dp"
+                    android:layout_height="88dp"
+                    android:background="@drawable/input_bg" />
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="12dp"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:id="@+id/btnChoosePhoto"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:background="@drawable/settings_item_bg"
+                        android:gravity="center"
+                        android:padding="12dp"
+                        android:text="选择照片"
+                        android:textColor="@color/haven_text_primary"
+                        android:textSize="13sp" />
+
+                    <TextView
+                        android:id="@+id/btnRemovePhoto"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:gravity="center"
+                        android:padding="8dp"
+                        android:text="移除照片"
+                        android:textColor="@color/haven_text_secondary"
+                        android:textSize="12sp" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <EditText
+                android:id="@+id/inputName"
+                style="@android:style/Widget.EditText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="18dp"
+                android:background="@drawable/input_bg"
+                android:hint="姓名 / 昵称"
+                android:padding="13dp"
+                android:textColor="@color/haven_text_primary"
+                android:textColorHint="@color/haven_text_hint"
+                android:textSize="14sp" />
+
+            <EditText
+                android:id="@+id/inputSpecies"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:background="@drawable/input_bg"
+                android:hint="种类"
+                android:padding="13dp"
+                android:textColor="@color/haven_text_primary"
+                android:textColorHint="@color/haven_text_hint"
+                android:textSize="14sp" />
+
+            <EditText
+                android:id="@+id/inputBreed"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:background="@drawable/input_bg"
+                android:hint="品种"
+                android:padding="13dp"
+                android:textColor="@color/haven_text_primary"
+                android:textColorHint="@color/haven_text_hint"
+                android:textSize="14sp" />
+
+            <EditText
+                android:id="@+id/inputStartedDate"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:background="@drawable/input_bg"
+                android:hint="开始陪伴 / 养护日期"
+                android:padding="13dp"
+                android:textColor="@color/haven_text_primary"
+                android:textColorHint="@color/haven_text_hint"
+                android:textSize="14sp" />
+
+            <EditText
+                android:id="@+id/inputStartedThought"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:minLines="3"
+                android:gravity="top|start"
+                android:background="@drawable/input_bg"
+                android:hint="当时为什么想养它 / 当时是什么想法"
+                android:inputType="textCapSentences|textMultiLine"
+                android:padding="13dp"
+                android:textColor="@color/haven_text_primary"
+                android:textColorHint="@color/haven_text_hint"
+                android:textSize="14sp" />
+
+            <EditText
+                android:id="@+id/inputNotes"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:minLines="4"
+                android:gravity="top|start"
+                android:background="@drawable/input_bg"
+                android:hint="性格、习惯、故事和其他备注"
+                android:inputType="textCapSentences|textMultiLine"
+                android:padding="13dp"
+                android:textColor="@color/haven_text_primary"
+                android:textColorHint="@color/haven_text_hint"
+                android:textSize="14sp" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="20dp"
+                android:layout_marginBottom="7dp"
+                android:text="当前状态"
+                android:textColor="@color/haven_text_secondary"
+                android:textSize="12sp" />
+
+            <Spinner
+                android:id="@+id/statusSpinner"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="@drawable/input_bg"
+                android:padding="6dp" />
+
+            <LinearLayout
+                android:id="@+id/endFieldsContainer"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <EditText
+                    android:id="@+id/inputEndDate"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:background="@drawable/input_bg"
+                    android:hint="状态日期"
+                    android:padding="13dp"
+                    android:textColor="@color/haven_text_primary"
+                    android:textColorHint="@color/haven_text_hint"
+                    android:textSize="14sp" />
+
+                <EditText
+                    android:id="@+id/inputEndReason"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:minLines="3"
+                    android:gravity="top|start"
+                    android:background="@drawable/input_bg"
+                    android:hint="状态原因与备注"
+                    android:inputType="textCapSentences|textMultiLine"
+                    android:padding="13dp"
+                    android:textColor="@color/haven_text_primary"
+                    android:textColorHint="@color/haven_text_hint"
+                    android:textSize="14sp" />
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/btnDelete"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="24dp"
+                android:gravity="center"
+                android:padding="12dp"
+                android:text="删除这条记录"
+                android:textColor="@color/haven_error_text"
+                android:textSize="13sp" />
+
+        </LinearLayout>
+    </ScrollView>
+</LinearLayout>

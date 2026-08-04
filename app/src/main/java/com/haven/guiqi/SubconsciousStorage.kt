@@ -4,6 +4,7 @@ import android.content.Context
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import java.text.Normalizer
 
 /**
  * SubconsciousStorage — 潜意识便签库
@@ -36,24 +37,476 @@ class SubconsciousStorage(private val context: Context) {
         val activeTo: String = ""        // 时间段结束（如 "02:00"），空=永远激活
     )
 
+    enum class AddStatus {
+        ADDED,
+        EXACT_DUPLICATE,
+        ADDED_WITH_SIMILAR
+    }
+
+    data class PlacementHint(
+        val destination: String,
+        val reason: String
+    )
+
+    data class AddResult(
+        val item: PreferenceItem,
+        val status: AddStatus,
+        val similarItem: PreferenceItem? = null,
+        val placementHint: PlacementHint? = null
+    )
+
+    /**
+     * 一次“请住户整理”会固定住开始时的活跃条目，避免整理途中新增内容把进度打乱。
+     * reviewedIds 只表示这一轮已经确认处理过；不代表条目被删除或完成。
+     */
+    data class ReviewSession(
+        val snapshotIds: List<String>,
+        val reviewedIds: Set<String>,
+        val startedAt: Long,
+        val transcript: List<String> = emptyList(),
+        val changedCount: Int = 0,
+        val batchCount: Int = 0
+    )
+
+    data class ReviewProgress(
+        val total: Int,
+        val completed: Int,
+        val batch: List<PreferenceItem>,
+        val startedAt: Long,
+        val transcript: List<String> = emptyList(),
+        val changedCount: Int = 0,
+        val batchCount: Int = 0
+    ) {
+        val remaining: Int get() = (total - completed).coerceAtLeast(0)
+        val isComplete: Boolean get() = remaining == 0
+    }
+
+    private val feedbackPrefs by lazy {
+        context.getSharedPreferences("subconscious_write_feedback", Context.MODE_PRIVATE)
+    }
+
     // ===== 写入 =====
 
-    /** AI 说了一句流露偏好的话，捡起来存下 */
-    fun addItem(friendId: String, category: String, content: String, activeFrom: String = "", activeTo: String = ""): PreferenceItem {
+    /**
+     * AI 说了一句流露偏好的话，捡起来存下。
+     *
+     * - 完全重复：不重复新增；
+     * - 高度相似：仍然保存，但下一轮提醒住户自行判断是否需要合并；
+     * - 可能放错抽屉：仍按原指令保存，只给归位建议，不自动搬家。
+     */
+    fun addItemChecked(
+        friendId: String,
+        category: String,
+        content: String,
+        activeFrom: String = "",
+        activeTo: String = ""
+    ): AddResult {
+        val cleanContent = content.trim()
         val items = loadItems(friendId).toMutableList()
-        if (items.any { it.category == category && it.content == content && it.status == "active" }) {
-            return items.first { it.category == category && it.content == content }
+        val activeItems = items.filter { it.status == "active" }
+        val normalized = normalizeForComparison(cleanContent)
+
+        val exact = activeItems.firstOrNull {
+            normalizeForComparison(it.content) == normalized
         }
+        if (exact != null) {
+            val hint = suggestPlacement(category, cleanContent)
+            queueWriteFeedback(
+                friendId,
+                buildString {
+                    append("刚才想写入的「${cleanContent.take(80)}」与已有潜意识完全重复，系统没有再新增。")
+                    if (exact.category != category) {
+                        append("已有条目放在「${categoryLabel(exact.category)}」里。")
+                    }
+                    hint?.let {
+                        append("这条内容更像${it.destination}：${it.reason}。系统没有自动搬动旧条目。")
+                    }
+                }
+            )
+            return AddResult(
+                item = exact,
+                status = AddStatus.EXACT_DUPLICATE,
+                similarItem = exact,
+                placementHint = hint
+            )
+        }
+
+        val similar = activeItems
+            .map { it to similarityScore(cleanContent, it.content) }
+            .filter { (_, score) -> score >= SIMILARITY_THRESHOLD }
+            .maxByOrNull { it.second }
+            ?.first
+
         val item = PreferenceItem(
             id = "PREF-${System.currentTimeMillis()}-${(Math.random() * 1000).toInt()}",
             category = category,
-            content = content,
+            content = cleanContent,
             activeFrom = activeFrom,
             activeTo = activeTo
         )
         items.add(item)
         saveItems(friendId, items)
-        return item
+
+        val hint = suggestPlacement(category, cleanContent)
+        if (similar != null || hint != null) {
+            queueWriteFeedback(
+                friendId,
+                buildString {
+                    if (similar != null) {
+                        append("刚才新增的「${cleanContent.take(80)}」与已有潜意识「${similar.content.take(80)}」很接近；两条目前都保留，由你决定以后是否合并或删除。")
+                    } else {
+                        append("刚才新增了「${cleanContent.take(80)}」。")
+                    }
+                    hint?.let {
+                        append("这条内容更像${it.destination}：${it.reason}。系统仍按你的原指令保存在潜意识，没有自动搬家。")
+                    }
+                }
+            )
+        }
+
+        return AddResult(
+            item = item,
+            status = if (similar != null) AddStatus.ADDED_WITH_SIMILAR else AddStatus.ADDED,
+            similarItem = similar,
+            placementHint = hint
+        )
+    }
+
+    /** 保留旧接口，其他调用方仍可直接写入。 */
+    fun addItem(
+        friendId: String,
+        category: String,
+        content: String,
+        activeFrom: String = "",
+        activeTo: String = ""
+    ): PreferenceItem = addItemChecked(friendId, category, content, activeFrom, activeTo).item
+
+    /**
+     * 下一轮提示词里只出现一次的写入回执。
+     * 它是给住户看的整理建议，不属于潜意识内容，也不会写进任何记忆库。
+     */
+    fun consumeWriteFeedback(friendId: String): String? {
+        val key = "feedback_$friendId"
+        val raw = feedbackPrefs.getString(key, null)?.trim().orEmpty()
+        if (raw.isEmpty()) return null
+        feedbackPrefs.edit().remove(key).apply()
+        return raw
+    }
+
+    private fun queueWriteFeedback(friendId: String, message: String) {
+        val key = "feedback_$friendId"
+        val existing = feedbackPrefs.getString(key, "").orEmpty()
+            .lineSequence()
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .toMutableList()
+        existing.add("• ${message.trim()}")
+        val compact = existing.takeLast(MAX_PENDING_FEEDBACK).joinToString("\n")
+        feedbackPrefs.edit().putString(key, compact).apply()
+    }
+
+    private fun suggestPlacement(category: String, content: String): PlacementHint? {
+        val compact = normalizeForComparison(content)
+        val mentionsUserPreference = USER_REFERENCE_HINTS.any { compact.contains(it) } &&
+            USER_PREFERENCE_HINTS.any { compact.contains(it) }
+        if (mentionsUserPreference) {
+            return PlacementHint(
+                destination = "对用户的印象",
+                reason = "它描述的是用户较稳定的偏好或习惯，可在愿意时用 [IMPRESSION:内容] 更新整篇印象"
+            )
+        }
+
+        val looksLikeDiary = content.length >= 36 && DIARY_HINTS.any { compact.contains(it) }
+        if (looksLikeDiary) {
+            return PlacementHint(
+                destination = "日记",
+                reason = "它更像一段已经发生的具体经历，可在愿意时用 [DIARY:内容] 留下完整叙述"
+            )
+        }
+
+        val looksLikeCoreMemory = CORE_MEMORY_HINTS.any { compact.contains(it) } &&
+            (category == "promise" || content.length >= 18)
+        if (looksLikeCoreMemory) {
+            return PlacementHint(
+                destination = "核心记忆",
+                reason = "它涉及长期关系、身份、边界或不应仅因时间而消退的承诺，可在愿意时用 [MEMORY:内容] 保存"
+            )
+        }
+
+        return null
+    }
+
+    private fun normalizeForComparison(text: String): String {
+        val normalized = Normalizer.normalize(text, Normalizer.Form.NFKC).lowercase()
+        return normalized.replace(Regex("[\\s\\p{P}\\p{S}]+"), "")
+    }
+
+    private fun similarityScore(a: String, b: String): Double {
+        val left = normalizeForComparison(a)
+        val right = normalizeForComparison(b)
+        if (left.isEmpty() || right.isEmpty()) return 0.0
+        if (left == right) return 1.0
+
+        val shorter = minOf(left.length, right.length)
+        val longer = maxOf(left.length, right.length)
+        if (shorter < 6) return 0.0
+        if ((left.contains(right) || right.contains(left)) && shorter.toDouble() / longer >= 0.68) {
+            return 0.9
+        }
+
+        val leftPairs = left.windowed(2).toSet()
+        val rightPairs = right.windowed(2).toSet()
+        if (leftPairs.isEmpty() || rightPairs.isEmpty()) return 0.0
+        val intersection = leftPairs.intersect(rightPairs).size.toDouble()
+        val union = leftPairs.union(rightPairs).size.toDouble()
+        val containment = intersection / minOf(leftPairs.size, rightPairs.size).toDouble()
+        val jaccard = if (union == 0.0) 0.0 else intersection / union
+        return maxOf(jaccard, containment * 0.88)
+    }
+
+    // ===== 住户自我整理会话 =====
+
+    /** 只查看现有整理进度，不会新建会话。 */
+    fun peekReviewProgress(friendId: String, batchSize: Int = REVIEW_BATCH_SIZE): ReviewProgress? {
+        val session = loadReviewSession(friendId) ?: return null
+        return normalizeReviewProgress(friendId, session, batchSize)
+    }
+
+    /**
+     * 开始或继续一次整理。每次只交给住户少量条目；中途退出后仍可从原位置继续。
+     */
+    fun startOrResumeReview(friendId: String, batchSize: Int = REVIEW_BATCH_SIZE): ReviewProgress {
+        val existing = loadReviewSession(friendId)
+        if (existing != null) {
+            val progress = normalizeReviewProgress(friendId, existing, batchSize)
+            if (!progress.isComplete) return progress
+            clearReviewSession(friendId)
+        }
+
+        val snapshot = loadItems(friendId)
+            .filter { it.status == "active" }
+            .sortedBy { it.createdAt }
+            .map { it.id }
+        val session = ReviewSession(
+            snapshotIds = snapshot,
+            reviewedIds = emptySet(),
+            startedAt = System.currentTimeMillis(),
+            transcript = emptyList(),
+            changedCount = 0,
+            batchCount = 0
+        )
+        saveReviewSession(friendId, session)
+        return normalizeReviewProgress(friendId, session, batchSize)
+    }
+
+    /** 用户确认本批预览以后才推进进度；仅看过但取消不会跳过。 */
+    fun markReviewBatchCompleted(friendId: String, itemIds: Collection<String>) {
+        completeReviewBatch(friendId, itemIds, changed = 0, transcriptEntries = emptyList())
+    }
+
+    /**
+     * 确认执行后，把结果、连续整理轨迹和累计统计一起保存。
+     * 下一批 API 会重新读到这些内容，因此不是一批一批失忆地重新调用模型。
+     */
+    fun completeReviewBatch(
+        friendId: String,
+        itemIds: Collection<String>,
+        changed: Int,
+        transcriptEntries: List<String>
+    ) {
+        val session = loadReviewSession(friendId) ?: return
+        val reviewed = session.reviewedIds.toMutableSet().apply { addAll(itemIds) }
+        val transcript = appendTranscript(session.transcript, transcriptEntries)
+        saveReviewSession(
+            friendId,
+            session.copy(
+                reviewedIds = reviewed,
+                transcript = transcript,
+                changedCount = session.changedCount + changed.coerceAtLeast(0),
+                batchCount = session.batchCount + 1
+            )
+        )
+    }
+
+    fun appendReviewTranscript(friendId: String, vararg entries: String) {
+        val session = loadReviewSession(friendId) ?: return
+        saveReviewSession(
+            friendId,
+            session.copy(transcript = appendTranscript(session.transcript, entries.toList()))
+        )
+    }
+
+    fun getReviewTranscript(friendId: String): List<String> =
+        loadReviewSession(friendId)?.transcript.orEmpty()
+
+    private fun appendTranscript(existing: List<String>, additions: List<String>): List<String> {
+        val clean = additions.map { it.trim() }.filter { it.isNotEmpty() }
+        if (clean.isEmpty()) return existing
+        val combined = (existing + clean).takeLast(MAX_REVIEW_TRANSCRIPT_ENTRIES)
+        var total = 0
+        val kept = mutableListOf<String>()
+        for (entry in combined.asReversed()) {
+            if (total + entry.length > MAX_REVIEW_TRANSCRIPT_CHARS && kept.isNotEmpty()) break
+            kept.add(0, entry.take(MAX_REVIEW_TRANSCRIPT_CHARS))
+            total += entry.length
+        }
+        return kept
+    }
+
+    fun clearReviewSession(friendId: String) {
+        val file = getReviewFile(friendId)
+        if (file.exists()) file.delete()
+    }
+
+    private fun normalizeReviewProgress(
+        friendId: String,
+        session: ReviewSession,
+        batchSize: Int
+    ): ReviewProgress {
+        val activeById = loadItems(friendId)
+            .filter { it.status == "active" }
+            .associateBy { it.id }
+        // 整理途中若某条已被手动删除/完成，就自动视作已处理，避免进度永远卡住。
+        val reviewed = session.reviewedIds.toMutableSet()
+        session.snapshotIds.filterNot { activeById.containsKey(it) }.forEach { reviewed.add(it) }
+        val normalized = if (reviewed != session.reviewedIds) {
+            session.copy(reviewedIds = reviewed).also { saveReviewSession(friendId, it) }
+        } else session
+
+        val remainingItems = normalized.snapshotIds
+            .asSequence()
+            .filterNot { normalized.reviewedIds.contains(it) }
+            .mapNotNull { activeById[it] }
+            .take(batchSize.coerceIn(1, 12))
+            .toList()
+        return ReviewProgress(
+            total = normalized.snapshotIds.size,
+            completed = normalized.reviewedIds.size.coerceAtMost(normalized.snapshotIds.size),
+            batch = remainingItems,
+            startedAt = normalized.startedAt,
+            transcript = normalized.transcript,
+            changedCount = normalized.changedCount,
+            batchCount = normalized.batchCount
+        )
+    }
+
+    private fun getReviewFile(friendId: String): File = File(dir, "review_$friendId.json")
+
+    private fun loadReviewSession(friendId: String): ReviewSession? {
+        val file = getReviewFile(friendId)
+        if (!file.exists()) return null
+        return try {
+            val obj = JSONObject(file.readText())
+            val snapshotArray = obj.optJSONArray("snapshot_ids") ?: JSONArray()
+            val reviewedArray = obj.optJSONArray("reviewed_ids") ?: JSONArray()
+            val snapshot = (0 until snapshotArray.length()).mapNotNull { index ->
+                snapshotArray.optString(index).takeIf { it.isNotBlank() }
+            }
+            val reviewed = (0 until reviewedArray.length()).mapNotNullTo(linkedSetOf()) { index ->
+                reviewedArray.optString(index).takeIf { it.isNotBlank() }
+            }
+            val transcriptArray = obj.optJSONArray("transcript") ?: JSONArray()
+            val transcript = (0 until transcriptArray.length()).mapNotNull { index ->
+                transcriptArray.optString(index).takeIf { it.isNotBlank() }
+            }
+            ReviewSession(
+                snapshotIds = snapshot,
+                reviewedIds = reviewed,
+                startedAt = obj.optLong("started_at", System.currentTimeMillis()),
+                transcript = transcript,
+                changedCount = obj.optInt("changed_count", 0),
+                batchCount = obj.optInt("batch_count", 0)
+            )
+        } catch (_: Exception) {
+            file.delete()
+            null
+        }
+    }
+
+    private fun saveReviewSession(friendId: String, session: ReviewSession) {
+        val obj = JSONObject().apply {
+            put("snapshot_ids", JSONArray(session.snapshotIds))
+            put("reviewed_ids", JSONArray(session.reviewedIds.toList()))
+            put("started_at", session.startedAt)
+            put("transcript", JSONArray(session.transcript))
+            put("changed_count", session.changedCount)
+            put("batch_count", session.batchCount)
+        }
+        getReviewFile(friendId).writeText(obj.toString())
+    }
+
+    data class ReviewReport(val text: String, val createdAt: Long)
+
+    fun saveLastReviewReport(friendId: String, text: String) {
+        val clean = text.trim()
+        if (clean.isEmpty()) return
+        val obj = JSONObject().apply {
+            put("text", clean.take(MAX_REVIEW_REPORT_CHARS))
+            put("created_at", System.currentTimeMillis())
+        }
+        File(dir, "review_report_$friendId.json").writeText(obj.toString())
+    }
+
+    fun getLastReviewReport(friendId: String): ReviewReport? {
+        val file = File(dir, "review_report_$friendId.json")
+        if (!file.exists()) return null
+        return try {
+            val obj = JSONObject(file.readText())
+            val text = obj.optString("text").trim()
+            if (text.isEmpty()) null else ReviewReport(text, obj.optLong("created_at", 0L))
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    // ===== 精确编辑（供整理预览确认后执行） =====
+
+    fun deleteItemById(friendId: String, itemId: String, moveToTrash: Boolean = true): Boolean {
+        val items = loadItems(friendId).toMutableList()
+        val idx = items.indexOfFirst { it.id == itemId }
+        if (idx < 0) return false
+        val removed = items.removeAt(idx)
+        if (moveToTrash) {
+            MemoryStorage(context).addToTrash(friendId, Memory(
+                id = removed.id,
+                content = "【念头·${categoryLabel(removed.category)}】${removed.content}",
+                createdAt = removed.createdAt,
+                updatedAt = System.currentTimeMillis()
+            ))
+        }
+        saveItems(friendId, items)
+        return true
+    }
+
+    /** 合并保留主条目，其余原条目进废纸篓，便于反悔恢复。 */
+    fun mergeItems(
+        friendId: String,
+        primaryId: String,
+        mergedIds: Collection<String>,
+        mergedContent: String
+    ): Boolean {
+        val clean = mergedContent.trim()
+        if (clean.isEmpty()) return false
+        val items = loadItems(friendId).toMutableList()
+        val primaryIndex = items.indexOfFirst { it.id == primaryId }
+        if (primaryIndex < 0) return false
+        val removeSet = mergedIds.filter { it != primaryId }.toSet()
+        val removed = items.filter { removeSet.contains(it.id) }
+        items[primaryIndex] = items[primaryIndex].copy(content = clean)
+        items.removeAll { removeSet.contains(it.id) }
+        if (removed.isNotEmpty()) {
+            val trash = MemoryStorage(context)
+            removed.forEach { item ->
+                trash.addToTrash(friendId, Memory(
+                    id = item.id,
+                    content = "【合并前念头·${categoryLabel(item.category)}】${item.content}",
+                    createdAt = item.createdAt,
+                    updatedAt = System.currentTimeMillis()
+                ))
+            }
+        }
+        saveItems(friendId, items)
+        return true
     }
 
     // ===== 抽便签 =====
@@ -300,6 +753,25 @@ $itemsText
     }
 
     companion object {
+        private const val SIMILARITY_THRESHOLD = 0.76
+        private const val MAX_PENDING_FEEDBACK = 4
+        private const val MAX_REVIEW_TRANSCRIPT_ENTRIES = 18
+        private const val MAX_REVIEW_TRANSCRIPT_CHARS = 16_000
+        private const val MAX_REVIEW_REPORT_CHARS = 4_000
+        const val REVIEW_BATCH_SIZE = 5
+
+        private val USER_REFERENCE_HINTS = listOf("用户", "她", "他", "你")
+        private val USER_PREFERENCE_HINTS = listOf(
+            "喜欢吃", "爱吃", "不吃", "不喜欢吃", "喜欢玩", "爱玩", "常玩",
+            "喜欢看", "爱看", "喜欢喝", "爱喝", "讨厌吃", "习惯"
+        )
+        private val DIARY_HINTS = listOf(
+            "今天", "昨天", "昨晚", "刚才", "这次", "那天", "发生", "后来", "一起"
+        )
+        private val CORE_MEMORY_HINTS = listOf(
+            "永远", "长期", "身份", "关系", "边界", "底线", "不能忘", "最重要", "承诺"
+        )
+
         /**
          * 过滤当前时刻生效的便签（公共函数，聊天和HavenService共用）
          * 无时间段 = 永远生效；有时间段 = 当前时刻在窗口内才生效

@@ -3,6 +3,7 @@ package com.haven.guiqi
 import android.view.Gravity
 import android.view.View
 import android.widget.LinearLayout
+import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import org.json.JSONObject
@@ -22,6 +23,7 @@ class ChatHistoryLoader(
     private val bubbleRenderer: BubbleRenderer,
     private val chatHistory: MutableList<ChatMessage>,
     private val messagesContainer: LinearLayout,
+    private val scrollMessages: ScrollView,
     private val friendId: String
 ) {
 
@@ -33,6 +35,18 @@ class ChatHistoryLoader(
     private val messagesPerPage = 50
     private var allSavedMessages: List<StoredMessage> = emptyList()
     private var fullHistoryLoaded = false    // 完整历史是否已加载（点"加载更早"才加载）
+
+    private data class SearchReturnState(
+        val loadedCount: Int,
+        val totalCount: Int,
+        val scrollY: Int,
+        val anchorKey: String?,
+        val anchorOffset: Int,
+        val fullHistoryWasLoaded: Boolean
+    )
+
+    private var searchReturnState: SearchReturnState? = null
+    private var searchContextActive = false
 
     // 日期分隔线状态
     var lastMessageDate = ""
@@ -207,6 +221,7 @@ class ChatHistoryLoader(
      * @param skipThinking 加载更早的历史时跳过思维链（太多会卡）
      */
     private fun renderOneMessage(msg: StoredMessage, timeStr: String, skipThinking: Boolean = false) {
+        val beforeCount = messagesContainer.childCount
         when (msg.role) {
             "user" -> {
                 if (msg.type == "weather") {
@@ -271,9 +286,178 @@ class ChatHistoryLoader(
             }
             "system" -> {
                 if (msg.type == "tip") {
-                    bubbleRenderer.addSystemTip(msg.content)
+                    when {
+                        msg.content.startsWith("[工具轨迹·") -> {
+                            bubbleRenderer.addToolTraceRecord(msg.content)
+                        }
+                        msg.content.startsWith("[代码气泡工具·") -> {
+                            // 兼容旧版：旧记录没有轨迹元信息，也改成可折叠单卡。
+                            bubbleRenderer.addBubbleStyleToolCard(msg.content)
+                        }
+                        msg.content.startsWith("[潜意识整理工具·") ||
+                            (msg.content.startsWith("🧠 ") && msg.content.contains("潜意识整理记录")) -> {
+                            bubbleRenderer.addSubconsciousReviewToolCard(msg.content)
+                        }
+                        else -> bubbleRenderer.addSystemTip(msg.content)
+                    }
                 }
             }
+        }
+
+        val messageKey = messageKey(msg)
+        for (index in beforeCount until messagesContainer.childCount) {
+            messagesContainer.getChildAt(index)?.setTag(R.id.tag_chat_message_key, messageKey)
+        }
+    }
+
+    private fun messageKey(msg: StoredMessage): String =
+        "${msg.timestamp}|${msg.role}|${msg.type}|${msg.content.hashCode()}"
+
+    /**
+     * 搜索面板打开时记录当前阅读位置。只有真正跳转到未加载历史时，
+     * 才会暂时重绘一小段搜索上下文。
+     */
+    fun beginSearchSession() {
+        if (searchReturnState != null) return
+        val scrollY = scrollMessages.scrollY
+        var anchorKey: String? = null
+        var anchorOffset = 0
+        for (index in 0 until messagesContainer.childCount) {
+            val child = messagesContainer.getChildAt(index) ?: continue
+            val key = child.getTag(R.id.tag_chat_message_key) as? String ?: continue
+            if (child.bottom >= scrollY) {
+                anchorKey = key
+                anchorOffset = child.top - scrollY
+                break
+            }
+        }
+        searchReturnState = SearchReturnState(
+            loadedCount = loadedMessageCount,
+            totalCount = chatStorage.getMessageCount(friendId),
+            scrollY = scrollY,
+            anchorKey = anchorKey,
+            anchorOffset = anchorOffset,
+            fullHistoryWasLoaded = fullHistoryLoaded
+        )
+    }
+
+    /** 跳转到搜索结果；旧消息未在当前 50 条里时，只渲染它前后的小窗口。 */
+    fun jumpToSearchResult(allMessages: List<StoredMessage>, targetIndex: Int) {
+        if (targetIndex !in allMessages.indices) return
+        beginSearchSession()
+        val target = allMessages[targetIndex]
+        val key = messageKey(target)
+        findMessageView(key)?.let {
+            scrollToAndHighlight(it)
+            return
+        }
+
+        bubbleRenderer.suppressScroll = true
+        messagesContainer.removeAllViews()
+        val start = (targetIndex - 18).coerceAtLeast(0)
+        val end = (targetIndex + 19).coerceAtMost(allMessages.size)
+        renderSearchWindow(allMessages.subList(start, end))
+        bubbleRenderer.suppressScroll = false
+        searchContextActive = true
+
+        messagesContainer.post {
+            findMessageView(key)?.let(::scrollToAndHighlight)
+        }
+    }
+
+    /** 关闭搜索后回到打开搜索前的阅读位置。 */
+    fun endSearchSession() {
+        val state = searchReturnState ?: return
+        searchReturnState = null
+
+        if (!searchContextActive) {
+            scrollMessages.post { scrollMessages.scrollTo(0, state.scrollY.coerceAtLeast(0)) }
+            return
+        }
+        searchContextActive = false
+
+        Thread {
+            val all = chatStorage.loadMessages(friendId)
+            activity.runOnUiThread {
+                if (activity.isFinishing || activity.isDestroyed) return@runOnUiThread
+                val addedSinceOpen = (all.size - state.totalCount).coerceAtLeast(0)
+                val countToRestore = (state.loadedCount + addedSinceOpen)
+                    .coerceAtLeast(0)
+                    .coerceAtMost(all.size)
+                val toRender = all.takeLast(countToRestore)
+
+                messagesContainer.removeAllViews()
+                lastMessageDate = ""
+                lastMessageTimestamp = 0L
+                loadedMessageCount = toRender.size
+                fullHistoryLoaded = state.fullHistoryWasLoaded
+                allSavedMessages = if (fullHistoryLoaded) all else emptyList()
+
+                bubbleRenderer.suppressScroll = true
+                if (all.size > toRender.size) bubbleRenderer.addLoadMoreButton()
+                renderMessages(toRender)
+                bubbleRenderer.suppressScroll = false
+
+                messagesContainer.post {
+                    val anchor = state.anchorKey?.let(::findMessageView)
+                    if (anchor != null) {
+                        scrollMessages.scrollTo(
+                            0,
+                            (anchor.top - state.anchorOffset).coerceAtLeast(0)
+                        )
+                    } else {
+                        scrollMessages.scrollTo(0, state.scrollY.coerceAtLeast(0))
+                    }
+                }
+            }
+        }.start()
+    }
+
+    private fun renderSearchWindow(messages: List<StoredMessage>) {
+        var localDate = ""
+        var localTimestamp = 0L
+        for (msg in messages) {
+            val dateStr = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date(msg.timestamp))
+            if (dateStr != localDate) {
+                bubbleRenderer.addDaySeparator(msg.timestamp)
+                localDate = dateStr
+            } else if (localTimestamp > 0L) {
+                val gapMs = msg.timestamp - localTimestamp
+                if (gapMs / 60000 >= 60) {
+                    val gapLabel = bubbleRenderer.formatGapLabel(gapMs)
+                    val timeLabel = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(msg.timestamp))
+                    bubbleRenderer.addGapMarker("距上条消息 $gapLabel · $timeLabel")
+                }
+            }
+            localTimestamp = msg.timestamp
+            val timeStr = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date(msg.timestamp))
+            renderOneMessage(msg, timeStr, skipThinking = false)
+        }
+    }
+
+    private fun findMessageView(key: String): View? {
+        for (index in 0 until messagesContainer.childCount) {
+            val child = messagesContainer.getChildAt(index) ?: continue
+            if (child.getTag(R.id.tag_chat_message_key) == key) return child
+        }
+        return null
+    }
+
+    private fun scrollToAndHighlight(view: View) {
+        scrollMessages.post {
+            val y = (view.top - dp(72)).coerceAtLeast(0)
+            scrollMessages.smoothScrollTo(0, y)
+            view.animate().cancel()
+            view.alpha = 1f
+            view.postDelayed({
+                view.animate()
+                    .alpha(0.58f)
+                    .setDuration(110L)
+                    .withEndAction {
+                        view.animate().alpha(1f).setDuration(280L).start()
+                    }
+                    .start()
+            }, 120L)
         }
     }
 
